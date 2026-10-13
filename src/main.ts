@@ -2,7 +2,11 @@ import { mount } from 'svelte';
 import './app.css';
 import App from './App.svelte';
 
-const app = mount(App, { target: document.getElementById('app')! });
+const target = document.getElementById('app')!;
+target.innerHTML = ''; // remove the boot screen
+const app = mount(App, { target });
+(window as unknown as { __moshpitMounted: boolean }).__moshpitMounted = true;
+document.getElementById('boot-error')?.remove();
 export default app;
 
 // Debug handle (handy in the browser console and for automated tests)

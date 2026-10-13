@@ -2,6 +2,9 @@ import { EFFECTS, defaultParams, type ParamDef } from './effects';
 import type { EffectInstance, EncoderSettings, ParamValue, Project, Automation } from './types';
 import { makeRng, randomSeed, type Rng } from './rng';
 
+/** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
+const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
+
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export function makeEffect(type: string, start: number, end: number, params: Record<string, ParamValue> = {}, seed = randomSeed()): EffectInstance {
@@ -197,7 +200,7 @@ export function applyPreset(project: Project, preset: Preset, total: number, cut
     const e = makeEffect(pe.type, resolvePos(pe.start, total, cuts), Math.max(1, resolvePos(pe.end, total, cuts)), pe.params);
     // Negative "from" on splice means fraction of the timeline
     if (pe.type === 'splice' && typeof pe.params?.from === 'number' && pe.params.from < 0) e.params.from = Math.round(-pe.params.from * total);
-    if (pe.auto) e.auto = structuredClone(pe.auto);
+    if (pe.auto) e.auto = clone(pe.auto);
     return e;
   });
   return {
@@ -218,7 +221,7 @@ export function presetFromProject(project: Project, total: number, name: string)
     user: true,
     // the look, not the size: keep resolution / aspect / markers out of presets
     encoder: (({ width: _w, previewWidth: _p, aspect: _a, keyMarkers: _k, ...rest }) => rest)(project.encoder),
-    effects: project.effects.map((e) => ({ type: e.type, start: e.start / t, end: Math.min(1, e.end / t), params: { ...e.params }, auto: structuredClone(e.auto) })),
+    effects: project.effects.map((e) => ({ type: e.type, start: e.start / t, end: Math.min(1, e.end / t), params: { ...e.params }, auto: clone(e.auto) })),
   };
 }
 

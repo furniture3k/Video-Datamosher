@@ -1,4 +1,5 @@
 <script lang="ts">
+  const canScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
   import { onDestroy } from 'svelte';
   import Modal from '../components/Modal.svelte';
   import { store } from '../lib/store.svelte';
@@ -73,7 +74,7 @@
   <div class="col">
     <div class="row">
       <button onclick={() => start('camera')} disabled={recording}>📷 Webcam</button>
-      <button onclick={() => start('screen')} disabled={recording}>🖥 Screen / window</button>
+      {#if canScreen}<button onclick={() => start('screen')} disabled={recording}>🖥 Screen / window</button>{/if}
       <label class="row small"><input type="checkbox" bind:checked={withAudio} disabled={recording} /> with sound</label>
     </div>
     <!-- svelte-ignore a11y_media_has_caption -->

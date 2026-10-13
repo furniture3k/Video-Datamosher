@@ -1,4 +1,5 @@
 <script lang="ts">
+  const canScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
   import { onDestroy, onMount } from 'svelte';
   import { store } from '../lib/store.svelte';
   import { GL, COPY, type Target } from '../lib/gl';
@@ -226,7 +227,7 @@
         <p class="muted">A real-time flow engine. Move in front of the camera, drag on the picture to push the pixels, and press <span class="kbd">Space</span> to snap back to a clean image.</p>
         <div class="row" style="justify-content:center;flex-wrap:wrap">
           <button class="primary" onclick={() => useStream('camera')}>📷 Webcam</button>
-          <button onclick={() => useStream('screen')}>🖥 Screen</button>
+          {#if canScreen}<button onclick={() => useStream('screen')}>🖥 Screen</button>{/if}
           <button onclick={() => fileInput.click()}>🎞 Video file</button>
           {#each fileClips as c}
             <button onclick={() => useClip(c.id)}>▶ {c.source.name}</button>

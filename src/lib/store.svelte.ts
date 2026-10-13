@@ -6,6 +6,9 @@ import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
 
+/** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
+const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
+
 export type CompareMode = 'off' | 'split' | 'side' | 'hold';
 
 export interface Toast {
@@ -144,7 +147,7 @@ class Store {
   duplicateEffect(id: string) {
     const i = this.project.effects.findIndex((e) => e.id === id);
     if (i < 0) return;
-    const copy = { ...(structuredClone($state.snapshot(this.project.effects[i])) as EffectInstance), id: uid() };
+    const copy = { ...(clone($state.snapshot(this.project.effects[i])) as EffectInstance), id: uid() };
     this.edit((p) => p.effects.splice(i + 1, 0, copy));
     this.ui.selectedEffect = copy.id;
   }
