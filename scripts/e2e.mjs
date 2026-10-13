@@ -1,0 +1,133 @@
+// End-to-end smoke test: builds nothing, serves dist/ and drives the real app in Chromium.
+// Usage: npm run build && npm run test:e2e
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { chromium } from 'playwright-core';
+
+const dist = path.resolve('dist');
+const shots = path.resolve(process.env.SHOTS || 'test-results');
+fs.mkdirSync(shots, { recursive: true });
+const types = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.html': 'text/html', '.css': 'text/css', '.json': 'application/json' };
+const server = http
+  .createServer((req, res) => {
+    let f = path.join(dist, decodeURIComponent(req.url.split('?')[0]));
+    if (f.endsWith('/')) f += 'index.html';
+    fs.readFile(f, (err, data) => {
+      if (err) return res.writeHead(404).end();
+      res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream' }).end(data);
+    });
+  })
+  .listen(0);
+const url = `http://localhost:${server.address().port}/`;
+const exe = process.env.CHROMIUM || ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => fs.existsSync(p));
+const browser = await chromium.launch({ executablePath: exe, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+const errors = [];
+page.on('pageerror', (e) => errors.push(e.message));
+page.on('console', (m) => (m.type() === 'error' ? errors.push(m.text()) : /retrying/.test(m.text()) && console.log('  [warn]', m.text())));
+const step = async (name, fn) => {
+  const t = Date.now();
+  process.stdout.write(`• ${name}… `);
+  await fn();
+  console.log(`ok (${((Date.now() - t) / 1000).toFixed(1)}s)`);
+};
+const waitRender = () =>
+  page.waitForFunction(() => {
+    const c = document.querySelector('.stage canvas');
+    return c && !c.classList.contains('hidden') && !document.querySelector('.busy');
+  }, null, { timeout: 180000 });
+
+try {
+  await step('load app', async () => {
+    await page.goto(url);
+    await page.getByText('Welcome to MOSHPIT').waitFor();
+  });
+  await step('load demo (generators + preset) and render', async () => {
+    await page.getByRole('button', { name: '▶ Try a demo' }).click();
+    await waitRender();
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(shots, '1-demo.png') });
+  });
+  await step('frames rendered', async () => {
+    const n = await page.evaluate(() => document.querySelector('.info')?.textContent);
+    if (!/frame 1\/\d+/.test(n ?? '')) throw new Error('unexpected frame info: ' + n);
+  });
+  await step('scrub to the mosh', async () => {
+    for (let i = 0; i < 4; i++) await page.keyboard.press('Shift+ArrowRight');
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(shots, '2-scrubbed.png') });
+  });
+  await step('apply bloom preset', async () => {
+    await page.keyboard.press('p');
+    await page.getByRole('button', { name: /Bloom Explosion/ }).click();
+    await page.waitForTimeout(500);
+    await waitRender();
+  });
+  await step('variations grid', async () => {
+    await page.keyboard.press('v');
+    await page.waitForFunction(() => document.querySelectorAll('.cell canvas').length >= 6, null, { timeout: 240000 });
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: path.join(shots, '6-variations.png') });
+    await page.keyboard.press('Escape');
+  });
+  await step('add vector warp (pixel effect) and render', async () => {
+    await page.keyboard.press('a');
+    await page.getByRole('button', { name: /Vector Warp/ }).click();
+    await page.waitForTimeout(500);
+    await waitRender();
+    await page.keyboard.press('End');
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(shots, '3-warp.png') });
+  });
+  await step('automate a parameter', async () => {
+    await page.locator('.pc').first().getByTitle(/Automate/).click();
+    await page.waitForSelector('.ae canvas');
+  });
+  await step('chaos roll + undo', async () => {
+    await page.keyboard.press('r');
+    await page.waitForTimeout(500);
+    await waitRender();
+    await page.keyboard.press('Control+z');
+  });
+  await step('compare split', async () => {
+    await page.keyboard.press('c');
+    await page.waitForTimeout(3000);
+    await waitRender();
+    await page.screenshot({ path: path.join(shots, '4-compare.png') });
+    await page.keyboard.press('c');
+  });
+  await step('export GIF', async () => {
+    await page.keyboard.press('e');
+    await page.getByRole('button', { name: /^GIF/ }).click();
+    const dl = page.waitForEvent('download', { timeout: 240000 });
+    await page.getByRole('button', { name: /Export GIF/ }).click();
+    const d = await dl;
+    const p = path.join(shots, d.suggestedFilename());
+    await d.saveAs(p);
+    if (fs.statSync(p).size < 1000) throw new Error('gif too small');
+    await page.screenshot({ path: path.join(shots, '5-export.png') });
+    await page.keyboard.press('Escape');
+  });
+  await step('export MP4', async () => {
+    await page.keyboard.press('e');
+    await page.getByRole('button', { name: /^MP4/ }).click();
+    const dl = page.waitForEvent('download', { timeout: 240000 });
+    await page.getByRole('button', { name: /Export MP4/ }).click();
+    const d = await dl;
+    const p = path.join(shots, d.suggestedFilename());
+    await d.saveAs(p);
+    if (fs.statSync(p).size < 1000) throw new Error('mp4 too small');
+    await page.keyboard.press('Escape');
+  });
+  const real = errors.filter((e) => !/favicon|Failed to load resource/.test(e));
+  if (real.length) throw new Error('page errors:\n' + real.join('\n'));
+  console.log('\nE2E passed. Screenshots in', shots);
+} catch (e) {
+  await page.screenshot({ path: path.join(shots, 'failure.png') }).catch(() => {});
+  console.error('\nE2E FAILED:', e.message, '\nerrors:', errors.join('\n'));
+  process.exitCode = 1;
+} finally {
+  await browser.close();
+  server.close();
+}

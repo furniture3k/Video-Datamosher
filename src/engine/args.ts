@@ -22,7 +22,7 @@ export function outputSize(project: Project, width: number): { w: number; h: num
   return { w, h: even(w / (ar || 16 / 9)) };
 }
 
-export const inputName = (c: Clip, i: number) => (c.source.kind === 'file' ? `in${i}_${c.id}.${c.source.ext}` : '');
+export const inputName = (c: Clip, _i = 0) => (c.source.kind === 'file' ? `in_${c.id}.${c.source.ext}` : '');
 
 /** Input arguments for clip i (files must be written to the FS under inputName). */
 export function inputArgs(c: Clip, i: number, fps: number): string[] {
@@ -117,7 +117,7 @@ export function decodeToMjpegArgs(d: DecoderSettings, input: string, out: string
     '-i', input,
     '-fps_mode', 'passthrough',
     ...(scaleW ? ['-vf', `scale=${even(scaleW)}:-2`] : []),
-    '-c:v', 'mjpeg', '-pix_fmt', 'yuvj420p', '-q:v', String(quality),
+    '-c:v', 'mjpeg', '-huffman', '0', '-pix_fmt', 'yuvj420p', '-q:v', String(quality),
     '-f', 'image2pipe', out,
   ];
 }

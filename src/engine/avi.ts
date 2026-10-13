@@ -82,7 +82,7 @@ export function parseAvi(buf: Uint8Array): { info: AviInfo; chunks: AviChunk[] }
     for (let i = 0; i + 16 <= ix.length; i += 16) {
       const flags = u32(ix, i + 4);
       const off = u32(ix, i + 8);
-      const ci = byOffset.get(off + firstMovi - 4) ?? byOffset.get(off);
+      const ci = byOffset.get(off + firstMovi) ?? byOffset.get(off);
       if (ci !== undefined) chunks[ci].keyframe = (flags & 0x10) !== 0;
     }
   }
