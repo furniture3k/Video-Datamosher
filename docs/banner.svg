@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="MOSHPIT, datamosh studio">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b0b10"/>
+      <stop offset="1" stop-color="#17121f"/>
+    </linearGradient>
+    <linearGradient id="smear" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff3d8b" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#ff3d8b" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="#00e5ff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="top"><rect x="0" y="0" width="1200" height="122"/></clipPath>
+    <clipPath id="mid"><rect x="0" y="122" width="1200" height="26"/></clipPath>
+    <clipPath id="bot"><rect x="0" y="148" width="1200" height="152"/></clipPath>
+  </defs>
+  <rect width="1200" height="300" rx="18" fill="url(#bg)"/>
+
+  <!-- macroblock debris -->
+  <g opacity="0.85">
+    <rect x="88" y="44" width="32" height="32" fill="#ff3d8b"/>
+    <rect x="120" y="44" width="16" height="16" fill="#ffe14d"/>
+    <rect x="1040" y="208" width="48" height="16" fill="#00e5ff"/>
+    <rect x="1088" y="224" width="16" height="32" fill="#ff3d8b"/>
+    <rect x="1010" y="52" width="16" height="16" fill="#4dffa6"/>
+    <rect x="150" y="226" width="64" height="8" fill="#00e5ff"/>
+    <rect x="214" y="234" width="24" height="8" fill="#ffe14d"/>
+  </g>
+  <rect x="0" y="124" width="1200" height="22" fill="url(#smear)"/>
+
+  <!-- RGB-split wordmark, sliced and shifted like a broken frame -->
+  <g font-family="'JetBrains Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-weight="800" font-size="124" text-anchor="middle" letter-spacing="4">
+    <g clip-path="url(#top)">
+      <text x="606" y="186" fill="#00e5ff" opacity="0.9">MOSHPIT</text>
+      <text x="594" y="186" fill="#ff3d8b" opacity="0.9">MOSHPIT</text>
+      <text x="600" y="186" fill="#f4f3ff">MOSHPIT</text>
+    </g>
+    <g clip-path="url(#mid)">
+      <text x="622" y="186" fill="#00e5ff" opacity="0.9">MOSHPIT</text>
+      <text x="610" y="186" fill="#ff3d8b" opacity="0.9">MOSHPIT</text>
+      <text x="616" y="186" fill="#f4f3ff">MOSHPIT</text>
+    </g>
+    <g clip-path="url(#bot)">
+      <text x="598" y="186" fill="#00e5ff" opacity="0.9">MOSHPIT</text>
+      <text x="586" y="186" fill="#ff3d8b" opacity="0.9">MOSHPIT</text>
+      <text x="592" y="186" fill="#f4f3ff">MOSHPIT</text>
+    </g>
+  </g>
+
+  <text x="600" y="262" text-anchor="middle" font-family="'Space Grotesk','Helvetica Neue',Arial,sans-serif" font-size="24" fill="#9a98b3" letter-spacing="6">BREAK VIDEO BEAUTIFULLY · IN YOUR BROWSER</text>
+</svg>
