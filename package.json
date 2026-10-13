@@ -1,0 +1,31 @@
+{
+  "name": "moshpit",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A creative, in-browser datamoshing studio",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/copy-ffmpeg-core.mjs && vite",
+    "build": "node scripts/copy-ffmpeg-core.mjs && vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e.mjs"
+  },
+  "dependencies": {
+    "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/ffmpeg": "0.12.15",
+    "@ffmpeg/util": "0.12.2"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "5.1.1",
+    "@tsconfig/svelte": "5.0.4",
+    "@types/node": "^22.15.30",
+    "playwright-core": "1.56.1",
+    "svelte": "5.38.6",
+    "svelte-check": "4.3.1",
+    "typescript": "5.8.3",
+    "vite": "6.3.5",
+    "vitest": "3.2.4"
+  }
+}
