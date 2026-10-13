@@ -15,6 +15,7 @@
   let result = $state<{ url: string; name: string; size: number; type: string } | null>(null);
   let error = $state('');
   let signal = { cancelled: false };
+  const hasPixel = $derived(store.project.effects.some((e) => e.enabled && ['vectorWarp', 'chroma', 'pixelSort'].includes(e.type)));
   const hasAudio = $derived(store.project.audio.source !== 'none' && store.project.clips.some((c) => c.hasAudio));
 
   const FORMATS = [
@@ -43,7 +44,7 @@
   }
   function cancel() {
     signal.cancelled = true;
-    ffmpeg.abort();
+    ffmpeg.cancel();
     running = false;
     stage = '';
   }
@@ -61,7 +62,7 @@
     </div>
 
     <div class="small muted">
-      Renders at {store.project.encoder.width}px (set in Encode → Export width){#if store.project.effects.some((e) => e.enabled && ['vectorWarp', 'chroma', 'pixelSort'].includes(e.type))}, including pixel effects{/if}.
+      Renders at {store.project.encoder.width}px (set in Encode → Export width){#if hasPixel}{#if o.format === 'avi'}. Pixel effects (Vector Warp, Chroma, Pixel Sort) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
     </div>
 
     {#if o.format !== 'avi'}

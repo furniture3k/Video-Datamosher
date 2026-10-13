@@ -12,3 +12,6 @@ import { ffmpeg } from './lib/ffmpeg';
 import * as mosh from './engine/mosh';
 import * as renderer from './lib/renderer';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { mosh, renderer });
+import * as flow from './lib/flow';
+import * as glmod from './lib/gl';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { flow, gl: glmod });

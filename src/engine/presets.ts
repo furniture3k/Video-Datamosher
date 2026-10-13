@@ -216,7 +216,8 @@ export function presetFromProject(project: Project, total: number, name: string)
     emoji: '⭐',
     description: 'Your saved preset',
     user: true,
-    encoder: { ...project.encoder, keyMarkers: [] },
+    // the look, not the size: keep resolution / aspect / markers out of presets
+    encoder: (({ width: _w, previewWidth: _p, aspect: _a, keyMarkers: _k, ...rest }) => rest)(project.encoder),
     effects: project.effects.map((e) => ({ type: e.type, start: e.start / t, end: Math.min(1, e.end / t), params: { ...e.params }, auto: structuredClone(e.auto) })),
   };
 }

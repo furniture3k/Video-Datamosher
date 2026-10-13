@@ -48,7 +48,7 @@ const step = async (name, fn) => {
 const waitRender = () =>
   page.waitForFunction(() => {
     const c = document.querySelector('.stage canvas');
-    return c && !c.classList.contains('hidden') && !document.querySelector('.busy');
+    return c && !c.classList.contains('hidden') && !document.querySelector('.busy') && !window.__moshpit.store.status.pending;
   }, null, { timeout: 180000 });
 
 try {
@@ -136,7 +136,7 @@ try {
   if (sample)
     await step('import a real file with audio + audio export', async () => {
       await page.locator('input[type=file][multiple]').setInputFiles(sample);
-      await page.getByText('dancer.mp4').first().waitFor({ timeout: 60000 });
+      await page.locator('.clip', { hasText: 'dancer.mp4' }).waitFor({ timeout: 60000 });
       await page.waitForTimeout(800);
       await waitRender();
       await page.locator('nav button', { hasText: 'Audio' }).click();

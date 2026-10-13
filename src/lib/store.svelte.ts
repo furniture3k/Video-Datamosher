@@ -1,6 +1,6 @@
 // Global app state (Svelte 5 runes), undo/redo, autosave and auto-render.
 import { newProject, type Project, type EffectInstance, type Clip } from '../engine/types';
-import { timelineFrames, clipStarts } from '../engine/mosh';
+import { timelineFrames, clipStarts, MAX_OUTPUT_FRAMES } from '../engine/mosh';
 import { renderPreview, Cancelled, type RenderResult } from './renderer';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
@@ -36,11 +36,11 @@ class Store {
     chaosIntensity: 0.5,
     welcome: !localGet('seenWelcome', false),
   });
-  status = $state({ busy: false, stage: '', progress: 0, error: '', engine: '' });
+  status = $state({ busy: false, pending: false, stage: '', progress: 0, error: '', engine: '' });
   toasts = $state<Toast[]>([]);
   private undoStack: string[] = [];
   private redoStack: string[] = [];
-  private last = '';
+  private last = JSON.stringify(newProject());
   private coalesceKey: string | null = null;
   private coalesceTimer = 0;
   historySize = $state({ undo: 0, redo: 0 });
@@ -110,7 +110,7 @@ class Store {
 
   undo() {
     const prev = this.undoStack.pop();
-    if (prev === undefined) return;
+    if (!prev) return;
     this.redoStack.push(this.last);
     this.project = JSON.parse(prev);
     this.last = prev;
@@ -135,10 +135,7 @@ class Store {
     const [s, e] = range ?? [0, total];
     const fx = makeEffect(type, s, Math.max(s + 1, e));
     if (EFFECTS[type].kind === 'bitstream' && type === 'splice') fx.params.from = Math.min(total - 1, Math.round(total / 2));
-    this.edit((p) => {
-      // keep the keyframe killer on top so it runs before other bitstream effects
-      p.effects.push(fx);
-    });
+    this.edit((p) => p.effects.push(fx));
     this.ui.selectedEffect = fx.id;
     this.ui.tab = 'effects';
     return fx;
@@ -175,6 +172,7 @@ class Store {
 
   scheduleRender(delay = 350) {
     clearTimeout(this.renderTimer);
+    this.status.pending = true;
     this.renderTimer = window.setTimeout(() => this.doRender(), delay);
   }
 
@@ -183,6 +181,7 @@ class Store {
   }
 
   async doRender(force = false) {
+    this.status.pending = false;
     if (!this.project.clips.length) {
       this.render = null;
       return;
@@ -206,6 +205,8 @@ class Store {
       }, signal);
       this.render = r;
       this.renderKey = key;
+      if (r.frames.length >= MAX_OUTPUT_FRAMES)
+        this.toast(`The mosh got very long, so it was cut at ${MAX_OUTPUT_FRAMES} frames. Lower Bloom/Stutter repeats to stay under it.`, 'error', 6000);
       if (this.ui.playhead >= r.frames.length) this.ui.playhead = Math.max(0, r.frames.length - 1);
       if (this.ui.loop && this.ui.loop[1] > r.frames.length) this.ui.loop = null;
     } catch (e) {
@@ -230,7 +231,6 @@ class Store {
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
       kvSet('autosave', $state.snapshot(this.project));
-      pruneFiles(this.project.clips.flatMap((c) => (c.source.kind === 'file' ? [c.source.fileId] : [])));
     }, 1000);
   }
 
@@ -241,6 +241,9 @@ class Store {
       this.last = this.snapshot();
       if (this.project.clips.length) this.scheduleRender(100);
     } else this.last = this.snapshot();
+    // Media no longer used by the saved project is removed on startup only, so undo
+    // within a session can always bring a deleted clip back.
+    pruneFiles(this.project.clips.flatMap((c) => (c.source.kind === 'file' ? [c.source.fileId] : [])));
   }
 
   setPref<K extends 'advanced' | 'autoRender' | 'theme'>(k: K, v: (typeof this.ui)[K]) {

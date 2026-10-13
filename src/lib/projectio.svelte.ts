@@ -1,7 +1,7 @@
 import { store } from './store.svelte';
 import { download, localGet, localSet } from './storage';
 import { newProject, type Project } from '../engine/types';
-import type { Preset } from '../engine/presets';
+import { uid, type Preset } from '../engine/presets';
 
 export function saveProjectFile() {
   const p = $state.snapshot(store.project) as Project;
@@ -17,14 +17,22 @@ export async function loadProjectFile(file: File) {
     if (p.version !== 1) throw new Error('Unknown project version');
     const base = newProject();
     const current = store.project.clips;
+    const used = new Set<string>();
+    const idMap = new Map<string, string>();
     const clips = p.clips
       .map((c) => {
         if (c.source.kind === 'generator') return c;
         const match = current.find((x) => x.source.kind === 'file' && x.source.name === c.source.name);
-        return match ? { ...c, id: match.id, source: match.source, thumb: match.thumb } : null;
+        if (!match) return null;
+        // the same media may appear twice: clip ids must stay unique
+        const id = used.has(match.id) ? uid() : match.id;
+        used.add(id);
+        idMap.set(c.id, id);
+        return { ...c, id, source: match.source, thumb: match.thumb };
       })
       .filter((c): c is NonNullable<typeof c> => !!c);
     const missing = p.clips.length - clips.length;
+    if (p.audio?.clipId) p.audio.clipId = idMap.get(p.audio.clipId) ?? (clips.some((c) => c.id === p.audio.clipId) ? p.audio.clipId : null);
     store.set({ ...base, ...p, clips: clips.length ? clips : current, encoder: { ...base.encoder, ...p.encoder }, decoder: { ...base.decoder, ...p.decoder }, audio: { ...base.audio, ...p.audio } });
     if (missing) store.toast(`${missing} clip(s) need their media. Add the files, then load the project again.`, 'error', 7000);
     else store.toast('Project loaded', 'ok');

@@ -22,6 +22,7 @@
   import LiveMode from './dialogs/LiveMode.svelte';
   import Welcome from './dialogs/Welcome.svelte';
   import { saveProjectFile } from './lib/projectio.svelte';
+  import { localSet } from './lib/storage';
 
   let dragging = $state(false);
 
@@ -37,14 +38,19 @@
 
   function inField(e: KeyboardEvent) {
     const t = e.target as HTMLElement;
-    return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+    if (!t) return false;
+    // switches/checkboxes keep focus after a click; only Space should go to them
+    if (t.tagName === 'INPUT' && ['checkbox', 'radio', 'button'].includes((t as HTMLInputElement).type)) return e.key === ' ';
+    return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
   }
 
   function runChaos() {
+    if (!store.project.clips.length) return store.toast('Add a clip first, then roll the dice.');
     store.set(chaos($state.snapshot(store.project) as never, store.totalFrames, randomSeed(), store.ui.chaosIntensity));
     store.toast('🎲 New random mosh rolled. Lock settings you like, then roll again.');
   }
   function runMutate() {
+    if (!store.project.effects.length) return store.toast('Nothing to mutate yet. Add an effect or roll Chaos first.');
     store.set(mutate($state.snapshot(store.project) as never, store.totalFrames, 0.25));
   }
 
@@ -69,10 +75,14 @@
     if (inField(e) || mod || e.altKey) return;
     if (store.ui.dialog === 'live') return;
     if (e.key === 'Escape') {
-      store.ui.dialog = null;
+      if (store.ui.dialog) store.ui.dialog = null;
+      else if (store.ui.welcome) {
+        store.ui.welcome = false;
+        localSet('seenWelcome', true);
+      }
       return;
     }
-    if (store.ui.dialog) return;
+    if (store.ui.dialog || store.ui.welcome) return;
     const n = store.render?.frames.length ?? 0;
     const step = e.shiftKey ? 10 : 1;
     switch (e.key) {
@@ -118,7 +128,7 @@
         store.ui.compare = store.ui.compare === 'off' ? 'split' : 'off';
         break;
       case 'e':
-        store.ui.dialog = 'export';
+        if (store.project.clips.length) store.ui.dialog = 'export';
         break;
       case 'p':
         store.ui.dialog = 'presets';
@@ -127,7 +137,7 @@
         store.ui.dialog = 'addEffect';
         break;
       case 'v':
-        store.ui.dialog = 'variations';
+        if (store.project.clips.length) store.ui.dialog = 'variations';
         break;
       case 'k': {
         const src = store.render?.frames[store.ui.playhead]?.src ?? 0;

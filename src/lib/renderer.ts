@@ -1,5 +1,5 @@
 // Orchestrates prep -> mosh -> decode -> post for previews and exports.
-import { ffmpeg } from './ffmpeg';
+import { ffmpeg, Cancelled } from './ffmpeg';
 import { getFile } from './storage';
 import { runPost, pixelEffectsOf } from './post';
 import { prepArgs, decodeToMjpegArgs, audioArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, even } from '../engine/args';
@@ -26,11 +26,7 @@ export interface Signal {
   cancelled: boolean;
 }
 
-export class Cancelled extends Error {
-  constructor() {
-    super('cancelled');
-  }
-}
+export { Cancelled };
 
 const check = (s?: Signal) => {
   if (s?.cancelled) throw new Cancelled();
@@ -168,11 +164,12 @@ export async function moshedAudioWav(project: Project, frames: Pick<Frame, 'src'
 export async function probeFile(blob: Blob, ext: string): Promise<{ info: ReturnType<typeof parseProbe>; thumb: string }> {
   const name = `probe.${ext}`;
   const data = new Uint8Array(await blob.arrayBuffer());
-  const r = await ffmpeg.run(['-i', name], { inputs: { [name]: async () => data }, keep: [name] });
+  const input = { [name]: async () => data };
+  const r = await ffmpeg.run(['-i', name], { inputs: input, keep: [name] });
   const info = parseProbe(r.log);
   let thumb = '';
   try {
-    const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', name, '-frames:v', '1', '-vf', 'scale=192:-2', '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { outputs: ['thumb.jpg'] });
+    const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', name, '-frames:v', '1', '-vf', 'scale=192:-2', '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { inputs: input, outputs: ['thumb.jpg'] });
     thumb = URL.createObjectURL(new Blob([t.out['thumb.jpg'] as BlobPart], { type: 'image/jpeg' }));
   } catch {
     /* thumbnail optional */

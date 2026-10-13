@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
   import { originalFrames, moshedAudioWav, type RenderResult } from '../lib/renderer';
   import { download } from '../lib/storage';
@@ -18,10 +19,17 @@
     if (i < 0 || i >= jpegs.length) return null;
     const k = tag + i;
     let p = cache.get(k);
-    if (!p) {
+    if (p) {
+      // most-recently-used goes to the end, so eviction never hits the frame on screen
+      cache.delete(k);
+      cache.set(k, p);
+    } else {
       p = createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
       cache.set(k, p);
-      if (cache.size > 240) {
+      // keep decoded frames within ~160 MB
+      const r = store.render;
+      const limit = r ? Math.max(24, Math.min(240, Math.floor(160e6 / (r.w * r.h * 4 * (store.ui.compare !== 'off' ? 2 : 1))))) : 120;
+      if (cache.size > limit) {
         const first = cache.keys().next().value!;
         cache.get(first)!.then((b) => b.close());
         cache.delete(first);
@@ -50,8 +58,14 @@
     const mode = store.ui.compare;
     const src = r.frames[i]?.src ?? i;
     const orig = mode !== 'off' && originals ? bitmap(originals, Math.min(src, originals.length - 1), 'o') : null;
-    const [a, b] = await Promise.all([main, orig]);
+    let a: ImageBitmap, b: ImageBitmap | null;
+    try {
+      [a, b] = await Promise.all([main, orig]);
+    } catch {
+      return;
+    }
     if (tok !== drawToken) return;
+    if (!a.width || (b && !b.width)) return; // bitmap was closed meanwhile
     const w = a.width;
     const h = a.height;
     const W = mode === 'side' ? w * 2 : w;
@@ -138,52 +152,69 @@
   let t0 = 0;
   let f0 = 0;
   $effect(() => {
+    // Only these restart playback; everything else is read untracked so the
+    // loop isn't torn down on every frame.
     const playing = store.ui.playing;
     const r = store.render;
+    const buf = abuf;
+    const mute = muted;
+    const speed = store.ui.speed;
     if (!playing || !r) {
       cancelAnimationFrame(raf);
       stopAudio();
       return;
     }
-    const n = r.frames.length;
-    const range = (): [number, number] => (store.ui.loop && store.ui.loopOn ? store.ui.loop : [0, n]);
-    if (store.ui.playhead >= range()[1] - 1) store.ui.playhead = range()[0];
-    const startAudio = () => {
-      stopAudio();
-      if (!abuf || muted || !actx || store.ui.speed !== 1) return;
-      actx.resume();
-      srcNode = actx.createBufferSource();
-      srcNode.buffer = abuf;
-      srcNode.connect(actx.destination);
-      srcNode.start(0, store.ui.playhead / r.fps);
-    };
-    t0 = performance.now();
-    f0 = store.ui.playhead;
-    startAudio();
-    const tick = (now: number) => {
-      const [a, b] = range();
-      let f = f0 + Math.floor(((now - t0) / 1000) * r.fps * store.ui.speed);
-      if (f >= b) {
-        if (store.ui.loopOn || store.ui.loop) {
-          f0 = a;
+    return untrack(() => {
+      const n = r.frames.length;
+      const range = (): [number, number] => (store.ui.loop && store.ui.loopOn ? store.ui.loop : [0, n]);
+      const [a0, b0] = range();
+      if (store.ui.playhead >= b0 - 1 || store.ui.playhead < a0) store.ui.playhead = a0;
+      const startAudio = () => {
+        stopAudio();
+        if (!buf || mute || !actx || speed !== 1) return;
+        actx.resume();
+        srcNode = actx.createBufferSource();
+        srcNode.buffer = buf;
+        srcNode.connect(actx.destination);
+        srcNode.start(0, Math.min(buf.duration, store.ui.playhead / r.fps));
+      };
+      t0 = performance.now();
+      f0 = store.ui.playhead;
+      startAudio();
+      let expected = f0;
+      const tick = (now: number) => {
+        const [a, b] = range();
+        if (store.ui.playhead !== expected) {
+          // user seeked while playing: continue from there
+          f0 = store.ui.playhead;
           t0 = now;
-          f = a;
-          store.ui.playhead = a;
           startAudio();
-        } else {
-          store.ui.playhead = n - 1;
-          store.ui.playing = false;
-          return;
         }
-      }
-      if (f !== store.ui.playhead) store.ui.playhead = f;
+        let f = f0 + Math.floor(((now - t0) / 1000) * r.fps * speed);
+        if (f >= b) {
+          if (store.ui.loopOn) {
+            f0 = a;
+            t0 = now;
+            f = a;
+            store.ui.playhead = a;
+            expected = a;
+            startAudio();
+          } else {
+            store.ui.playhead = n - 1;
+            store.ui.playing = false;
+            return;
+          }
+        }
+        if (f !== store.ui.playhead) store.ui.playhead = f;
+        expected = f;
+        raf = requestAnimationFrame(tick);
+      };
       raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      stopAudio();
-    };
+      return () => {
+        cancelAnimationFrame(raf);
+        stopAudio();
+      };
+    });
   });
 
   const n = $derived(store.render?.frames.length ?? 0);

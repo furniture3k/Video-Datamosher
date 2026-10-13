@@ -45,9 +45,10 @@ const r3 = (n: number) => Math.round(n * 1000) / 1000;
 export function videoFilter(clips: Clip[], fps: number, w: number, h: number): string {
   const parts = clips.map((c, i) => {
     const f = [`trim=start=${r3(c.in)}:end=${r3(c.out)}`, 'setpts=PTS-STARTPTS'];
-    if (c.reverse) f.push('reverse');
     if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
     f.push(`fps=${fps}`, scaleChain(c, w, h), 'setsar=1', 'format=yuv420p');
+    // reverse buffers the whole clip in memory, so do it after scaling down
+    if (c.reverse) f.push('reverse');
     return `[${i}:v]${f.join(',')}[v${i}]`;
   });
   return `${parts.join(';')};${clips.map((_, i) => `[v${i}]`).join('')}concat=n=${clips.length}:v=1:a=0[vout]`;
@@ -63,6 +64,8 @@ export function encoderArgs(enc: EncoderSettings, keyTimes: number[]): string[] 
   } else {
     a.push('-c:v', enc.codec === 'mpeg2' ? 'mpeg2video' : 'mpeg1video');
     a.push('-motion_est', enc.motionEst);
+    // allow non-standard frame rates (8/12/15 fps) for MPEG-1/2
+    a.push('-strict', '-1');
   }
   a.push('-q:v', String(enc.quality), '-qmin', String(enc.quality), '-qmax', String(enc.quality));
   a.push('-g', String(Math.max(1, enc.gop)), '-bf', String(enc.bframes));
@@ -101,8 +104,14 @@ export function prepArgs(project: Project, width: number, out = 'prep.avi'): str
   ];
 }
 
+/**
+ * Decoding a moshed stream makes the decoder report an error for nearly every macroblock.
+ * Keep the log quiet (only fatal errors) and report progress via -progress instead.
+ */
+export const QUIET = ['-loglevel', 'fatal', '-progress', 'pipe:1', '-stats_period', '0.5'];
+
 export function decoderInputArgs(d: DecoderSettings): string[] {
-  const a: string[] = [];
+  const a: string[] = [...QUIET];
   const ec = [d.guessMvs && 'guess_mvs', d.deblock && 'deblock', d.favorInter && 'favor_inter'].filter(Boolean).join('+');
   a.push('-ec', ec || '0');
   if (d.ignoreErrors) a.push('-err_detect', 'ignore_err');

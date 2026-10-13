@@ -35,6 +35,9 @@ export function clipStarts(clips: Clip[], fps: number): number[] {
 export const timelineFrames = (clips: Clip[], fps: number) =>
   Math.max(1, Math.round(clips.reduce((s, c) => s + clipDuration(c), 0) * fps));
 
+/** Hard cap on output length (about 6 minutes at 24 fps). */
+export const MAX_OUTPUT_FRAMES = 9000;
+
 export function activeEffects(effects: EffectInstance[]): EffectInstance[] {
   const solo = effects.some((e) => e.solo && e.enabled);
   return effects.filter((e) => e.enabled && (!solo || e.solo) && EFFECTS[e.type]);
@@ -50,6 +53,8 @@ export function applyBitstream(prep: Prepared, project: Project, cuts: number[])
   }
   // The decoder needs a real keyframe (with headers) first.
   if (frames.length === 0 || frames[0].type !== 'I') frames.unshift(prep.frames[0]);
+  // Safety net against runaway stacks (e.g. bloom on every frame x 200) eating all memory.
+  if (frames.length > MAX_OUTPUT_FRAMES) frames.length = MAX_OUTPUT_FRAMES;
   return frames;
 }
 

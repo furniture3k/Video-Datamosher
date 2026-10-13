@@ -72,8 +72,22 @@ export class GL {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
 
+  private scratch: HTMLCanvasElement | null = null;
+
   upload(t: Target, src: TexImageSource) {
     const gl = this.gl;
+    // WebGL ignores UNPACK_FLIP_Y for ImageBitmap; route those through a 2D canvas
+    // (which is also scaled to the target size) so every source is flipped the same way.
+    if (typeof ImageBitmap !== 'undefined' && src instanceof ImageBitmap) {
+      this.scratch ??= document.createElement('canvas');
+      const c = this.scratch;
+      if (c.width !== t.w || c.height !== t.h) {
+        c.width = t.w;
+        c.height = t.h;
+      }
+      c.getContext('2d')!.drawImage(src, 0, 0, t.w, t.h);
+      src = c;
+    }
     gl.bindTexture(gl.TEXTURE_2D, t.tex);
     gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, src);
   }

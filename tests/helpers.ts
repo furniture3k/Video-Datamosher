@@ -18,7 +18,7 @@ export function tmpdir(): string {
 
 export function ff(cwd: string, args: string[]): string {
   try {
-    return execFileSync('ffmpeg', ['-hide_banner', '-nostdin', '-y', ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+    return execFileSync('ffmpeg', ['-hide_banner', '-nostdin', '-y', ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 }).toString();
   } catch (e) {
     const err = e as { stderr?: Buffer };
     throw new Error(`ffmpeg failed: ${args.join(' ')}\n${err.stderr?.toString().slice(-3000)}`);

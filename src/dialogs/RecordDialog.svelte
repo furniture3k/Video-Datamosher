@@ -14,6 +14,7 @@
   let timer = 0;
   let error = $state('');
   let withAudio = $state(true);
+  let discard = false;
 
   async function start(kind: 'camera' | 'screen') {
     error = '';
@@ -40,6 +41,7 @@
     recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     recorder.onstop = async () => {
+      if (discard) return;
       const type = recorder?.mimeType || 'video/webm';
       const ext = type.includes('mp4') ? 'mp4' : 'webm';
       const file = new File(chunks, `recording-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}.${ext}`, { type });
@@ -59,6 +61,8 @@
     recorder?.stop();
   }
   onDestroy(() => {
+    // closing the dialog mid-recording throws the recording away
+    discard = true;
     clearInterval(timer);
     if (recorder?.state === 'recording') recorder.stop();
     stop();

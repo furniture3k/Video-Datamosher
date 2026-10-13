@@ -87,12 +87,13 @@ void main(){
   v = vec2(c*v.x - s*v.y, s*v.x + c*v.y);
   if (swapXY > 0.5) v = v.yx;
   vec2 p = uv * size;
-  v -= drift;
+  // vectors are sample offsets in texture space (y up): content moving by m means v = -m.
+  // drift.y > 0 means "flow downwards on screen", i.e. sample from above.
+  v += vec2(-drift.x, drift.y);
   v += turb * vec2(sin(p.y*0.045 + time*1.7) + sin(p.x*0.021 - time), cos(p.x*0.04 + time*1.3) + cos(p.y*0.017 + time*0.7));
   if (quant > 0.) v = floor(v/quant + 0.5) * quant;
-  // texture y axis is flipped relative to pixel rows
-  vec2 off = vec2(v.x, -v.y) / size;
-  vec2 dd = vec2(d.x, -d.y) / size;
+  vec2 off = v / size;
+  vec2 dd = d / size;
   vec3 moved = texture(canvasTex, uv + off).rgb;
   vec3 res = texture(cur, uv).rgb - texture(prev, uv + dd).rgb;
   vec3 r = moved + res * residual;

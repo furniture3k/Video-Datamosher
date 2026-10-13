@@ -4,6 +4,12 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 type LogFn = (line: string) => void;
 
 export class EngineCrash extends Error {}
+/** Thrown when a job is killed on purpose (user cancel). */
+export class Cancelled extends Error {
+  constructor() {
+    super('cancelled');
+  }
+}
 
 class FFmpegService {
   private ff: FFmpeg | null = null;
@@ -31,15 +37,24 @@ class FFmpegService {
         this.logListeners.forEach((l) => l(message));
       });
       const base = new URL('ffmpeg/', document.baseURI).href;
-      await ff.load({ coreURL: base + 'ffmpeg-core.js', wasmURL: base + 'ffmpeg-core.wasm' });
+      try {
+        await ff.load({ coreURL: base + 'ffmpeg-core.js', wasmURL: base + 'ffmpeg-core.wasm' });
+      } catch (e) {
+        this.onStatus('');
+        throw new Error('Could not load the video engine (' + ((e as Error)?.message ?? e) + '). Check your connection and reload.');
+      }
       this.ff = ff;
       this.ready = true;
       this.files.clear();
       this.onStatus('');
       return ff;
     })();
-    this.loading.finally(() => (this.loading = null));
-    return this.loading;
+    const p = this.loading;
+    p.then(
+      () => (this.loading = null),
+      () => (this.loading = null),
+    );
+    return p;
   }
 
   warmup() {
@@ -58,7 +73,15 @@ class FFmpegService {
     return p;
   }
 
-  /** Kill the running ffmpeg (used to cancel stale renders). Files are lost. */
+  private cancelGen = 0;
+
+  /** User cancel: kill the running job without retrying it. */
+  cancel() {
+    this.cancelGen++;
+    this.abort();
+  }
+
+  /** Kill the running ffmpeg instance. Files are lost. */
   abort() {
     if (this.ff) {
       try {
@@ -87,9 +110,11 @@ class FFmpegService {
     opts: { inputs?: Record<string, () => Promise<Uint8Array>>; outputs?: string[]; keep?: string[]; onFrame?: (n: number) => void } = {},
   ): Promise<{ code: number; log: string; out: Record<string, Uint8Array> }> {
     return this.serial(async () => {
+      const gen = this.cancelGen;
       try {
         return await this.runOnce(args, opts);
       } catch (e) {
+        if (gen !== this.cancelGen) throw new Cancelled();
         if (!(e instanceof EngineCrash)) throw e;
         // fresh instance, one retry
         console.warn('ffmpeg crashed, retrying on a fresh instance:', e.message);
