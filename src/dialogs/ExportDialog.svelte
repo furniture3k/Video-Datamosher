@@ -19,7 +19,7 @@
 
   const FORMATS = [
     { id: 'mp4', label: 'MP4', desc: 'H.264, plays everywhere' },
-    { id: 'webm', label: 'WebM', desc: 'VP9, good for the web' },
+    { id: 'webm', label: 'WebM', desc: 'VP8 + Vorbis, open format' },
     { id: 'gif', label: 'GIF', desc: 'Loops, no sound' },
     { id: 'avi', label: 'Raw AVI', desc: 'The actual broken file' },
     { id: 'png', label: 'PNG frames', desc: 'Zip of every frame' },

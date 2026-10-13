@@ -154,7 +154,7 @@
     const n = r.frames.length;
     const w = width / n;
     r.frames.forEach((f, i) => {
-      ctx.fillStyle = f.type === 'I' ? css('--accent2') : TAG_COLORS[f.tag] || css('--panel2');
+      ctx.fillStyle = f.type === 'I' ? css('--accent2') : TAG_COLORS[f.tag] || css('--faint');
       ctx.fillRect(i * w, f.type === 'I' ? 2 : 6, Math.max(w - (w > 3 ? 0.5 : 0), 0.6), f.type === 'I' ? 22 : 14);
     });
   });

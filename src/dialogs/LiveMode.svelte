@@ -33,6 +33,9 @@
   let recorder: MediaRecorder | null = null;
   let chunks: Blob[] = [];
   let fps = $state(0);
+  // video frames are scaled to the engine size through this 2D canvas
+  const scaler = document.createElement('canvas');
+  const sctx = scaler.getContext('2d')!;
 
   const defs = vectorWarp.params;
 
@@ -45,6 +48,8 @@
     gl?.dispose(input, tmp);
     canvas.width = W;
     canvas.height = H;
+    scaler.width = W;
+    scaler.height = H;
     gl ??= new GL(canvas);
     input = gl.target(W, H);
     tmp = gl.target(W, H);
@@ -93,13 +98,15 @@
     if (!video || video.readyState < 2 || !video.videoWidth) return;
     setup(video.videoWidth, video.videoHeight);
     if (!gl || !engine || !input || !tmp) return;
-    gl.upload(input, video);
+    sctx.drawImage(video, 0, 0, scaler.width, scaler.height);
+    gl.upload(input, scaler);
     push.x *= 0.9;
     push.y *= 0.9;
     const params = { ...p, drift: p.drift + push.x, driftY: p.driftY + push.y };
     const out = engine.step(input, params);
     if (pendingImage) {
-      gl.upload(tmp, pendingImage);
+      sctx.drawImage(pendingImage, 0, 0, scaler.width, scaler.height);
+      gl.upload(tmp, scaler);
       engine.setCanvas(tmp);
       pendingImage.close();
       pendingImage = null;

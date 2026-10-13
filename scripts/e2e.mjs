@@ -4,6 +4,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
+import { execFileSync } from 'node:child_process';
+import os from 'node:os';
 
 const dist = path.resolve('dist');
 const shots = path.resolve(process.env.SHOTS || 'test-results');
@@ -21,7 +23,18 @@ const server = http
   .listen(0);
 const url = `http://localhost:${server.address().port}/`;
 const exe = process.env.CHROMIUM || ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => fs.existsSync(p));
-const browser = await chromium.launch({ executablePath: exe, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({
+  executablePath: exe,
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
+});
+// a real input file with sound (needs native ffmpeg; skipped otherwise)
+let sample = null;
+try {
+  sample = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-e2e-')), 'dancer.mp4');
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=s=320x180:r=25:d=3', '-f', 'lavfi', '-i', 'sine=f=330:d=3', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', sample]);
+} catch {
+  sample = null;
+}
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
@@ -119,6 +132,47 @@ try {
     await d.saveAs(p);
     if (fs.statSync(p).size < 1000) throw new Error('mp4 too small');
     await page.keyboard.press('Escape');
+  });
+  if (sample)
+    await step('import a real file with audio + audio export', async () => {
+      await page.locator('input[type=file][multiple]').setInputFiles(sample);
+      await page.getByText('dancer.mp4').first().waitFor({ timeout: 60000 });
+      await page.waitForTimeout(800);
+      await waitRender();
+      await page.locator('nav button', { hasText: 'Audio' }).click();
+      await page.getByText('Bit depth').waitFor();
+      await page.keyboard.press('e');
+      await page.getByRole('button', { name: /^WebM/ }).click();
+      const dl = page.waitForEvent('download', { timeout: 300000 });
+      await page.getByRole('button', { name: /Export WEBM/ }).click();
+      const d = await dl;
+      const p = path.join(shots, d.suggestedFilename());
+      await d.saveAs(p);
+      try {
+        const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', p]).toString();
+        if (!probe.includes('audio')) throw new Error('export has no audio stream: ' + probe);
+      } catch (e) {
+        if (String(e.message).includes('no audio')) throw e;
+      }
+      await page.keyboard.press('Escape');
+    });
+  await step('live mode with (fake) webcam', async () => {
+    await page.getByRole('button', { name: '◉ Live' }).click();
+    await page.getByRole('button', { name: '📷 Webcam' }).click();
+    await page.waitForTimeout(3000);
+    await page.keyboard.press('4');
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: path.join(shots, '7-live.png') });
+    const fps = await page.locator('.side .mono').first().textContent();
+    if (!/[1-9]\d* fps/.test(fps ?? '')) throw new Error('live mode not running: ' + fps);
+    await page.keyboard.press('Escape');
+  });
+  await step('phone layout', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(shots, '8-mobile.png'), fullPage: true });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+    if (overflow) throw new Error('horizontal overflow on phone width');
   });
   const real = errors.filter((e) => !/favicon|Failed to load resource/.test(e));
   if (real.length) throw new Error('page errors:\n' + real.join('\n'));

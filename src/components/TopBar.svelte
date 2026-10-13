@@ -154,6 +154,24 @@
     color: var(--text);
     font-weight: 700;
   }
+  @media (max-width: 860px) {
+    header {
+      padding: 8px 16px;
+    }
+    .creative {
+      flex-wrap: wrap;
+      width: 100%;
+    }
+    .creative button {
+      flex: 1;
+    }
+    .name {
+      width: 120px;
+    }
+    .spacer {
+      display: none;
+    }
+  }
   .menu-wrap {
     position: relative;
   }

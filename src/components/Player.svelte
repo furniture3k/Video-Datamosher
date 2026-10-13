@@ -302,10 +302,15 @@
     background: repeating-conic-gradient(var(--bg2) 0 25%, var(--bg) 0 50%) 0 0 / 24px 24px;
     border-radius: var(--radius) var(--radius) 0 0;
   }
+  .stage {
+    overflow: hidden;
+  }
   canvas {
+    position: absolute;
+    inset: 0;
+    margin: auto;
     max-width: 100%;
     max-height: 100%;
-    image-rendering: auto;
     box-shadow: var(--shadow);
   }
   canvas.split {

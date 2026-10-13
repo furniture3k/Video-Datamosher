@@ -263,6 +263,14 @@
     }
     .center {
       order: -1;
+      height: 62vw;
+      min-height: 280px;
+    }
+    .right {
+      height: 75vh;
+    }
+    .left {
+      max-height: 60vh;
     }
   }
 </style>

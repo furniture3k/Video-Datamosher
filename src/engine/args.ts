@@ -212,8 +212,9 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
     a.push('-c:v', 'libx264', '-preset', o.preset, '-crf', String(o.crf), '-movflags', '+faststart');
     if (withAudio) a.push('-c:a', 'aac', '-b:a', '192k');
   } else {
-    a.push('-c:v', 'libvpx-vp9', '-crf', String(Math.min(63, o.crf + 12)), '-b:v', '0', '-deadline', 'realtime', '-cpu-used', '8', '-row-mt', '1');
-    if (withAudio) a.push('-c:a', 'libopus', '-b:a', '160k');
+    // VP8: the VP9 encoder in ffmpeg.wasm crashes, VP8 is solid
+    a.push('-c:v', 'libvpx', '-crf', String(Math.min(63, Math.max(4, o.crf - 4))), '-b:v', '12M', '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
+    if (withAudio) a.push('-c:a', 'libvorbis', '-q:a', '6');
   }
   if (withAudio) a.push('-shortest');
   a.push(out);

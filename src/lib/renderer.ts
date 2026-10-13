@@ -168,7 +168,7 @@ export async function moshedAudioWav(project: Project, frames: Pick<Frame, 'src'
 export async function probeFile(blob: Blob, ext: string): Promise<{ info: ReturnType<typeof parseProbe>; thumb: string }> {
   const name = `probe.${ext}`;
   const data = new Uint8Array(await blob.arrayBuffer());
-  const r = await ffmpeg.run(['-i', name], { inputs: { [name]: async () => data } });
+  const r = await ffmpeg.run(['-i', name], { inputs: { [name]: async () => data }, keep: [name] });
   const info = parseProbe(r.log);
   let thumb = '';
   try {
