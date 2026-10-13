@@ -136,3 +136,14 @@ Each phase ends with a working, tested, committed app.
 - **Memory:** browsers cap wasm memory, so very long or 4K clips will need proxies or chunked processing.
 - **Motion-vector editing** requires parsing the MPEG-4 bitstream at macroblock level. This is the hardest part, so it is scheduled last and isolated.
 - Moshed AVIs play differently in different players. That is why the app always shows (and exports) the FFmpeg-decoded result, which looks the same everywhere.
+
+---
+
+## 7. Build status (all phases done)
+
+Everything above has been built, with these deliberate changes from the plan:
+
+- **Motion-vector editing** is done with a GPU **flow engine** (Vector Warp) instead of rewriting MPEG-4 macroblock syntax. It gives the same controls (amplify, rotate, swap, quantise, noise) on any footage, runs in real time, and also powers Live Mode. Rewriting the real bitstream vectors stays a possible future addition.
+- **WebM export uses VP8 + Vorbis**, because the VP9 and Opus encoders in ffmpeg.wasm crash.
+- **Native "turbo mode"** (desktop FFmpeg) was not built. The browser version handles typical clips (≤30 s at ≤720p) fine.
+- Extra additions: procedural clip generators, webcam/screen recording, mosh share codes, and audio that follows the mosh.
