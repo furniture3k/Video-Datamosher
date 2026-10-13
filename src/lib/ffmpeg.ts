@@ -157,7 +157,9 @@ class FFmpegService {
           else if (performance.now() - lastActivity > this.stallMs) rej(new EngineCrash('video engine stalled'));
         }, 500);
       });
-      code = await Promise.race([ff.exec(['-hide_banner', '-nostdin', '-y', ...args]), stalled]);
+      // ffmpeg.wasm keeps global options (like the log level) between runs, so always set them
+      const level = args.includes('-loglevel') ? [] : ['-loglevel', 'info'];
+      code = await Promise.race([ff.exec(['-hide_banner', '-nostdin', '-y', ...level, ...args]), stalled]);
     } catch (e) {
       this.abort();
       if (e instanceof EngineCrash) throw e;
