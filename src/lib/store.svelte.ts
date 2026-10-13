@@ -37,7 +37,7 @@ class Store {
     dialog: null as null | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
-    welcome: !localGet('seenWelcome', false),
+    welcome: false,
   });
   status = $state({ busy: false, pending: false, stage: '', progress: 0, error: '', engine: '' });
   toasts = $state<Toast[]>([]);
@@ -209,7 +209,7 @@ class Store {
       this.render = r;
       this.renderKey = key;
       if (r.frames.length >= MAX_OUTPUT_FRAMES)
-        this.toast(`The mosh got very long, so it was cut at ${MAX_OUTPUT_FRAMES} frames. Lower Bloom/Stutter repeats to stay under it.`, 'error', 6000);
+        this.toast(`Output capped at ${MAX_OUTPUT_FRAMES} frames. Lower the Bloom or Stutter repeats.`, 'error', 6000);
       if (this.ui.playhead >= r.frames.length) this.ui.playhead = Math.max(0, r.frames.length - 1);
       if (this.ui.loop && this.ui.loop[1] > r.frames.length) this.ui.loop = null;
     } catch (e) {

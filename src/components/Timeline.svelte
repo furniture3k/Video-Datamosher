@@ -2,6 +2,7 @@
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
   import { clipDuration } from '../engine/mosh';
+  import Icon from './Icon.svelte';
 
   let scroller: HTMLDivElement;
   let viewW = $state(800);
@@ -123,11 +124,11 @@
     if (r)
       r.prep.frames.forEach((f, i) => {
         if (f.type === 'I') {
-          ctx.fillStyle = css('--accent2');
-          ctx.fillRect(x(i), 3, Math.max(1.5, ppf), 12);
+          ctx.fillStyle = css('--f-i');
+          ctx.fillRect(x(i), 4, Math.max(1, ppf), 10);
         }
       });
-    ctx.fillStyle = css('--accent3');
+    ctx.fillStyle = css('--accent');
     for (const m of store.project.encoder.keyMarkers) {
       ctx.beginPath();
       ctx.moveTo(x(m), 2);
@@ -138,7 +139,7 @@
     }
   });
 
-  const TAG_COLORS: Record<string, string> = { orig: '', dup: '#ffb84d', glitch: '#ffe14d', moved: '#4dd8ff', spliced: '#5cff5c', replaced: '#ff7de9' };
+  const TAG_VARS: Record<string, string> = { orig: '--f-p', dup: '--f-dup', glitch: '--f-glitch', moved: '--f-moved', spliced: '--f-spliced', replaced: '--f-replaced' };
   $effect(() => {
     const r = store.render;
     void width;
@@ -154,8 +155,8 @@
     const n = r.frames.length;
     const w = width / n;
     r.frames.forEach((f, i) => {
-      ctx.fillStyle = f.type === 'I' ? css('--accent2') : TAG_COLORS[f.tag] || css('--faint');
-      ctx.fillRect(i * w, f.type === 'I' ? 2 : 6, Math.max(w - (w > 3 ? 0.5 : 0), 0.6), f.type === 'I' ? 22 : 14);
+      ctx.fillStyle = f.type === 'I' ? css('--f-i') : css(TAG_VARS[f.tag] ?? '--f-p');
+      ctx.fillRect(i * w, f.type === 'I' ? 4 : 8, Math.max(w - (w > 3 ? 1 : 0), 0.6), f.type === 'I' ? 18 : 10);
     });
   });
 
@@ -187,24 +188,25 @@
   const resultX = $derived(nOut ? (store.ui.playhead / nOut) * width : 0);
 </script>
 
-<div class="tl panel">
+<div class="tl">
   <div class="gutter">
     <div class="g-ruler row">
-      <button class="icon ghost" title="Zoom out" onclick={() => (store.ui.zoom = Math.max(1, store.ui.zoom / 1.5))}>－</button>
-      <button class="icon ghost" title="Zoom in (Ctrl+wheel)" onclick={() => (store.ui.zoom = Math.min(40, store.ui.zoom * 1.5))}>＋</button>
+      <span class="label grow">Timeline</span>
+      <button class="icon ghost" title="Zoom out" aria-label="Zoom out" onclick={() => (store.ui.zoom = Math.max(1, store.ui.zoom / 1.5))}><span class="zt">−</span></button>
+      <button class="icon ghost" title="Zoom in  Ctrl+wheel" aria-label="Zoom in" onclick={() => (store.ui.zoom = Math.min(40, store.ui.zoom * 1.5))}><span class="zt">+</span></button>
     </div>
     <div class="g-row">Clips</div>
-    <div class="g-row small keys" title="Blue = keyframes in the prepared video. Yellow diamonds = extra keyframes you forced (double-click the row or press K)">Keyframes</div>
+    <div class="g-row keys" title="Blue ticks: keyframes in the source. Red diamonds: keyframes you forced (double-click the lane or press K).">Keyframes</div>
     <div class="g-fx">
       {#each store.project.effects as fx (fx.id)}
         <button class="g-row fxname ghost" class:sel={store.ui.selectedEffect === fx.id} class:off={!fx.enabled} onclick={() => ((store.ui.selectedEffect = fx.id), (store.ui.tab = 'effects'))}>
-          <span style="color:{EFFECTS[fx.type]?.color}">{EFFECTS[fx.type]?.icon}</span>
-          {fx.name || EFFECTS[fx.type]?.name}
+          <span class="code" style="--c:{EFFECTS[fx.type]?.color}">{EFFECTS[fx.type]?.icon}</span>
+          <span class="fxlabel">{fx.name || EFFECTS[fx.type]?.name}</span>
         </button>
       {/each}
-      <button class="g-row add ghost" onclick={() => (store.ui.dialog = 'addEffect')} title="Add effect (A)">＋ Add effect</button>
+      <button class="g-row add ghost" onclick={() => (store.ui.dialog = 'addEffect')} title="Add effect  A"><Icon name="plus" size={12} />Add effect</button>
     </div>
-    <div class="g-row result" title="The output after moshing, frame by frame. Blue = keyframe, grey = motion frame, orange = duplicated, yellow = glitched, cyan = moved, green = transferred.">Result</div>
+    <div class="g-row result" title="Output frames after moshing. Blue: keyframe. Grey: motion. Amber: repeated. Yellow: glitched. Teal: moved. Green: transferred.">Output</div>
   </div>
 
   <div class="scroller" bind:this={scroller} bind:clientWidth={viewW} onwheel={onWheel}>
@@ -244,7 +246,7 @@
               title="{def?.name}: frames {fx.start}–{fx.end}. Drag to move, drag edges to resize, hold Shift to disable snapping."
             >
               <div class="h l" onpointerdown={(e) => barDown(e, fx.id, 'l')} onpointermove={barMove} onpointerup={barUp}></div>
-              <span class="lbl">{def?.icon} {fx.name || def?.name}{Object.keys(fx.auto).length ? ' 〰' : ''}</span>
+              <span class="lbl"><span class="mono">{def?.icon}</span> {fx.name || def?.name}{#if Object.keys(fx.auto).length}<Icon name="curve" size={11} />{/if}</span>
               <div class="h r" onpointerdown={(e) => barDown(e, fx.id, 'r')} onpointermove={barMove} onpointerup={barUp}></div>
             </div>
           </div>
@@ -284,75 +286,91 @@
 <style>
   .tl {
     display: flex;
-    min-height: 180px;
+    min-height: 168px;
     max-height: 300px;
     overflow-x: hidden;
     overflow-y: auto;
     align-items: flex-start;
+    background: var(--surface);
   }
   .gutter {
-    width: 150px;
+    width: 156px;
     flex: none;
     border-right: 1px solid var(--line);
     display: flex;
     flex-direction: column;
-    background: var(--panel);
+    background: var(--surface);
     z-index: 2;
+    position: sticky;
+    left: 0;
   }
   .g-ruler {
-    height: 22px;
+    height: 24px;
     border-bottom: 1px solid var(--line);
-    padding: 0 4px;
+    padding: 0 4px 0 10px;
+    gap: 0;
   }
   .g-ruler button {
-    padding: 0 6px;
-    min-width: 0;
-    font-size: 12px;
+    width: 22px;
+    height: 20px;
+  }
+  .zt {
+    font: 14px var(--mono);
+    line-height: 1;
   }
   .g-row {
     height: 24px;
     display: flex;
     align-items: center;
-    padding: 0 8px;
+    gap: 6px;
+    padding: 0 10px;
     font-size: 12px;
-    color: var(--muted);
+    color: var(--text-2);
     border-bottom: 1px solid var(--line);
     white-space: nowrap;
     overflow: hidden;
   }
   .g-row.keys {
     height: 18px;
+    font-size: 11px;
+    color: var(--text-3);
   }
   .g-fx {
     flex: none;
   }
   .fxname {
     width: 100%;
+    height: 24px;
     border-radius: 0;
-    text-align: left;
+    justify-content: flex-start;
     color: var(--text);
-    gap: 6px;
     border: none;
     border-bottom: 1px solid var(--line);
   }
+  .fxlabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .fxname.sel {
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    background: var(--surface-2);
+    box-shadow: inset 2px 0 0 var(--accent);
   }
   .fxname.off {
-    opacity: 0.45;
+    opacity: 0.4;
   }
   .add {
     width: 100%;
+    height: 24px;
     border: none;
     border-radius: 0;
-    color: var(--accent);
+    justify-content: flex-start;
+    color: var(--text-3);
   }
   .result {
     height: 30px;
     border-top: 1px solid var(--line);
     border-bottom: none;
-    color: var(--text);
-    font-weight: 700;
+    color: var(--text-2);
   }
   .scroller {
     flex: 1;
@@ -360,6 +378,7 @@
     overflow-y: hidden;
     position: relative;
     min-width: 0;
+    background: var(--bg);
   }
   .content {
     position: relative;
@@ -367,20 +386,25 @@
     flex-direction: column;
   }
   .ruler {
-    height: 22px;
+    height: 24px;
     border-bottom: 1px solid var(--line);
     position: relative;
     cursor: ew-resize;
     flex: none;
+    background: var(--surface);
   }
   .tick {
     position: absolute;
-    top: 0;
+    top: 12px;
     bottom: 0;
-    border-left: 1px solid var(--line);
+    border-left: 1px solid var(--line-2);
     padding-left: 3px;
     font-size: 10px;
-    color: var(--muted);
+    color: var(--text-3);
+  }
+  .tick span {
+    position: relative;
+    top: -10px;
   }
   .row-clips {
     height: 24px;
@@ -391,22 +415,20 @@
   }
   .clipblock {
     position: absolute;
-    top: 2px;
-    bottom: 2px;
-    background: var(--panel2) center / auto 100% repeat-x;
-    border: 1px solid var(--line);
-    border-radius: 4px;
+    top: 3px;
+    bottom: 3px;
+    background: var(--surface-2) center / auto 100% repeat-x;
+    border: 1px solid var(--line-2);
     overflow: hidden;
     font-size: 11px;
   }
   .clipblock.sel {
-    border-color: var(--accent);
+    border-color: var(--text-2);
   }
   .clipblock span {
-    background: rgba(0, 0, 0, 0.65);
-    color: #fff;
+    background: rgba(0, 0, 0, 0.72);
+    color: #ddd;
     padding: 0 4px;
-    border-radius: 0 0 4px 0;
     white-space: nowrap;
   }
   .row-keys {
@@ -422,15 +444,14 @@
   .fx-row {
     height: 24px;
     position: relative;
-    border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+    border-bottom: 1px solid var(--line);
   }
   .bar {
     position: absolute;
-    top: 3px;
-    bottom: 3px;
-    background: color-mix(in srgb, var(--c) 35%, var(--panel2));
-    border: 1px solid var(--c);
-    border-radius: 5px;
+    top: 4px;
+    bottom: 4px;
+    background: color-mix(in srgb, var(--c) 22%, var(--surface-2));
+    border-left: 2px solid var(--c);
     cursor: grab;
     display: flex;
     align-items: center;
@@ -438,10 +459,11 @@
     touch-action: none;
   }
   .bar.sel {
-    box-shadow: 0 0 0 2px var(--text);
+    outline: 1px solid var(--text);
+    outline-offset: -1px;
   }
   .bar.off {
-    opacity: 0.35;
+    opacity: 0.3;
     filter: grayscale(1);
   }
   .bar:active {
@@ -452,14 +474,24 @@
     padding: 0 10px;
     white-space: nowrap;
     pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text);
+  }
+  .lbl .mono {
+    color: var(--c);
+    font-size: 10px;
   }
   .h {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 8px;
+    width: 7px;
     cursor: ew-resize;
-    background: color-mix(in srgb, var(--c) 70%, transparent);
+  }
+  .h:hover {
+    background: color-mix(in srgb, var(--c) 60%, transparent);
   }
   .h.l {
     left: 0;
@@ -473,6 +505,7 @@
     position: relative;
     cursor: ew-resize;
     flex: none;
+    background: var(--surface);
   }
   .result-wrap canvas {
     display: block;
@@ -483,9 +516,9 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    background: color-mix(in srgb, var(--ok) 18%, transparent);
-    border-left: 2px solid var(--ok);
-    border-right: 2px solid var(--ok);
+    background: rgba(127, 201, 127, 0.12);
+    border-left: 1px solid var(--ok);
+    border-right: 1px solid var(--ok);
     pointer-events: none;
   }
   .loop.inactive {
@@ -495,26 +528,36 @@
     position: absolute;
     top: 0;
     bottom: 30px;
-    width: 2px;
+    width: 1px;
     background: var(--accent);
     pointer-events: none;
-    box-shadow: 0 0 6px var(--accent);
+  }
+  .phead::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -4px;
+    border: 4.5px solid transparent;
+    border-top: 6px solid var(--accent);
   }
   .result-ph {
     top: 0;
     bottom: 0;
   }
+  .result-ph::before {
+    display: none;
+  }
   .cut {
     position: absolute;
-    top: 22px;
+    top: 24px;
     bottom: 30px;
     width: 0;
-    border-left: 1px dashed var(--muted);
+    border-left: 1px dashed var(--line-2);
     pointer-events: none;
   }
   @media (max-width: 860px) {
     .gutter {
-      width: 96px;
+      width: 104px;
     }
   }
 </style>

@@ -9,8 +9,8 @@
     ['Enter', 'Render now'],
     ['A', 'Add effect'],
     ['P', 'Presets'],
-    ['R', 'Chaos: roll a random mosh'],
-    ['M', 'Mutate current settings'],
+    ['R', 'Randomize the stack'],
+    ['M', 'Nudge settings'],
     ['V', 'Variations grid'],
     ['K', 'Force a keyframe at playhead'],
     ['D / Del', 'Duplicate / delete selected effect'],
@@ -23,7 +23,7 @@
   ];
 </script>
 
-<Modal title="How datamoshing works & shortcuts" wide>
+<Modal title="Help" wide>
   <div class="cols">
     <div class="col text">
       <h4>The idea</h4>
@@ -37,12 +37,12 @@
       </p>
       <h4>Quick start</h4>
       <ol>
-        <li>Add two or more clips (or <b>✦ Generate</b> some).</li>
-        <li>Open <b>✨ Presets</b> and try <b>Cut Transitions</b> or <b>Bloom Explosion</b>.</li>
+        <li>Add two or more clips, or <b>Generate</b> some.</li>
+        <li>Open <b>Presets</b> and try <b>Cut Transitions</b> or <b>Bloom Explosion</b>.</li>
         <li>Select an effect bar on the timeline; drag it, resize it, and tweak its settings on the right.</li>
-        <li>Hit <b>🎲 Chaos</b> for random ideas. Lock 🔒 settings you like and pin 📌 effects to keep them.</li>
-        <li>Click 〰 on any setting to automate it over time with a curve or LFO.</li>
-        <li><b>⇩ Export</b> to MP4, WebM, GIF, PNG frames or the raw broken AVI.</li>
+        <li><b>Randomize</b> rolls a new stack. Lock settings you like and pin effects to keep them.</li>
+        <li>Hover a setting and click the curve icon to automate it with a curve or LFO.</li>
+        <li><b>Export</b> to MP4, WebM, GIF, PNG frames or the raw broken AVI.</li>
       </ol>
       <h4>Two kinds of effects</h4>
       <p>
@@ -95,10 +95,10 @@
     margin: 4px 0;
   }
   .i {
-    color: var(--accent2);
+    color: var(--f-i);
   }
   .p {
-    color: var(--accent3);
+    color: var(--f-dup);
   }
   td {
     padding: 3px 6px;

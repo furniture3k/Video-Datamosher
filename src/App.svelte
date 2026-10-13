@@ -20,7 +20,6 @@
   import GenerateDialog from './dialogs/GenerateDialog.svelte';
   import RecordDialog from './dialogs/RecordDialog.svelte';
   import LiveMode from './dialogs/LiveMode.svelte';
-  import Welcome from './dialogs/Welcome.svelte';
   import { saveProjectFile } from './lib/projectio.svelte';
   import { localSet } from './lib/storage';
 
@@ -45,12 +44,12 @@
   }
 
   function runChaos() {
-    if (!store.project.clips.length) return store.toast('Add a clip first, then roll the dice.');
+    if (!store.project.clips.length) return store.toast('Add a clip first.');
     store.set(chaos($state.snapshot(store.project) as never, store.totalFrames, randomSeed(), store.ui.chaosIntensity));
-    store.toast('🎲 New random mosh rolled. Lock settings you like, then roll again.');
+    
   }
   function runMutate() {
-    if (!store.project.effects.length) return store.toast('Nothing to mutate yet. Add an effect or roll Chaos first.');
+    if (!store.project.effects.length) return store.toast('Nothing to nudge yet. Add an effect first.');
     store.set(mutate($state.snapshot(store.project) as never, store.totalFrames, 0.25));
   }
 
@@ -197,7 +196,7 @@
   <footer><Timeline /></footer>
 
   {#if dragging}
-    <div class="dropzone"><div>Drop videos or images to add them</div></div>
+    <div class="dropzone"><div class="label">Drop to import</div></div>
   {/if}
 </div>
 
@@ -210,46 +209,49 @@
 {#if store.ui.dialog === 'generate'}<GenerateDialog />{/if}
 {#if store.ui.dialog === 'record'}<RecordDialog />{/if}
 {#if store.ui.dialog === 'live'}<LiveMode />{/if}
-{#if store.ui.welcome}<Welcome />{/if}
 <Toasts />
 
 <style>
+  /* panels butt against each other with 1px hairlines, like an editing suite */
   .app {
     height: 100%;
     display: grid;
     grid-template-rows: auto 1fr auto;
+    gap: 1px;
+    background: var(--line);
     position: relative;
   }
   main {
     display: grid;
-    grid-template-columns: 270px 1fr 360px;
+    grid-template-columns: 248px 1fr 340px;
     min-height: 0;
-    gap: 8px;
-    padding: 0 8px;
+    gap: 1px;
   }
   aside,
-  section {
+  section,
+  footer {
     min-height: 0;
     min-width: 0;
-  }
-  footer {
-    padding: 8px;
+    background: var(--surface);
   }
   .dropzone {
     position: absolute;
     inset: 0;
-    background: color-mix(in srgb, var(--accent) 20%, transparent);
-    border: 3px dashed var(--accent);
+    background: rgba(12, 12, 12, 0.72);
+    outline: 1px solid var(--accent);
+    outline-offset: -12px;
     display: grid;
     place-items: center;
-    font-size: 26px;
-    font-weight: 700;
     z-index: 50;
     pointer-events: none;
   }
+  .dropzone .label {
+    color: var(--accent);
+    font-size: 13px;
+  }
   @media (max-width: 1100px) {
     main {
-      grid-template-columns: 230px 1fr 320px;
+      grid-template-columns: 220px 1fr 300px;
     }
   }
   @media (max-width: 860px) {
@@ -266,15 +268,9 @@
     main {
       display: flex;
       flex-direction: column;
-      padding: 0 16px;
-    }
-    footer {
-      padding: 8px 16px;
     }
     .center {
       order: -1;
-      height: 62vw;
-      min-height: 280px;
     }
     .right {
       height: 75vh;

@@ -4,15 +4,18 @@
   import { randomizeEffect } from '../engine/presets';
   import { makeRng, randomSeed } from '../engine/rng';
   import ParamControl from './ParamControl.svelte';
+  import Icon from './Icon.svelte';
   import type { EffectInstance } from '../engine/types';
 
   let { effect }: { effect: EffectInstance } = $props();
   const def = $derived(EFFECTS[effect.type]);
-  const params = $derived(def.params.filter((p) => store.ui.advanced || !p.advanced));
-  const hidden = $derived(def.params.length - params.length);
+  // settings that don't apply to the current mode are left out entirely
+  const applicable = $derived(def.params.filter((p) => !p.show || p.show(effect.params)));
+  const params = $derived(applicable.filter((p) => store.ui.advanced || !p.advanced));
+  const hidden = $derived(applicable.length - params.length);
   const playSrc = $derived(store.render?.frames[store.ui.playhead]?.src ?? 0);
   const total = $derived(store.totalFrames);
-  const sec = (f: number) => (f / store.fps).toFixed(2) + 's';
+  const sec = (f: number) => (f / store.fps).toFixed(2);
 
   function randomize() {
     const r = randomizeEffect($state.snapshot(effect) as EffectInstance, makeRng(randomSeed()), total);
@@ -22,123 +25,158 @@
     });
   }
   const rangeLocked = $derived(effect.locks.includes('__range'));
+  let showInfo = $state(false);
 </script>
 
 <div class="editor" style="--c:{def.color}">
-  <div class="title row">
-    <span class="ic">{def.icon}</span>
+  <div class="title">
+    <span class="code">{def.icon}</span>
     <input
-      class="grow name"
+      class="name"
       value={effect.name || def.name}
+      aria-label="Effect name"
+      spellcheck="false"
       onchange={(e) => store.edit(() => (effect.name = (e.target as HTMLInputElement).value === def.name ? undefined : (e.target as HTMLInputElement).value))}
     />
-    <button title="Randomise all unlocked settings" onclick={randomize}>🎲</button>
+    <button class="icon ghost" class:on={showInfo} title="What does this do?" aria-label="About this effect" onclick={() => (showInfo = !showInfo)}><Icon name="help" size={14} /></button>
+    <button class="icon ghost" title="Randomize unlocked settings" aria-label="Randomize settings" onclick={randomize}><Icon name="dice" size={14} /></button>
   </div>
-  <p class="desc small muted">{def.description}</p>
+  {#if showInfo}<p class="desc small muted">{def.description}</p>{/if}
 
-  <div class="range">
-    <div class="row">
-      <span class="section-title grow">Range</span>
+  <section>
+    <div class="sh">
+      <span class="label">Range</span>
+      <span class="mono faint small">{sec(effect.start)}–{sec(effect.end)}s · {effect.end - effect.start}f</span>
       <button
         class="icon ghost tiny"
         class:on={rangeLocked}
-        title="Lock range for Mutate"
+        title={rangeLocked ? 'Range locked for Nudge' : 'Lock range for Nudge'}
+        aria-label="Lock range"
         onclick={() => store.edit(() => (effect.locks = rangeLocked ? effect.locks.filter((l) => l !== '__range') : [...effect.locks, '__range']))}
-        >{rangeLocked ? '🔒' : '🔓'}</button
+        ><Icon name={rangeLocked ? 'lock' : 'unlock'} size={12} /></button
       >
-      <button class="tiny" onclick={() => store.edit(() => ((effect.start = 0), (effect.end = total)))}>Whole video</button>
     </div>
-    <div class="row rr">
-      <label class="small">from
+    <div class="range">
+      <label class="small">
+        <span class="faint">In</span>
         <input type="number" min="0" max={total} value={effect.start} onchange={(e) => store.edit(() => (effect.start = Math.max(0, Math.min(effect.end - 1, +(e.target as HTMLInputElement).value))))} />
       </label>
-      <button class="tiny" title="Start at playhead" onclick={() => store.edit(() => (effect.start = Math.min(effect.end - 1, playSrc)))}>⇤ here</button>
-      <label class="small">to
+      <button class="tiny" title="Set in point to playhead" onclick={() => store.edit(() => (effect.start = Math.min(effect.end - 1, playSrc)))}>Mark in</button>
+      <label class="small">
+        <span class="faint">Out</span>
         <input type="number" min="1" max={total} value={effect.end} onchange={(e) => store.edit(() => (effect.end = Math.max(effect.start + 1, Math.min(total, +(e.target as HTMLInputElement).value))))} />
       </label>
-      <button class="tiny" title="End at playhead" onclick={() => store.edit(() => (effect.end = Math.max(effect.start + 1, playSrc + 1)))}>here ⇥</button>
+      <button class="tiny" title="Set out point to playhead" onclick={() => store.edit(() => (effect.end = Math.max(effect.start + 1, playSrc + 1)))}>Mark out</button>
+      <button class="tiny ghost" title="Cover the whole timeline" onclick={() => store.edit(() => ((effect.start = 0), (effect.end = total)))}>All</button>
     </div>
-    <div class="small muted mono">{sec(effect.start)} → {sec(effect.end)} · {effect.end - effect.start} frames</div>
-  </div>
+  </section>
 
-  <div class="params">
+  <section>
+    <div class="sh"><span class="label">Settings</span></div>
     {#each params as p (p.key)}
       <ParamControl {effect} def={p} />
     {/each}
     {#if hidden}
-      <button class="ghost small more" onclick={() => store.setPref('advanced', true)}>+ {hidden} advanced setting{hidden > 1 ? 's' : ''}</button>
+      <button class="ghost more small" onclick={() => store.setPref('advanced', true)}>Show {hidden} more</button>
     {/if}
-  </div>
+  </section>
 
   {#if store.ui.advanced}
-    <div class="row seed small">
-      <span class="muted grow" title="Random choices inside this effect come from this seed">Effect seed</span>
-      <input type="number" value={effect.seed} onchange={(e) => store.edit(() => (effect.seed = +(e.target as HTMLInputElement).value))} />
-      <button class="icon ghost tiny" title="New seed" onclick={() => store.edit(() => (effect.seed = randomSeed()))}>⟳</button>
-      <button
-        class="icon ghost tiny"
-        class:on={effect.locks.includes('__seed')}
-        title="Lock seed"
-        onclick={() => store.edit(() => (effect.locks = effect.locks.includes('__seed') ? effect.locks.filter((l) => l !== '__seed') : [...effect.locks, '__seed']))}
-        >{effect.locks.includes('__seed') ? '🔒' : '🔓'}</button
-      >
-    </div>
+    <section>
+      <div class="sh">
+        <span class="label">Seed</span>
+        <input class="seed" type="number" value={effect.seed} onchange={(e) => store.edit(() => (effect.seed = +(e.target as HTMLInputElement).value))} />
+        <button class="icon ghost tiny" title="New seed" aria-label="New seed" onclick={() => store.edit(() => (effect.seed = randomSeed()))}><Icon name="reset" size={12} /></button>
+        <button
+          class="icon ghost tiny"
+          class:on={effect.locks.includes('__seed')}
+          title="Lock seed"
+          aria-label="Lock seed"
+          onclick={() => store.edit(() => (effect.locks = effect.locks.includes('__seed') ? effect.locks.filter((l) => l !== '__seed') : [...effect.locks, '__seed']))}
+          ><Icon name={effect.locks.includes('__seed') ? 'lock' : 'unlock'} size={12} /></button
+        >
+      </div>
+    </section>
   {/if}
 </div>
 
 <style>
   .editor {
-    border-top: 1px solid var(--line);
-    padding-top: 10px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    padding-bottom: 24px;
   }
-  .ic {
-    color: var(--c);
-    font-size: 18px;
+  .title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 6px 6px 12px;
   }
   .name {
-    font-weight: 700;
-    font-size: 15px;
+    flex: 1;
+    min-width: 0;
+    font-weight: 600;
+    font-size: 14px;
     background: transparent;
     border-color: transparent;
+    padding-left: 2px;
   }
-  .name:hover {
-    border-color: var(--line);
+  .name:hover,
+  .name:focus {
+    border-color: var(--line-2);
   }
   .desc {
-    margin: 0;
-    line-height: 1.45;
+    padding: 0 12px 8px;
+    line-height: 1.5;
+  }
+  section {
+    padding: 0 12px;
+    border-top: 1px solid var(--line);
+  }
+  .sh {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 30px;
+  }
+  .sh .label {
+    flex: 1;
   }
   .range {
-    background: var(--bg2);
-    border-radius: 8px;
-    padding: 8px;
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 6px 8px;
+    align-items: center;
+    padding-bottom: 10px;
+  }
+  .range label {
     display: flex;
-    flex-direction: column;
-    gap: 5px;
+    align-items: center;
+    gap: 6px;
   }
-  .rr {
-    flex-wrap: wrap;
+  .range input {
+    width: 70px;
   }
-  .rr input {
-    width: 64px;
+  .range .ghost {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
   }
   .tiny {
-    padding: 2px 6px;
-    font-size: 11px;
-    min-width: 0;
+    height: 22px;
+    padding: 0 7px;
+    font-size: 11.5px;
   }
-  .params {
-    display: flex;
-    flex-direction: column;
+  button.icon.tiny {
+    width: 22px;
+    padding: 0;
   }
   .more {
     align-self: flex-start;
-    color: var(--accent);
+    margin: 6px 0 2px -6px;
+    color: var(--text-2);
   }
-  .seed input {
+  .seed {
     width: 100px;
   }
 </style>

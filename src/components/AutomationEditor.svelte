@@ -70,7 +70,7 @@
     }
     ctx.stroke();
     if (au.kind === 'curve') {
-      ctx.fillStyle = css('--accent3');
+      ctx.fillStyle = css('--text');
       for (const [t, v] of au.points) {
         ctx.beginPath();
         ctx.arc(t * w, yOf(v), 4.5, 0, Math.PI * 2);
@@ -154,7 +154,7 @@
     <canvas bind:this={canvas} style="height:{H}px" onpointerdown={down} onpointermove={move} onpointerup={() => (dragIdx = -1)} oncontextmenu={ctxmenu}></canvas>
     {#if a.kind === 'curve'}
       <div class="row shapes small">
-        <span class="muted grow">click: add · drag: move · right-click: delete</span>
+        <span class="faint grow">click adds a point, right-click removes</span>
         {#each [['up', '⟋'], ['down', '⟍'], ['peak', '⋀'], ['dip', '⋁'], ['steps', '⌐']] as [n, g]}
           <button class="mini" title={n} onclick={() => shape(n)}>{g}</button>
         {/each}
@@ -176,28 +176,29 @@
     flex-direction: column;
     gap: 4px;
     margin-top: 4px;
-    padding: 6px;
-    background: var(--bg2);
-    border-radius: 6px;
   }
   canvas {
     width: 100%;
-    border-radius: 4px;
+    border: 1px solid var(--line);
     cursor: crosshair;
     touch-action: none;
   }
-  .seg {
-    display: flex;
-    gap: 2px;
-  }
   .seg button {
-    padding: 2px 8px;
+    padding: 0 8px;
     font-size: 11px;
+    height: 22px;
   }
   .mini {
     padding: 0 6px;
+    height: 20px;
     font-size: 12px;
     min-width: 0;
+    background: none;
+    border-color: transparent;
+    color: var(--text-2);
+  }
+  select {
+    height: 24px;
   }
   .grid {
     display: grid;

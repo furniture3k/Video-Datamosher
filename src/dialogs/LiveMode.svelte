@@ -6,6 +6,7 @@
   import { FlowEngine, CHROMA, defaultFlow, type FlowParams } from '../lib/flow';
   import { vectorWarp } from '../engine/effects/pixel';
   import { addFiles } from '../lib/media';
+  import Icon from '../components/Icon.svelte';
   import { getFile } from '../lib/storage';
   import { download } from '../lib/storage';
 
@@ -223,14 +224,14 @@
     <canvas bind:this={canvas} class:hidden={source === 'none'}></canvas>
     {#if source === 'none'}
       <div class="pick">
-        <h2>◉ Live Mosh</h2>
-        <p class="muted">A real-time flow engine. Move in front of the camera, drag on the picture to push the pixels, and press <span class="kbd">Space</span> to snap back to a clean image.</p>
+        <div class="label">Live</div>
+        <p class="muted">Real-time flow mosh. Drag on the picture to push pixels; <span class="kbd">Space</span> snaps back to a clean frame.</p>
         <div class="row" style="justify-content:center;flex-wrap:wrap">
-          <button class="primary" onclick={() => useStream('camera')}>📷 Webcam</button>
-          {#if canScreen}<button onclick={() => useStream('screen')}>🖥 Screen</button>{/if}
-          <button onclick={() => fileInput.click()}>🎞 Video file</button>
+          <button class="primary" onclick={() => useStream('camera')}><Icon name="camera" />Camera</button>
+          {#if canScreen}<button onclick={() => useStream('screen')}><Icon name="screen" />Screen</button>{/if}
+          <button onclick={() => fileInput.click()}><Icon name="file" />Video file</button>
           {#each fileClips as c}
-            <button onclick={() => useClip(c.id)}>▶ {c.source.name}</button>
+            <button onclick={() => useClip(c.id)}><Icon name="play" size={12} />{c.source.name}</button>
           {/each}
         </div>
         {#if error}<p style="color:var(--danger)">{error}</p>{/if}
@@ -241,21 +242,21 @@
   </div>
 
   {#if showUi}
-    <div class="side panel">
+    <div class="side">
       <div class="row">
-        <b class="grow">Live controls</b>
-        <span class="small mono muted">{fps} fps</span>
-        <button class="icon ghost" title="Close (Esc)" onclick={close}>✕</button>
+        <span class="label grow">Live</span>
+        <span class="small mono faint">{fps} fps</span>
+        <button class="icon ghost" title="Close  Esc" aria-label="Close" onclick={close}><Icon name="x" /></button>
       </div>
       <div class="row wrap">
-        <button class="primary" onclick={reset} title="Space">⟲ Reset image</button>
-        <button onclick={randomize} title="R">🎲</button>
-        <button onclick={() => imgInput.click()} title="Use an image as the base picture (or drop one)">🖼 Base image</button>
-        <button class:rec={recording} onclick={rec}>{recording ? '■ Stop' : '● Rec'}</button>
+        <button class="primary" onclick={reset} title="Space"><Icon name="reset" size={14} />Reset</button>
+        <button class="icon" onclick={randomize} title="Randomize  R" aria-label="Randomize"><Icon name="dice" size={14} /></button>
+        <button onclick={() => imgInput.click()} title="Use an image as the base picture (or drop one)"><Icon name="image" size={14} />Base image</button>
+        <button class:rec={recording} onclick={rec}><Icon name="rec" size={12} />{recording ? 'Stop' : 'Rec'}</button>
       </div>
       <div class="row wrap quick">
         {#each QUICK as [name, q], i}
-          <button class="small" onclick={() => (p = { ...p, ...q })} title="Key {i + 1}">{i + 1}. {name}</button>
+          <button class="small" onclick={() => (p = { ...p, ...q })} title="Key {i + 1}"><span class="mono faint">{i + 1}</span>{name}</button>
         {/each}
       </div>
       <div class="params">
@@ -284,10 +285,10 @@
           <input type="range" min="0" max="20" step="0.5" bind:value={autoReset} />
         </label>
       </div>
-      <p class="small muted">Space reset · R random · 1–6 quick looks · H hide panel · drag on the picture to push pixels · drop an image to mosh into it</p>
+      <p class="small faint keys"><span class="kbd">Space</span> reset <span class="kbd">R</span> randomize <span class="kbd">1</span>–<span class="kbd">6</span> looks <span class="kbd">H</span> hide panel. Drop an image to mosh into it.</p>
     </div>
   {:else}
-    <button class="show" onclick={() => (showUi = true)}>☰</button>
+    <button class="show icon" aria-label="Show controls" onclick={() => (showUi = true)}><Icon name="more" /></button>
   {/if}
   <input bind:this={fileInput} type="file" accept="video/*" hidden onchange={(e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
@@ -324,37 +325,67 @@
     display: none;
   }
   .pick {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
     text-align: center;
-    max-width: 520px;
+    max-width: 460px;
     padding: 20px;
-    color: #eee;
+    color: var(--text);
   }
   .side {
-    width: 300px;
+    width: 290px;
     overflow: auto;
-    padding: 12px;
+    padding: 0 12px 12px;
     display: flex;
     flex-direction: column;
     gap: 8px;
-    border-radius: 0;
+    background: var(--surface);
+    border-left: 1px solid var(--line);
+  }
+  .side > .row:first-child {
+    height: 40px;
+    border-bottom: 1px solid var(--line);
+    margin: 0 -12px;
+    padding: 0 6px 0 12px;
   }
   .wrap {
     flex-wrap: wrap;
   }
+  .quick {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+  }
   .quick button {
-    padding: 3px 7px;
+    justify-content: flex-start;
+    padding: 0 6px;
+    font-size: 11.5px;
   }
   .params {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
+    border-top: 1px solid var(--line);
+    padding-top: 6px;
   }
   .pr {
     font-size: 12.5px;
+    color: var(--text-2);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 3px 0;
+  }
+  .pr.row {
+    flex-direction: row;
   }
   .rec {
-    background: var(--danger);
-    color: #fff;
+    color: var(--accent);
+  }
+  .keys {
+    line-height: 1.9;
   }
   .show {
     position: absolute;
@@ -368,6 +399,8 @@
     .side {
       width: 100%;
       max-height: 45vh;
+      border-left: none;
+      border-top: 1px solid var(--line);
     }
   }
 </style>

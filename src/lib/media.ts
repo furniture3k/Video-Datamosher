@@ -49,7 +49,7 @@ export async function addFiles(list: FileList | File[], knownDuration?: number) 
         thumb: await blobToDataUrl(thumb),
       };
       store.edit((p) => p.clips.push(clip));
-      if (duration > 30 && !isImage) store.toast(`${file.name} trimmed to 30 s to keep things fast. Change it in the clip panel.`);
+      if (duration > 30 && !isImage) store.toast(`${file.name}: using the first 30 s. Adjust in the Clip tab.`);
       store.ui.selectedClip ??= clip.id;
     } catch (e) {
       console.error(e);
@@ -82,4 +82,13 @@ export async function addGenerator(genId: string, seconds = 4) {
   };
   store.edit((p) => p.clips.push(clip));
   store.ui.selectedClip ??= clip.id;
+}
+
+/** Two generated clips plus the Cut Transitions preset: something to look at in one click. */
+export async function loadExample() {
+  const { PRESETS, applyPreset } = await import('../engine/presets');
+  await addGenerator('testsrc2', 3);
+  await addGenerator('mandelbrot', 4);
+  const snap = JSON.parse(JSON.stringify(store.project));
+  store.set(applyPreset(snap, PRESETS.find((p) => p.id === 'transitions')!, store.totalFrames, store.cuts));
 }

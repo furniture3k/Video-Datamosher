@@ -6,6 +6,7 @@
   import { renderPreview, Cancelled } from '../lib/renderer';
   import { chaos, mutate } from '../engine/presets';
   import { randomSeed } from '../engine/rng';
+  import { EFFECTS } from '../engine/effects';
   import type { Project } from '../engine/types';
 
   let count = $state(6);
@@ -43,7 +44,7 @@
     signal.cancelled = true;
     store.set(p);
     store.ui.dialog = null;
-    store.toast('Variation applied. Undo (Ctrl+Z) to go back.', 'ok');
+    
   }
   function close() {
     signal.cancelled = true;
@@ -57,8 +58,10 @@
 
 <Modal title="Variations" wide onclose={close}>
   <div class="row bar small">
-    <button class:on={mode === 'mutate'} disabled={!store.project.effects.length} onclick={() => (mode = 'mutate')}>🧬 Mutations of current</button>
-    <button class:on={mode === 'chaos'} onclick={() => (mode = 'chaos')}>🎲 Random rolls</button>
+    <div class="seg">
+      <button class:on={mode === 'mutate'} disabled={!store.project.effects.length} onclick={() => (mode = 'mutate')}>Nudged copies</button>
+      <button class:on={mode === 'chaos'} onclick={() => (mode = 'chaos')}>Random stacks</button>
+    </div>
     {#if mode === 'mutate'}
       <label class="row">Strength <input type="range" min="0.05" max="1" step="0.05" bind:value={amount} style="width:100px" /></label>
     {/if}
@@ -66,20 +69,20 @@
       <select bind:value={count}>{#each [4, 6, 9, 12] as n}<option value={n}>{n}</option>{/each}</select>
     </label>
     <span class="grow"></span>
-    <button class="primary" onclick={generate}>⟳ Generate</button>
+    <button class="primary" onclick={generate}>Render</button>
   </div>
-  <p class="small muted">Small previews. Locked settings and 📌 pinned effects are kept. Click one to use it.</p>
+  <p class="small faint note">Small previews. Locked settings and pinned effects are kept. Pick one to use it.</p>
   <div class="grid">
     {#each items as it, i}
       <button class="cell" onclick={() => pick(it.project)} disabled={!it.jpegs}>
         {#if it.jpegs}
           <MiniPlayer jpegs={it.jpegs} fps={store.project.encoder.fps} />
         {:else if it.error}
-          <div class="ph small">⚠ {it.error.slice(0, 80)}</div>
+          <div class="ph small">{it.error.slice(0, 80)}</div>
         {:else}
           <div class="ph small muted">{running ? 'rendering…' : 'waiting'}</div>
         {/if}
-        <span class="small mono">#{i + 1} · {it.project.effects.length} fx</span>
+        <span class="small mono faint">{String.fromCharCode(65 + i)}&ensp;{it.project.effects.map((e) => EFFECTS[e.type]?.icon).join(" ")}</span>
       </button>
     {/each}
   </div>
@@ -90,23 +93,28 @@
     flex-wrap: wrap;
     gap: 8px;
   }
+  .note {
+    margin: 8px 0 10px;
+  }
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
     gap: 10px;
   }
   .cell {
+    height: auto;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    align-items: stretch;
+    gap: 6px;
     padding: 6px;
+    background: var(--surface-2);
   }
   .ph {
     aspect-ratio: 16 / 9;
     display: grid;
     place-items: center;
-    background: var(--bg2);
-    border-radius: 6px;
+    background: var(--bg);
     white-space: normal;
   }
 </style>

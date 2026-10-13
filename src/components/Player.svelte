@@ -1,6 +1,8 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { store } from '../lib/store.svelte';
+  import { store, type CompareMode } from '../lib/store.svelte';
+  import { loadExample } from '../lib/media';
+  import Icon from './Icon.svelte';
   import { originalFrames, moshedAudioWav, type RenderResult } from '../lib/renderer';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
@@ -219,7 +221,14 @@
 
   const n = $derived(store.render?.frames.length ?? 0);
   const cur = $derived(store.render?.frames[store.ui.playhead]);
-  const timeStr = $derived(store.render ? (store.ui.playhead / store.render.fps).toFixed(2) + 's' : '0.00s');
+  // SMPTE-style timecode: MM:SS:FF
+  const timecode = $derived.by(() => {
+    const fps = store.render?.fps ?? store.project.encoder.fps;
+    const f = store.ui.playhead;
+    const secs = Math.floor(f / fps);
+    const p2 = (x: number) => String(x).padStart(2, '0');
+    return `${p2(Math.floor(secs / 60))}:${p2(secs % 60)}:${p2(f % fps)}`;
+  });
 
   function snapshot() {
     canvas.toBlob((b) => b && download(b, `${store.project.name.replace(/[^\w-]+/g, '_')}_frame${store.ui.playhead}.png`), 'image/png');
@@ -232,10 +241,16 @@
     store.ui.split = Math.min(1, Math.max(0, (e.clientX - rc.left) / rc.width));
   }
 
-  const TAG_LABEL: Record<string, string> = { orig: 'original', dup: 'duplicate', glitch: 'glitched', moved: 'moved', spliced: 'transferred', replaced: 'filled' };
+  const TAG_LABEL: Record<string, string> = { orig: '', dup: 'repeated', glitch: 'glitched', moved: 'moved', spliced: 'transferred', replaced: 'filled' };
+  const COMPARE: [CompareMode, string][] = [
+    ['off', 'Off'],
+    ['split', 'Wipe'],
+    ['side', 'Side'],
+    ['hold', 'Source'],
+  ];
 </script>
 
-<div class="player panel">
+<div class="player">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stage"
@@ -250,69 +265,74 @@
     onpointermove={splitMove}
     onpointerup={() => (draggingSplit = false)}
   >
+    {#if store.status.busy}
+      <div class="progress" style="width:{Math.max(2, Math.round(store.status.progress * 100))}%"></div>
+    {/if}
     <canvas bind:this={canvas} class:hidden={!store.render} class:split={store.ui.compare === 'split'}></canvas>
     {#if !store.render && !store.status.busy}
-      <div class="placeholder">
+      <div class="empty">
         {#if store.project.clips.length}
-          <div>Press <span class="kbd">Enter</span> or <button onclick={() => store.doRender(true)}>Render preview</button></div>
+          <p class="muted">Nothing rendered yet.</p>
+          <button onclick={() => store.doRender(true)}><Icon name="render" />Render preview</button>
         {:else}
-          <div class="hero">
-            <div class="glitch" data-text="DATAMOSH">DATAMOSH</div>
-            <p class="muted">Add a clip on the left to begin.<br />Then pick a preset, roll the dice, or stack effects yourself.</p>
-          </div>
+          <p>No footage.</p>
+          <p class="muted small">Import a clip from the Media panel or drop files anywhere.<br />Two clips with lots of motion make the best melts.</p>
+          <button onclick={() => loadExample()}>Load example</button>
         {/if}
       </div>
     {/if}
     {#if store.status.busy}
-      <div class="busy">
-        <div class="bar"><div style="width:{Math.round(store.status.progress * 100)}%"></div></div>
-        <span class="small mono">{store.status.stage || 'Working'}… {Math.round(store.status.progress * 100)}%</span>
+      <div class="stage-note mono">{store.status.stage || 'Working'} {Math.round(store.status.progress * 100)}%</div>
+    {:else if store.ui.compare !== 'off' && store.render}
+      <div class="stage-note mono">
+        {#if loadingOrig}loading source{:else if store.ui.compare === 'split'}source | mosh{:else if store.ui.compare === 'side'}source | mosh{:else}source{/if}
       </div>
     {/if}
     {#if store.status.error}
       <div class="error small">
-        <b>Render failed.</b> {store.status.error.split('\n')[0]}
-        <details><summary>details</summary><pre>{store.status.error}</pre></details>
-        <button onclick={() => store.doRender(true)}>Retry</button>
-      </div>
-    {/if}
-    {#if store.ui.compare !== 'off' && store.render}
-      <div class="cmp-label small mono">
-        {#if loadingOrig}loading original…{:else if store.ui.compare === 'split'}◀ original | moshed ▶{:else if store.ui.compare === 'side'}original | moshed{:else}original (hold){/if}
+        <div class="row"><b class="grow">Render failed</b><button onclick={() => store.doRender(true)}>Retry</button></div>
+        <div>{store.status.error.split('\n')[0]}</div>
+        <details><summary class="faint">Details</summary><pre>{store.status.error}</pre></details>
       </div>
     {/if}
   </div>
 
   <div class="transport">
-    <div class="row">
-      <button class="icon ghost" title="Start (Home)" onclick={() => (store.ui.playhead = 0)}>⏮</button>
-      <button class="icon ghost" title="Previous frame (←)" onclick={() => (store.ui.playhead = Math.max(0, store.ui.playhead - 1))}>◀</button>
-      <button class="play" title="Play / pause (Space)" disabled={!store.render} onclick={() => (store.ui.playing = !store.ui.playing)}>{store.ui.playing ? '❚❚' : '▶'}</button>
-      <button class="icon ghost" title="Next frame (→)" onclick={() => (store.ui.playhead = Math.min(n - 1, store.ui.playhead + 1))}>▶</button>
-      <button class="icon ghost" title="End (End)" onclick={() => (store.ui.playhead = Math.max(0, n - 1))}>⏭</button>
-      <button class="icon" class:on={store.ui.loopOn} title="Loop (L). Set a loop region with I / O." onclick={() => (store.ui.loopOn = !store.ui.loopOn)}>⟲</button>
-      <select bind:value={store.ui.speed} title="Playback speed (audio plays at 1× only)">
-        {#each [0.25, 0.5, 1, 1.5, 2] as s}<option value={s}>{s}×</option>{/each}
-      </select>
-      <button class="icon" class:on={muted} title="Mute preview audio" onclick={() => ((muted = !muted), muted && stopAudio())}>{muted ? '🔇' : '🔊'}</button>
-    </div>
-    <div class="info mono small">
-      <span>{timeStr}</span>
-      <span class="muted">frame {store.ui.playhead + 1}/{n}</span>
+    <div class="tc mono" title="minutes:seconds:frames">{timecode}</div>
+    <div class="frameinfo mono small">
+      <span class="faint">{n ? store.ui.playhead + 1 : 0}/{n}</span>
       {#if cur}
-        <span class="type t{cur.type}">{cur.type}</span>
-        <span class="muted">{TAG_LABEL[cur.tag]} · src {cur.src}</span>
+        <span class="ftype" class:i={cur.type === 'I'}>{cur.type}</span>
+        <span class="faint">{TAG_LABEL[cur.tag]}</span>
       {/if}
     </div>
-    <div class="row">
-      <select bind:value={store.ui.compare} title="Compare with the original (C)">
-        <option value="off">Compare: off</option>
-        <option value="split">Split wipe</option>
-        <option value="side">Side by side</option>
-        <option value="hold">Original only</option>
+
+    <div class="buttons">
+      <button class="icon ghost" title="Start  Home" aria-label="Start" onclick={() => (store.ui.playhead = 0)}><Icon name="start" /></button>
+      <button class="icon ghost" title="Previous frame  ←" aria-label="Previous frame" onclick={() => (store.ui.playhead = Math.max(0, store.ui.playhead - 1))}><Icon name="prev" /></button>
+      <button class="play" title="Play / pause  Space" aria-label={store.ui.playing ? 'Pause' : 'Play'} disabled={!store.render} onclick={() => (store.ui.playing = !store.ui.playing)}>
+        <Icon name={store.ui.playing ? 'pause' : 'play'} />
+      </button>
+      <button class="icon ghost" title="Next frame  →" aria-label="Next frame" onclick={() => (store.ui.playhead = Math.min(n - 1, store.ui.playhead + 1))}><Icon name="next" /></button>
+      <button class="icon ghost" title="End  End" aria-label="End" onclick={() => (store.ui.playhead = Math.max(0, n - 1))}><Icon name="end" /></button>
+    </div>
+
+    <div class="right">
+      <button class="icon ghost" class:on={store.ui.loopOn} title="Loop  L  (set a region with I / O)" aria-label="Loop" onclick={() => (store.ui.loopOn = !store.ui.loopOn)}><Icon name="loop" /></button>
+      <select bind:value={store.ui.speed} title="Playback speed (sound plays at 1× only)" aria-label="Playback speed">
+        {#each [0.25, 0.5, 1, 1.5, 2] as s}<option value={s}>{s}×</option>{/each}
       </select>
-      <button class="icon ghost" title="Save this frame as PNG" disabled={!store.render} onclick={snapshot}>📷</button>
-      <button title="Re-render now (Enter)" disabled={!store.project.clips.length} onclick={() => store.doRender(true)}>{store.ui.autoRender ? '⟳' : '⟳ Render'}</button>
+      <button class="icon ghost" class:on={muted} title="Mute preview" aria-label="Mute" onclick={() => ((muted = !muted), muted && stopAudio())}><Icon name={muted ? 'mute' : 'sound'} /></button>
+      <span class="divider"></span>
+      <span class="label cmp-label">A/B</span>
+      <div class="seg" role="group" aria-label="Compare with source  C">
+        {#each COMPARE as [m, label]}
+          <button class:on={store.ui.compare === m} onclick={() => (store.ui.compare = m)}>{label}</button>
+        {/each}
+      </div>
+      <span class="divider"></span>
+      <button class="icon ghost" title="Save this frame as PNG" aria-label="Save frame" disabled={!store.render} onclick={snapshot}><Icon name="still" /></button>
+      <button class="icon ghost render-btn" title="Render now  Enter" aria-label="Render now" disabled={!store.project.clips.length} onclick={() => store.doRender(true)}><Icon name="render" /></button>
     </div>
   </div>
 </div>
@@ -330,19 +350,15 @@
     position: relative;
     display: grid;
     place-items: center;
-    background: repeating-conic-gradient(var(--bg2) 0 25%, var(--bg) 0 50%) 0 0 / 24px 24px;
-    border-radius: var(--radius) var(--radius) 0 0;
-  }
-  .stage {
+    background: var(--bg);
     overflow: hidden;
   }
   canvas {
     position: absolute;
     inset: 0;
     margin: auto;
-    max-width: 100%;
-    max-height: 100%;
-    box-shadow: var(--shadow);
+    max-width: calc(100% - 24px);
+    max-height: calc(100% - 24px);
   }
   canvas.split {
     cursor: ew-resize;
@@ -350,134 +366,144 @@
   canvas.hidden {
     display: none;
   }
-  .placeholder {
-    text-align: center;
-    padding: 20px;
-  }
-  .hero .glitch {
-    font-size: clamp(36px, 7vw, 84px);
-    font-weight: 700;
-    font-family: var(--mono);
-    position: relative;
-    letter-spacing: 0.05em;
-  }
-  .glitch::before,
-  .glitch::after {
-    content: attr(data-text);
+  .progress {
     position: absolute;
-    inset: 0;
-    mix-blend-mode: screen;
-  }
-  .glitch::before {
-    color: var(--accent);
-    transform: translate(3px, 0);
-    clip-path: inset(10% 0 55% 0);
-    animation: g1 2.4s infinite steps(2);
-  }
-  .glitch::after {
-    color: var(--accent2);
-    transform: translate(-3px, 0);
-    clip-path: inset(55% 0 10% 0);
-    animation: g2 1.9s infinite steps(2);
-  }
-  @keyframes g1 {
-    50% {
-      transform: translate(-6px, 2px);
-      clip-path: inset(30% 0 40% 0);
-    }
-  }
-  @keyframes g2 {
-    50% {
-      transform: translate(5px, -1px);
-      clip-path: inset(70% 0 5% 0);
-    }
-  }
-  .busy {
-    position: absolute;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: color-mix(in srgb, var(--panel) 85%, transparent);
-    padding: 6px 10px;
-    border-radius: 8px;
-    backdrop-filter: blur(4px);
-  }
-  .bar {
-    flex: 1;
-    height: 6px;
-    background: var(--line);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .bar div {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--accent);
     transition: width 0.15s;
+    z-index: 2;
+  }
+  .stage-note {
+    position: absolute;
+    left: 10px;
+    top: 8px;
+    font-size: 11px;
+    color: var(--text-2);
+    text-transform: lowercase;
+  }
+  .empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+    padding: 24px;
+    line-height: 1.5;
   }
   .error {
     position: absolute;
-    top: 12px;
-    left: 12px;
-    right: 12px;
-    background: color-mix(in srgb, var(--danger) 20%, var(--panel));
-    border: 1px solid var(--danger);
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    border-left: 2px solid var(--danger);
     padding: 8px 10px;
-    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
   .error pre {
     max-height: 160px;
     overflow: auto;
     white-space: pre-wrap;
-    font-size: 11px;
-  }
-  .cmp-label {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: rgba(0, 0, 0, 0.6);
-    color: #fff;
-    padding: 2px 8px;
-    border-radius: 4px;
+    font: 11px var(--mono);
+    color: var(--text-2);
   }
   .transport {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .tc {
+    font-size: 20px;
+    letter-spacing: 0.02em;
+    color: var(--text);
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+  }
+  .frameinfo {
+    grid-column: 1;
+    grid-row: 1;
+    justify-self: start;
+    margin-left: 112px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .ftype {
+    padding: 0 4px;
+    border: 1px solid var(--line-2);
+    color: var(--text-2);
+  }
+  .ftype.i {
+    color: var(--f-i);
+    border-color: var(--f-i);
+  }
+  .buttons {
+    grid-column: 2;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 6px 8px;
-    border-top: 1px solid var(--line);
-    flex-wrap: wrap;
+    gap: 2px;
   }
   .play {
-    width: 44px;
-    font-size: 15px;
-    background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    width: 40px;
+    height: 30px;
+    padding: 0;
+    margin: 0 4px;
   }
-  .info {
+  .right {
+    grid-column: 3;
+    justify-self: end;
     display: flex;
-    gap: 10px;
     align-items: center;
+    gap: 4px;
   }
-  .type {
-    padding: 0 6px;
-    border-radius: 4px;
-    font-weight: 700;
-    color: #000;
+  .right select {
+    width: 62px;
   }
-  .tI {
-    background: var(--accent2);
+  .divider {
+    width: 1px;
+    height: 16px;
+    background: var(--line-2);
+    margin: 0 4px;
   }
-  .tP {
-    background: var(--accent3);
+  @media (max-width: 1280px) {
+    .frameinfo {
+      display: none;
+    }
+    .cmp-label {
+      display: none;
+    }
   }
-  .tB,
-  .tS,
-  .t\? {
-    background: var(--muted);
+  @media (max-width: 860px) {
+    .stage {
+      min-height: 56vw;
+    }
+    .transport {
+      grid-template-columns: auto 1fr;
+      row-gap: 6px;
+    }
+    .buttons {
+      grid-column: 2;
+      justify-self: end;
+    }
+    .right {
+      grid-column: 1 / -1;
+      justify-self: stretch;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .divider,
+    .render-btn {
+      display: none;
+    }
   }
 </style>

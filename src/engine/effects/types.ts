@@ -1,7 +1,7 @@
 import type { EffectInstance, Frame, ParamValue } from '../types';
 import type { Rng } from '../rng';
 
-export type ParamDef =
+export type ParamDef = (
   | {
       key: string;
       label: string;
@@ -28,7 +28,11 @@ export type ParamDef =
       help: string;
       advanced?: boolean;
     }
-  | { key: string; label: string; type: 'frame'; default: number; help: string; advanced?: boolean };
+  | { key: string; label: string; type: 'frame'; default: number; help: string; advanced?: boolean }
+) & {
+  /** only show this setting when it applies to the current mode */
+  show?: (params: Record<string, ParamValue>) => boolean;
+};
 
 export interface EffectContext {
   totalFrames: number;

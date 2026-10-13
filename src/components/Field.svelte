@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Generic labelled control used by the clip / encoder / audio panels.
+  // Labelled control used by the clip / encoder / audio panels.
   import type { Snippet } from 'svelte';
   let {
     label,
@@ -29,28 +29,25 @@
   const set = (v: unknown) => onchange(v as never);
 </script>
 
-<div class="field" class:inline={type === 'bool'}>
-  <div class="lab row">
-    <span class="grow" title={help}>{label}{#if help}<span class="q" title={help}>?</span>{/if}</span>
-    {#if type === 'range'}
-      <input type="number" {min} {max} {step} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
-      {#if unit}<span class="small muted">{unit}</span>{/if}
-    {/if}
-    {#if type === 'bool'}
-      <input type="checkbox" class="switch" checked={!!value} onchange={(e) => set((e.target as HTMLInputElement).checked)} />
+<div class="field" class:inline={type === 'bool' || type === 'number'}>
+  <div class="top">
+    <span class="lab" class:has-help={!!help} title={help}>{label}</span>
+    {#if type === 'range' || type === 'number'}
+      <input class="val" type="number" {min} {max} {step} {value} aria-label={label} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
+      {#if unit}<span class="unit">{unit}</span>{/if}
+    {:else if type === 'bool'}
+      <input type="checkbox" class="switch" checked={!!value} aria-label={label} onchange={(e) => set((e.target as HTMLInputElement).checked)} />
     {/if}
   </div>
   {#if type === 'range'}
-    <input type="range" {min} {max} {step} value={value} oninput={(e) => set(+(e.target as HTMLInputElement).value)} />
+    <input type="range" {min} {max} {step} {value} aria-label={label} oninput={(e) => set(+(e.target as HTMLInputElement).value)} />
   {:else if type === 'select'}
-    <select value={value} onchange={(e) => {
+    <select {value} aria-label={label} onchange={(e) => {
       const raw = (e.target as HTMLSelectElement).value;
       set(typeof options[0]?.value === 'number' ? +raw : raw);
     }}>
       {#each options as o}<option value={o.value}>{o.label}</option>{/each}
     </select>
-  {:else if type === 'number'}
-    <input type="number" {min} {max} {step} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
   {/if}
   {@render children?.()}
 </div>
@@ -59,24 +56,43 @@
   .field {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 4px 0;
+    gap: 3px;
+    padding: 5px 0;
+  }
+  .top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 22px;
   }
   .lab {
+    flex: 1;
+    min-width: 0;
     font-size: 12.5px;
+    color: var(--text-2);
   }
-  .q {
-    display: inline-grid;
-    place-items: center;
-    width: 14px;
-    height: 14px;
-    margin-left: 5px;
-    border-radius: 50%;
-    border: 1px solid var(--faint);
-    color: var(--muted);
-    font-size: 9px;
+  .lab.has-help {
     cursor: help;
-    vertical-align: 1px;
+  }
+  .field:hover .lab {
+    color: var(--text);
+  }
+  .val {
+    width: 64px;
+    height: 22px;
+    border-color: transparent;
+    background: transparent;
+  }
+  .val:hover,
+  .val:focus {
+    border-color: var(--line-2);
+    background: var(--bg);
+  }
+  .unit {
+    font-size: 11px;
+    color: var(--text-3);
+    margin-left: -4px;
+    min-width: 14px;
   }
   select {
     width: 100%;

@@ -1,50 +1,37 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="MOSHPIT, datamosh studio">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0b0b10"/>
-      <stop offset="1" stop-color="#17121f"/>
-    </linearGradient>
-    <linearGradient id="smear" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#ff3d8b" stop-opacity="0"/>
-      <stop offset="0.5" stop-color="#ff3d8b" stop-opacity="0.3"/>
-      <stop offset="1" stop-color="#00e5ff" stop-opacity="0"/>
-    </linearGradient>
-    <clipPath id="top"><rect x="0" y="0" width="1200" height="122"/></clipPath>
-    <clipPath id="mid"><rect x="0" y="122" width="1200" height="26"/></clipPath>
-    <clipPath id="bot"><rect x="0" y="148" width="1200" height="152"/></clipPath>
-  </defs>
-  <rect width="1200" height="300" rx="18" fill="url(#bg)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-label="moshpit, a datamosh studio">
+  <rect width="1200" height="260" fill="#151515"/>
+  <rect x="0.5" y="0.5" width="1199" height="259" fill="none" stroke="#262626"/>
 
-  <!-- macroblock debris -->
-  <g opacity="0.85">
-    <rect x="88" y="44" width="32" height="32" fill="#ff3d8b"/>
-    <rect x="120" y="44" width="16" height="16" fill="#ffe14d"/>
-    <rect x="1040" y="208" width="48" height="16" fill="#00e5ff"/>
-    <rect x="1088" y="224" width="16" height="32" fill="#ff3d8b"/>
-    <rect x="1010" y="52" width="16" height="16" fill="#4dffa6"/>
-    <rect x="150" y="226" width="64" height="8" fill="#00e5ff"/>
-    <rect x="214" y="234" width="24" height="8" fill="#ffe14d"/>
+  <!-- wordmark -->
+  <rect x="64" y="74" width="22" height="22" rx="2" fill="#ef4423"/>
+  <text x="104" y="96" font-family="'IBM Plex Mono','SF Mono',Menlo,Consolas,monospace" font-size="38" font-weight="600" fill="#e6e3de">moshpit</text>
+  <text x="66" y="132" font-family="-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif" font-size="17" fill="#a19d96">Datamosh studio. Runs in the browser.</text>
+
+  <!-- the output strip: keyframes (blue), motion frames (grey), repeated frames (amber), glitched (yellow) -->
+  <g transform="translate(64 172)">
+    <rect width="1072" height="36" fill="#0c0c0c"/>
+    <g fill="#4a4743">
+      <rect x="14" y="12" width="7" height="12"/><rect x="24" y="12" width="7" height="12"/><rect x="34" y="12" width="7" height="12"/><rect x="44" y="12" width="7" height="12"/><rect x="54" y="12" width="7" height="12"/><rect x="64" y="12" width="7" height="12"/><rect x="74" y="12" width="7" height="12"/><rect x="84" y="12" width="7" height="12"/><rect x="94" y="12" width="7" height="12"/><rect x="104" y="12" width="7" height="12"/><rect x="114" y="12" width="7" height="12"/><rect x="124" y="12" width="7" height="12"/><rect x="134" y="12" width="7" height="12"/><rect x="144" y="12" width="7" height="12"/><rect x="154" y="12" width="7" height="12"/><rect x="164" y="12" width="7" height="12"/><rect x="174" y="12" width="7" height="12"/><rect x="184" y="12" width="7" height="12"/><rect x="194" y="12" width="7" height="12"/><rect x="204" y="12" width="7" height="12"/><rect x="214" y="12" width="7" height="12"/><rect x="224" y="12" width="7" height="12"/><rect x="234" y="12" width="7" height="12"/><rect x="244" y="12" width="7" height="12"/><rect x="254" y="12" width="7" height="12"/><rect x="264" y="12" width="7" height="12"/><rect x="274" y="12" width="7" height="12"/><rect x="284" y="12" width="7" height="12"/><rect x="294" y="12" width="7" height="12"/><rect x="304" y="12" width="7" height="12"/><rect x="314" y="12" width="7" height="12"/><rect x="324" y="12" width="7" height="12"/><rect x="334" y="12" width="7" height="12"/><rect x="344" y="12" width="7" height="12"/><rect x="354" y="12" width="7" height="12"/><rect x="364" y="12" width="7" height="12"/><rect x="374" y="12" width="7" height="12"/><rect x="384" y="12" width="7" height="12"/><rect x="394" y="12" width="7" height="12"/>
+      <rect x="734" y="12" width="7" height="12"/><rect x="744" y="12" width="7" height="12"/><rect x="754" y="12" width="7" height="12"/><rect x="764" y="12" width="7" height="12"/><rect x="774" y="12" width="7" height="12"/><rect x="784" y="12" width="7" height="12"/><rect x="794" y="12" width="7" height="12"/><rect x="804" y="12" width="7" height="12"/><rect x="814" y="12" width="7" height="12"/><rect x="824" y="12" width="7" height="12"/><rect x="834" y="12" width="7" height="12"/><rect x="844" y="12" width="7" height="12"/><rect x="854" y="12" width="7" height="12"/><rect x="864" y="12" width="7" height="12"/><rect x="874" y="12" width="7" height="12"/><rect x="884" y="12" width="7" height="12"/><rect x="894" y="12" width="7" height="12"/><rect x="904" y="12" width="7" height="12"/><rect x="914" y="12" width="7" height="12"/><rect x="924" y="12" width="7" height="12"/><rect x="934" y="12" width="7" height="12"/><rect x="944" y="12" width="7" height="12"/><rect x="954" y="12" width="7" height="12"/><rect x="964" y="12" width="7" height="12"/><rect x="974" y="12" width="7" height="12"/><rect x="984" y="12" width="7" height="12"/><rect x="994" y="12" width="7" height="12"/><rect x="1004" y="12" width="7" height="12"/><rect x="1014" y="12" width="7" height="12"/><rect x="1024" y="12" width="7" height="12"/><rect x="1034" y="12" width="7" height="12"/><rect x="1044" y="12" width="7" height="12"/><rect x="1054" y="12" width="7" height="12"/>
+    </g>
+    <!-- keyframe at the start; the one at the cut has been removed -->
+    <rect x="4" y="6" width="7" height="24" fill="#6aa8e8"/>
+    <!-- bloom: one motion frame repeated many times -->
+    <g fill="#e8a13a">
+      <rect x="404" y="12" width="7" height="12"/><rect x="414" y="12" width="7" height="12"/><rect x="424" y="12" width="7" height="12"/><rect x="434" y="12" width="7" height="12"/><rect x="444" y="12" width="7" height="12"/><rect x="454" y="12" width="7" height="12"/><rect x="464" y="12" width="7" height="12"/><rect x="474" y="12" width="7" height="12"/><rect x="484" y="12" width="7" height="12"/><rect x="494" y="12" width="7" height="12"/><rect x="504" y="12" width="7" height="12"/><rect x="514" y="12" width="7" height="12"/><rect x="524" y="12" width="7" height="12"/><rect x="534" y="12" width="7" height="12"/><rect x="544" y="12" width="7" height="12"/><rect x="554" y="12" width="7" height="12"/><rect x="564" y="12" width="7" height="12"/><rect x="574" y="12" width="7" height="12"/><rect x="584" y="12" width="7" height="12"/><rect x="594" y="12" width="7" height="12"/><rect x="604" y="12" width="7" height="12"/><rect x="614" y="12" width="7" height="12"/><rect x="624" y="12" width="7" height="12"/><rect x="634" y="12" width="7" height="12"/><rect x="644" y="12" width="7" height="12"/>
+    </g>
+    <g fill="#d8cf4a">
+      <rect x="654" y="12" width="7" height="12"/><rect x="674" y="12" width="7" height="12"/><rect x="684" y="12" width="7" height="12"/><rect x="704" y="12" width="7" height="12"/>
+    </g>
+    <g fill="#4a4743"><rect x="664" y="12" width="7" height="12"/><rect x="694" y="12" width="7" height="12"/><rect x="714" y="12" width="7" height="12"/><rect x="724" y="12" width="7" height="12"/></g>
+    <!-- playhead -->
+    <rect x="548" y="-10" width="1" height="56" fill="#ef4423"/>
+    <path d="M543.5 -10 h11 l-5.5 7 z" fill="#ef4423"/>
   </g>
-  <rect x="0" y="124" width="1200" height="22" fill="url(#smear)"/>
-
-  <!-- RGB-split wordmark, sliced and shifted like a broken frame -->
-  <g font-family="'JetBrains Mono','DejaVu Sans Mono',Menlo,Consolas,monospace" font-weight="800" font-size="124" text-anchor="middle" letter-spacing="4">
-    <g clip-path="url(#top)">
-      <text x="606" y="186" fill="#00e5ff" opacity="0.9">MOSHPIT</text>
-      <text x="594" y="186" fill="#ff3d8b" opacity="0.9">MOSHPIT</text>
-      <text x="600" y="186" fill="#f4f3ff">MOSHPIT</text>
-    </g>
-    <g clip-path="url(#mid)">
-      <text x="622" y="186" fill="#00e5ff" opacity="0.9">MOSHPIT</text>
-      <text x="610" y="186" fill="#ff3d8b" opacity="0.9">MOSHPIT</text>
-      <text x="616" y="186" fill="#f4f3ff">MOSHPIT</text>
-    </g>
-    <g clip-path="url(#bot)">
-      <text x="598" y="186" fill="#00e5ff" opacity="0.9">MOSHPIT</text>
-      <text x="586" y="186" fill="#ff3d8b" opacity="0.9">MOSHPIT</text>
-      <text x="592" y="186" fill="#f4f3ff">MOSHPIT</text>
-    </g>
+  <g font-family="'IBM Plex Mono','SF Mono',Menlo,Consolas,monospace" font-size="11" fill="#6b6762">
+    <text x="64" y="232">keyframe</text>
+    <text x="200" y="232">motion frames</text>
+    <text x="468" y="232">one frame × 25</text>
+    <text x="718" y="232">glitched</text>
   </g>
-
-  <text x="600" y="262" text-anchor="middle" font-family="'Space Grotesk','Helvetica Neue',Arial,sans-serif" font-size="24" fill="#9a98b3" letter-spacing="6">BREAK VIDEO BEAUTIFULLY · IN YOUR BROWSER</text>
 </svg>

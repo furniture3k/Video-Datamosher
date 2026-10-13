@@ -11,35 +11,27 @@
 <style>
   .toasts {
     position: fixed;
-    bottom: 16px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 12px;
+    bottom: 12px;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
     z-index: 200;
     pointer-events: none;
-    max-width: calc(100vw - 32px);
+    max-width: min(420px, calc(100vw - 24px));
   }
   .toast {
-    background: var(--panel2);
-    border: 1px solid var(--line);
-    border-left: 4px solid var(--accent2);
-    padding: 8px 14px;
-    border-radius: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    border-left: 2px solid var(--text-3);
+    padding: 7px 12px;
+    font-size: 12.5px;
     box-shadow: var(--shadow);
-    animation: pop 0.2s ease;
   }
   .toast.error {
     border-left-color: var(--danger);
   }
   .toast.ok {
     border-left-color: var(--ok);
-  }
-  @keyframes pop {
-    from {
-      transform: translateY(8px);
-      opacity: 0;
-    }
   }
 </style>

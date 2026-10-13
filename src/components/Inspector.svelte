@@ -13,14 +13,14 @@
   ] as const;
 </script>
 
-<div class="insp panel">
-  <nav>
+<div class="insp">
+  <div class="tabs" role="tablist">
     {#each tabs as [id, label]}
-      <button class="ghost" class:active={store.ui.tab === id} onclick={() => (store.ui.tab = id)}>
-        {label}{#if id === 'effects' && store.project.effects.length}<span class="badge">{store.project.effects.length}</span>{/if}
+      <button role="tab" aria-selected={store.ui.tab === id} class:active={store.ui.tab === id} onclick={() => (store.ui.tab = id)}>
+        {label}{#if id === 'effects' && store.project.effects.length}<span class="count mono">{store.project.effects.length}</span>{/if}
       </button>
     {/each}
-  </nav>
+  </div>
   <div class="body">
     {#if store.ui.tab === 'effects'}
       <EffectStack />
@@ -28,11 +28,11 @@
         <EffectEditor effect={store.selected} />
       {/if}
     {:else if store.ui.tab === 'clip'}
-      <ClipEditor />
+      <div class="pad"><ClipEditor /></div>
     {:else if store.ui.tab === 'encoder'}
-      <EncoderPanel />
+      <div class="pad"><EncoderPanel /></div>
     {:else}
-      <AudioPanel />
+      <div class="pad"><AudioPanel /></div>
     {/if}
   </div>
 </div>
@@ -44,37 +44,41 @@
     flex-direction: column;
     min-height: 0;
   }
-  nav {
+  .tabs {
     display: flex;
+    height: 32px;
     border-bottom: 1px solid var(--line);
-    padding: 4px;
-    gap: 2px;
+    flex: none;
   }
-  nav button {
+  .tabs button {
     flex: 1;
-    border-radius: 6px;
-    color: var(--muted);
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--text-3);
+    font-size: 12px;
   }
-  nav button.active {
+  .tabs button:hover:not(:disabled) {
+    background: none;
+    color: var(--text-2);
+  }
+  .tabs button.active {
     color: var(--text);
-    background: var(--panel2);
-    border-color: var(--line);
-    box-shadow: inset 0 -2px 0 var(--accent);
+    box-shadow: inset 0 -1px 0 var(--text);
   }
-  .badge {
-    background: var(--accent);
-    color: #fff;
-    border-radius: 8px;
-    padding: 0 5px;
+  .count {
     font-size: 10px;
-    margin-left: 4px;
+    color: var(--text-3);
+    margin-left: 2px;
   }
   .body {
     flex: 1;
     overflow: auto;
-    padding: 10px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+  }
+  .pad {
+    padding: 10px 12px 24px;
   }
 </style>

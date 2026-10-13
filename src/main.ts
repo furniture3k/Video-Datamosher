@@ -7,6 +7,7 @@ target.innerHTML = ''; // remove the boot screen
 const app = mount(App, { target });
 (window as unknown as { __moshpitMounted: boolean }).__moshpitMounted = true;
 document.getElementById('boot-error')?.remove();
+document.body.removeAttribute('style'); // boot-screen colours; the theme takes over now
 export default app;
 
 // Debug handle (handy in the browser console and for automated tests)

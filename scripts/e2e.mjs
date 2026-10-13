@@ -48,23 +48,23 @@ const step = async (name, fn) => {
 const waitRender = () =>
   page.waitForFunction(() => {
     const c = document.querySelector('.stage canvas');
-    return c && !c.classList.contains('hidden') && !document.querySelector('.busy') && !window.__moshpit.store.status.pending;
+    return c && !c.classList.contains('hidden') && !window.__moshpit.store.status.busy && !window.__moshpit.store.status.pending;
   }, null, { timeout: 180000 });
 
 try {
   await step('load app', async () => {
     await page.goto(url);
-    await page.getByText('Welcome to MOSHPIT').waitFor();
+    await page.getByRole('button', { name: 'Load example' }).waitFor();
   });
   await step('load demo (generators + preset) and render', async () => {
-    await page.getByRole('button', { name: '▶ Try a demo' }).click();
+    await page.getByRole('button', { name: 'Load example' }).click();
     await waitRender();
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(shots, '1-demo.png') });
   });
   await step('frames rendered', async () => {
-    const n = await page.evaluate(() => document.querySelector('.info')?.textContent);
-    if (!/frame 1\/\d+/.test(n ?? '')) throw new Error('unexpected frame info: ' + n);
+    const n = await page.evaluate(() => document.querySelector('.frameinfo')?.textContent);
+    if (!/1\/\d+/.test(n ?? '')) throw new Error('unexpected frame info: ' + n);
   });
   await step('scrub to the mosh', async () => {
     for (let i = 0; i < 4; i++) await page.keyboard.press('Shift+ArrowRight');
@@ -139,7 +139,7 @@ try {
       await page.locator('.clip', { hasText: 'dancer.mp4' }).waitFor({ timeout: 60000 });
       await page.waitForTimeout(800);
       await waitRender();
-      await page.locator('nav button', { hasText: 'Audio' }).click();
+      await page.locator('.tabs button', { hasText: 'Audio' }).click();
       await page.getByText('Bit depth').waitFor();
       await page.keyboard.press('e');
       await page.getByRole('button', { name: /^WebM/ }).click();
@@ -157,8 +157,8 @@ try {
       await page.keyboard.press('Escape');
     });
   await step('live mode with (fake) webcam', async () => {
-    await page.getByRole('button', { name: '◉ Live' }).click();
-    await page.getByRole('button', { name: '📷 Webcam' }).click();
+    await page.getByRole('button', { name: 'Live', exact: true }).click();
+    await page.getByRole('button', { name: 'Camera' }).click();
     await page.waitForTimeout(3000);
     await page.keyboard.press('4');
     await page.waitForTimeout(1500);

@@ -7,31 +7,30 @@
   shareCode().then((c) => (code = c));
   async function copy() {
     await navigator.clipboard.writeText(code);
-    store.toast('Mosh code copied', 'ok');
+    store.toast('Copied.', 'ok');
   }
   async function apply() {
     try {
       await applyShareCode(paste);
       store.ui.dialog = null;
-      store.toast('Mosh code applied', 'ok');
+      store.toast('Applied.', 'ok');
     } catch {
-      store.toast('That code could not be read', 'error');
+      store.toast('That code could not be read.', 'error');
     }
   }
 </script>
 
-<Modal title="Share a mosh recipe">
+<Modal title="Share code">
   <div class="col">
     <p class="small muted">
-      A mosh code holds all your effects, automation, seeds and encoder settings (not the video). Paste it into MOSHPIT with any footage to recreate the
-      recipe.
+      A code holds the effect stack, automation, seeds and encoder settings, not the footage. Paste it into another project to reuse the recipe.
     </p>
     <textarea readonly rows="4" value={code} onfocus={(e) => (e.target as HTMLTextAreaElement).select()}></textarea>
-    <button onclick={copy} disabled={!code}>📋 Copy code</button>
+    <button onclick={copy} disabled={!code}>Copy</button>
     <hr />
-    <span class="section-title">Paste a code</span>
+    <span class="label">Paste a code</span>
     <textarea rows="4" bind:value={paste} placeholder="MOSH:…"></textarea>
-    <button class="primary" disabled={!paste.trim()} onclick={apply}>Apply to my project</button>
+    <button class="primary" disabled={!paste.trim()} onclick={apply}>Apply to this project</button>
   </div>
 </Modal>
 
@@ -46,6 +45,10 @@
     border: none;
     border-top: 1px solid var(--line);
     width: 100%;
+    margin: 6px 0;
+  }
+  button {
+    align-self: flex-start;
   }
   p {
     margin: 0;

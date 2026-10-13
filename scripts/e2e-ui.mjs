@@ -48,7 +48,7 @@ const step = async (name, fn) => {
 
 await page.goto(url);
 await step('demo', async () => {
-  await page.getByRole('button', { name: '▶ Try a demo' }).click();
+  await page.getByRole('button', { name: 'Load example' }).click();
   await settle();
 });
 
@@ -57,7 +57,7 @@ for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
     await page.keyboard.press('a');
-    await page.locator('.card').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort' })[t], t) }).first().click();
+    await page.locator('.modal .item').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort' })[t], t) }).first().click();
     await settle();
     const n = await S(() => window.__moshpit.store.render.frames.length);
     if (!n) throw new Error('no frames');
@@ -65,10 +65,10 @@ for (const t of effectTypes)
   });
 
 await step('advanced mode + every glitch mode via UI select', async () => {
-  await page.locator('label.mode input').check();
+  await page.getByRole('button', { name: 'Advanced', exact: true }).click();
   await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
   await page.keyboard.press('a');
-  await page.locator('.card').filter({ hasText: 'Byte Glitch' }).click();
+  await page.locator('.modal .item').filter({ hasText: 'Byte Glitch' }).click();
   for (const mode of ['flip', 'shift', 'insert', 'delete', 'swap']) {
     await page.locator('.pc select').first().selectOption(mode);
     await settle();
@@ -85,7 +85,7 @@ await step('LFO automation on a number param', async () => {
 
 for (const codec of ['mpeg2', 'mpeg1', 'mpeg4'])
   await step(`codec ${codec} at 12 fps`, async () => {
-    await page.locator('nav button', { hasText: 'Encode' }).click();
+    await page.locator('.tabs button', { hasText: 'Encode' }).click();
     await page.locator('.field').filter({ hasText: 'Mosh codec' }).locator('select').selectOption(codec);
     await page.locator('.field').filter({ hasText: 'Frame rate' }).locator('select').selectOption('12');
     await settle();
@@ -100,17 +100,16 @@ await step('encoder internals toggles', async () => {
 });
 
 await step('audio panel', async () => {
-  await page.locator('nav button', { hasText: 'Audio' }).click();
+  await page.locator('.tabs button', { hasText: 'Audio' }).click();
   await page.locator('.field').filter({ hasText: 'Sync mode' }).locator('select').selectOption('original');
   await settle();
 });
 
 await step('presets: apply each built-in', async () => {
-  const n = await S(() => document.querySelectorAll('.card').length);
   await page.keyboard.press('p');
-  const names = await page.locator('.modal .card b').allTextContents();
+  const names = await page.locator('.modal .main .nm').allTextContents();
   for (const name of names) {
-    await page.locator('.modal .card').filter({ hasText: name }).first().click();
+    await page.locator('.modal .main').filter({ hasText: name }).first().click();
     await settle();
     await page.keyboard.press('p');
   }
@@ -119,9 +118,9 @@ await step('presets: apply each built-in', async () => {
 
 await step('save user preset + delete it', async () => {
   await page.keyboard.press('p');
-  await page.getByRole('button', { name: /Save current as preset/ }).click();
+  await page.getByRole('button', { name: /Save current stack/ }).click();
   await page.getByText('Test preset').waitFor();
-  await page.locator('.card-wrap .del').first().click();
+  await page.locator('.modal .del').first().click();
   await page.keyboard.press('Escape');
 });
 
@@ -136,7 +135,7 @@ await step('share code round trip', async () => {
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Share/ }).click();
   await page.locator('textarea:not([readonly])').fill(code);
-  await page.getByRole('button', { name: 'Apply to my project' }).click();
+  await page.getByRole('button', { name: 'Apply to this project' }).click();
   await settle();
   const after = await S(() => JSON.stringify(window.__moshpit.store.project.effects.map((e) => [e.type, e.start, e.end])));
   if (before !== after) throw new Error(`mismatch ${before} vs ${after}`);

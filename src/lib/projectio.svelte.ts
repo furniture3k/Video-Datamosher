@@ -7,7 +7,7 @@ export function saveProjectFile() {
   const p = $state.snapshot(store.project) as Project;
   const data = { ...p, clips: p.clips.map((c) => ({ ...c, thumb: undefined })) };
   download(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `${(p.name || 'mosh').replace(/[^\w-]+/g, '_')}.mosh.json`);
-  store.toast('Project saved. Media files are not included; keep your clips alongside it.', 'ok');
+  store.toast('Saved. Media files are not included in the project file.', 'ok');
 }
 
 /** Load a project file. Clips whose media is in the current session are matched by name. */
@@ -34,8 +34,8 @@ export async function loadProjectFile(file: File) {
     const missing = p.clips.length - clips.length;
     if (p.audio?.clipId) p.audio.clipId = idMap.get(p.audio.clipId) ?? (clips.some((c) => c.id === p.audio.clipId) ? p.audio.clipId : null);
     store.set({ ...base, ...p, clips: clips.length ? clips : current, encoder: { ...base.encoder, ...p.encoder }, decoder: { ...base.decoder, ...p.decoder }, audio: { ...base.audio, ...p.audio } });
-    if (missing) store.toast(`${missing} clip(s) need their media. Add the files, then load the project again.`, 'error', 7000);
-    else store.toast('Project loaded', 'ok');
+    if (missing) store.toast(`${missing} clip(s) are missing their media. Import the files and open the project again.`, 'error', 7000);
+    else store.toast('Opened.', 'ok');
   } catch (e) {
     store.toast('Could not load project: ' + (e as Error).message, 'error');
   }

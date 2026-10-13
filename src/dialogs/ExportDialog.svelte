@@ -19,11 +19,11 @@
   const hasAudio = $derived(store.project.audio.source !== 'none' && store.project.clips.some((c) => c.hasAudio));
 
   const FORMATS = [
-    { id: 'mp4', label: 'MP4', desc: 'H.264, plays everywhere' },
-    { id: 'webm', label: 'WebM', desc: 'VP8 + Vorbis, open format' },
-    { id: 'gif', label: 'GIF', desc: 'Loops, no sound' },
-    { id: 'avi', label: 'Raw AVI', desc: 'The actual broken file' },
-    { id: 'png', label: 'PNG frames', desc: 'Zip of every frame' },
+    { id: 'mp4', label: 'MP4', desc: 'H.264' },
+    { id: 'webm', label: 'WebM', desc: 'VP8 + Vorbis' },
+    { id: 'gif', label: 'GIF', desc: 'no sound' },
+    { id: 'avi', label: 'AVI', desc: 'the broken file' },
+    { id: 'png', label: 'PNG', desc: 'zip of frames' },
   ] as const;
 
   async function go() {
@@ -135,7 +135,7 @@
         <span class="small mono">{stage}… {Math.round(progress * 100)}%</span>
       </div>
     {/if}
-    {#if error}<div class="err small">⚠ {error}</div>{/if}
+    {#if error}<div class="err small">{error}</div>{/if}
     {#if result}
       <div class="done">
         {#if result.type.startsWith('video/mp4') || result.type.startsWith('video/webm')}
@@ -145,7 +145,7 @@
           <img src={result.url} alt="export preview" />
         {/if}
         <div class="row small">
-          <span class="grow">✓ {result.name} · {mb(result.size)}</span>
+          <span class="grow mono">{result.name} · {mb(result.size)}</span>
           <a href={result.url} download={result.name}>Download again</a>
         </div>
       </div>
@@ -156,7 +156,7 @@
       <button onclick={cancel}>Cancel</button>
     {:else}
       <button onclick={() => (store.ui.dialog = null)}>Close</button>
-      <button class="primary" onclick={go}>⇩ Export {o.format.toUpperCase()}</button>
+      <button class="primary" onclick={go}>Export {o.format.toUpperCase()}</button>
     {/if}
   {/snippet}
 </Modal>
@@ -164,15 +164,30 @@
 <style>
   .formats {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 6px;
+    grid-template-columns: repeat(5, 1fr);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r);
+    overflow: hidden;
   }
   .fmt {
-    display: flex;
+    height: auto;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    padding: 8px 10px;
+    gap: 1px;
+    padding: 7px 4px;
+    border: none;
+    border-radius: 0;
+    background: var(--surface-2);
+  }
+  .fmt + .fmt {
+    border-left: 1px solid var(--line-2);
+  }
+  .fmt span {
+    font-size: 11px;
+  }
+  .fmt.on {
+    background: var(--surface-3);
+    box-shadow: inset 0 -2px 0 var(--accent);
+    color: var(--text);
   }
   .prog {
     display: flex;
@@ -181,27 +196,35 @@
   }
   .bar {
     flex: 1;
-    height: 8px;
-    background: var(--line);
-    border-radius: 4px;
-    overflow: hidden;
+    height: 2px;
+    background: var(--line-2);
   }
   .bar div {
     height: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    background: var(--accent);
   }
   .err {
     color: var(--danger);
     white-space: pre-wrap;
   }
+  .done {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
   .done video,
   .done img {
     width: 100%;
-    border-radius: 8px;
     max-height: 300px;
     background: #000;
+    object-fit: contain;
   }
   a {
-    color: var(--accent2);
+    color: var(--text);
+  }
+  @media (max-width: 560px) {
+    .formats {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
 </style>

@@ -2,7 +2,9 @@
   import Modal from '../components/Modal.svelte';
   import { store } from '../lib/store.svelte';
   import { PRESETS, applyPreset, presetFromProject, type Preset } from '../engine/presets';
+  import { EFFECTS } from '../engine/effects';
   import { userPresets } from '../lib/projectio.svelte';
+  import Icon from '../components/Icon.svelte';
   import type { Project } from '../engine/types';
 
   let mine = $state(userPresets.list());
@@ -10,89 +12,110 @@
 
   function use(p: Preset) {
     if (!store.project.clips.length) {
-      store.toast('Add a clip first, then choose a preset.', 'error');
+      store.toast('Add a clip first.', 'error');
       return;
     }
     store.set(applyPreset($state.snapshot(store.project) as Project, p, store.totalFrames, store.cuts, mode));
     store.ui.dialog = null;
-    store.toast(`${p.emoji} ${p.name} applied. Tweak anything in the Effects panel.`);
   }
   function saveCurrent() {
-    const name = prompt('Name your preset', 'My mosh');
+    const name = prompt('Preset name', 'Untitled preset');
     if (!name) return;
     userPresets.save(presetFromProject($state.snapshot(store.project) as Project, store.totalFrames, name));
     mine = userPresets.list();
-    store.toast('Preset saved', 'ok');
+    store.toast('Preset saved.', 'ok');
   }
 </script>
 
+{#snippet row(p: Preset, removable: boolean)}
+  <div class="item">
+    <button class="main" onclick={() => use(p)}>
+      <span class="nm">{p.name}</span>
+      <span class="codes">
+        {#each p.effects as e}<span class="code" style="--c:{EFFECTS[e.type]?.color}">{EFFECTS[e.type]?.icon}</span>{/each}
+      </span>
+      <span class="ds">{p.description}</span>
+    </button>
+    {#if removable}
+      <button class="icon ghost del" title="Delete preset" aria-label="Delete preset" onclick={() => (userPresets.remove(p.id), (mine = userPresets.list()))}><Icon name="trash" size={13} /></button>
+    {/if}
+  </div>
+{/snippet}
+
 <Modal title="Presets" wide>
-  <div class="row bar small">
-    <span class="muted">When applying:</span>
-    <button class:on={mode === 'replace'} onclick={() => (mode = 'replace')}>Replace my effects</button>
-    <button class:on={mode === 'add'} onclick={() => (mode = 'add')}>Add on top</button>
+  <div class="row bar">
+    <span class="label">On apply</span>
+    <div class="seg">
+      <button class:on={mode === 'replace'} onclick={() => (mode = 'replace')}>Replace stack</button>
+      <button class:on={mode === 'add'} onclick={() => (mode = 'add')}>Add to stack</button>
+    </div>
     <span class="grow"></span>
-    <button disabled={!store.project.effects.length} onclick={saveCurrent}>⭐ Save current as preset</button>
+    <button disabled={!store.project.effects.length} onclick={saveCurrent}><Icon name="save" size={14} />Save current stack</button>
   </div>
   {#if mine.length}
-    <h4 class="section-title">Your presets</h4>
+    <div class="label gl">Saved</div>
     <div class="grid">
-      {#each mine as p (p.id)}
-        <div class="card-wrap">
-          <button class="card" onclick={() => use(p)}>
-            <span class="em">{p.emoji}</span><b>{p.name}</b>
-            <span class="small muted">{p.effects.length} effect(s)</span>
-          </button>
-          <button class="del icon ghost" title="Delete preset" onclick={() => (userPresets.remove(p.id), (mine = userPresets.list()))}>✕</button>
-        </div>
-      {/each}
+      {#each mine as p (p.id)}{@render row(p, true)}{/each}
     </div>
   {/if}
-  <h4 class="section-title">Built in</h4>
+  <div class="label gl">Built in</div>
   <div class="grid">
-    {#each PRESETS as p (p.id)}
-      <button class="card" onclick={() => use(p)}>
-        <span class="em">{p.emoji}</span><b>{p.name}</b>
-        <span class="small muted">{p.description}</span>
-      </button>
-    {/each}
+    {#each PRESETS as p (p.id)}{@render row(p, false)}{/each}
   </div>
 </Modal>
 
 <style>
   .bar {
-    margin-bottom: 10px;
+    margin-bottom: 6px;
     flex-wrap: wrap;
+    gap: 10px;
   }
-  h4 {
-    margin: 12px 0 8px;
+  .gl {
+    margin: 14px 0 6px;
   }
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    border-top: 1px solid var(--line);
+    border-left: 1px solid var(--line);
   }
-  .card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    text-align: left;
-    white-space: normal;
-    padding: 12px;
+  .item {
+    position: relative;
+    border-right: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .main {
     width: 100%;
     height: 100%;
-    line-height: 1.35;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 5px;
+    padding: 10px 12px;
+    background: none;
+    border: none;
+    border-radius: 0;
+    text-align: left;
+    white-space: normal;
   }
-  .em {
-    font-size: 26px;
+  .main:hover:not(:disabled) {
+    background: var(--surface-2);
   }
-  .card-wrap {
-    position: relative;
+  .nm {
+    font-weight: 600;
+  }
+  .codes {
+    display: flex;
+    gap: 3px;
+  }
+  .ds {
+    color: var(--text-2);
+    font-size: 12px;
+    line-height: 1.45;
   }
   .del {
     position: absolute;
-    top: 4px;
-    right: 4px;
+    top: 6px;
+    right: 6px;
   }
 </style>

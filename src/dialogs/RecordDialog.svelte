@@ -4,6 +4,7 @@
   import Modal from '../components/Modal.svelte';
   import { store } from '../lib/store.svelte';
   import { addFiles } from '../lib/media';
+  import Icon from '../components/Icon.svelte';
 
   let video: HTMLVideoElement;
   let stream = $state<MediaStream | null>(null);
@@ -70,25 +71,25 @@
   });
 </script>
 
-<Modal title="Record a clip">
+<Modal title="Record">
   <div class="col">
     <div class="row">
-      <button onclick={() => start('camera')} disabled={recording}>📷 Webcam</button>
-      {#if canScreen}<button onclick={() => start('screen')} disabled={recording}>🖥 Screen / window</button>{/if}
+      <button onclick={() => start('camera')} disabled={recording}><Icon name="camera" />Camera</button>
+      {#if canScreen}<button onclick={() => start('screen')} disabled={recording}><Icon name="screen" />Screen</button>{/if}
       <label class="row small"><input type="checkbox" bind:checked={withAudio} disabled={recording} /> with sound</label>
     </div>
     <!-- svelte-ignore a11y_media_has_caption -->
     <video bind:this={video} muted playsinline class:on={!!stream}></video>
-    {#if !stream}<p class="small muted">Choose a source. Tip: wave your hands or move the camera. Motion is what moshing feeds on.</p>{/if}
+    {#if !stream}<p class="small muted">Pick a source. Moshing feeds on motion, so move the camera or wave a hand.</p>{/if}
     {#if error}<p class="small" style="color:var(--danger)">{error}</p>{/if}
   </div>
   {#snippet footer()}
     {#if recording}
-      <span class="mono small rec">● {elapsed.toFixed(1)}s</span>
-      <button class="primary" onclick={finish}>■ Stop & add clip</button>
+      <span class="mono small rec">REC {elapsed.toFixed(1)}s</span>
+      <button class="primary" onclick={finish}>Stop and add</button>
     {:else}
       <button onclick={() => (store.ui.dialog = null)}>Cancel</button>
-      <button class="primary" disabled={!stream} onclick={rec}>● Record</button>
+      <button class="primary" disabled={!stream} onclick={rec}><Icon name="rec" size={12} />Record</button>
     {/if}
   {/snippet}
 </Modal>
@@ -96,7 +97,6 @@
 <style>
   video {
     width: 100%;
-    border-radius: 8px;
     background: #000;
     display: none;
   }

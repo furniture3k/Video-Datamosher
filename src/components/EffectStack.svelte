@@ -1,19 +1,20 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
+  import Icon from './Icon.svelte';
   let dragFrom = -1;
 </script>
 
 <div class="stack">
-  <div class="row head">
-    <span class="section-title grow">Effect stack</span>
-    <button class="small" onclick={() => (store.ui.dialog = 'addEffect')}>＋ Add</button>
+  <div class="head">
+    <span class="label">Stack</span>
+    <button class="ghost" onclick={() => (store.ui.dialog = 'addEffect')} title="Add effect  A"><Icon name="plus" size={13} />Add</button>
   </div>
   {#if !store.project.effects.length}
     <div class="empty small muted">
-      No effects yet. Pick a <button class="link" onclick={() => (store.ui.dialog = 'presets')}>preset</button>, roll
-      <b>🎲 Chaos</b>, or <button class="link" onclick={() => (store.ui.dialog = 'addEffect')}>add an effect</button>.
-      <br /><br />Effects run top to bottom. Bitstream effects ✂✿ edit the compressed video; pixel effects ➶◐ work on the decoded image afterwards.
+      No effects. Start from a <button class="link" onclick={() => (store.ui.dialog = 'presets')}>preset</button> or
+      <button class="link" onclick={() => (store.ui.dialog = 'addEffect')}>add one</button>.
+      <span class="faint">Effects run top to bottom.</span>
     </div>
   {/if}
   {#each store.project.effects as fx, i (fx.id)}
@@ -37,33 +38,39 @@
     >
       <input
         type="checkbox"
+        class="switch"
         checked={fx.enabled}
-        title="Enable / bypass"
+        title={fx.enabled ? 'On (click to bypass)' : 'Bypassed'}
+        aria-label="Enabled"
         onclick={(e) => e.stopPropagation()}
         onchange={(e) => store.edit(() => (fx.enabled = (e.target as HTMLInputElement).checked))}
       />
-      <span class="ic">{def?.icon}</span>
-      <span class="nm grow">{fx.name || def?.name}</span>
-      <span class="kind small mono">{def?.kind === 'pixel' ? 'PIX' : 'BIT'}</span>
-      <button
-        class="icon ghost tiny"
-        class:on={fx.solo}
-        title="Solo: hear/see only soloed effects"
-        onclick={(e) => (e.stopPropagation(), store.edit(() => (fx.solo = !fx.solo)))}>S</button
-      >
-      <button
-        class="icon ghost tiny"
-        class:on={fx.locks.includes('__keep')}
-        title="Pin: keep this effect (unchanged) when rolling Chaos or Mutate"
-        onclick={(e) => {
-          e.stopPropagation();
-          store.edit(() => (fx.locks = fx.locks.includes('__keep') ? fx.locks.filter((l) => l !== '__keep') : [...fx.locks, '__keep']));
-        }}>📌</button
-      >
-      <button class="icon ghost tiny" title="Move up" disabled={i === 0} onclick={(e) => (e.stopPropagation(), store.moveEffect(fx.id, -1))}>↑</button>
-      <button class="icon ghost tiny" title="Move down" disabled={i === store.project.effects.length - 1} onclick={(e) => (e.stopPropagation(), store.moveEffect(fx.id, 1))}>↓</button>
-      <button class="icon ghost tiny" title="Duplicate (D)" onclick={(e) => (e.stopPropagation(), store.duplicateEffect(fx.id))}>⧉</button>
-      <button class="icon ghost tiny" title="Delete (Del)" onclick={(e) => (e.stopPropagation(), store.removeEffect(fx.id))}>✕</button>
+      <span class="code">{def?.icon}</span>
+      <span class="nm">{fx.name || def?.name}</span>
+      {#if fx.locks.includes('__keep')}<span class="flag" title="Pinned"><Icon name="pin" size={12} /></span>{/if}
+      <div class="tools">
+        <button
+          class="icon ghost solo"
+          class:on={fx.solo}
+          title="Solo"
+          aria-label="Solo"
+          onclick={(e) => (e.stopPropagation(), store.edit(() => (fx.solo = !fx.solo)))}>S</button
+        >
+        <button
+          class="icon ghost"
+          class:on={fx.locks.includes('__keep')}
+          title="Pin: Randomize and Nudge leave this effect alone"
+          aria-label="Pin"
+          onclick={(e) => {
+            e.stopPropagation();
+            store.edit(() => (fx.locks = fx.locks.includes('__keep') ? fx.locks.filter((l) => l !== '__keep') : [...fx.locks, '__keep']));
+          }}><Icon name="pin" size={13} /></button
+        >
+        <button class="icon ghost" title="Move up" aria-label="Move up" disabled={i === 0} onclick={(e) => (e.stopPropagation(), store.moveEffect(fx.id, -1))}><Icon name="up" size={13} /></button>
+        <button class="icon ghost" title="Move down" aria-label="Move down" disabled={i === store.project.effects.length - 1} onclick={(e) => (e.stopPropagation(), store.moveEffect(fx.id, 1))}><Icon name="down" size={13} /></button>
+        <button class="icon ghost" title="Duplicate  D" aria-label="Duplicate" onclick={(e) => (e.stopPropagation(), store.duplicateEffect(fx.id))}><Icon name="copy" size={13} /></button>
+        <button class="icon ghost" title="Delete  Del" aria-label="Delete" onclick={(e) => (e.stopPropagation(), store.removeEffect(fx.id))}><Icon name="trash" size={13} /></button>
+      </div>
     </div>
   {/each}
 </div>
@@ -72,61 +79,92 @@
   .stack {
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    border-bottom: 1px solid var(--line);
   }
   .head {
-    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 6px 6px 12px;
   }
   .empty {
-    padding: 10px;
-    border: 1px dashed var(--line);
-    border-radius: 8px;
-    line-height: 1.5;
+    padding: 0 12px 12px;
+    line-height: 1.6;
+  }
+  .empty .faint {
+    display: block;
   }
   .link {
     background: none;
     border: none;
     padding: 0;
-    color: var(--accent);
+    height: auto;
+    color: var(--text);
     text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .link:hover:not(:disabled) {
+    background: none;
+    color: var(--accent);
   }
   .item {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 4px 3px 6px;
-    border-radius: 7px;
-    background: var(--bg2);
-    border: 1px solid transparent;
-    border-left: 3px solid var(--c);
+    gap: 8px;
+    height: 32px;
+    padding: 0 6px 0 12px;
+    border-top: 1px solid var(--line);
     cursor: pointer;
+    position: relative;
+  }
+  .item:hover {
+    background: var(--surface-2);
   }
   .item.sel {
-    border-color: var(--c);
-    background: color-mix(in srgb, var(--c) 12%, var(--bg2));
+    background: var(--surface-2);
+  }
+  .item.sel::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--accent);
   }
   .item.off .nm,
-  .item.off .ic {
+  .item.off .code {
     opacity: 0.4;
-    text-decoration: line-through;
-  }
-  .ic {
-    color: var(--c);
-    width: 16px;
-    text-align: center;
   }
   .nm {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .kind {
-    color: var(--faint);
-    font-size: 9px;
+  .flag {
+    color: var(--text-3);
+    display: flex;
   }
-  .tiny {
-    padding: 1px 4px;
-    min-width: 0;
-    font-size: 11px;
+  .tools {
+    display: none;
+    align-items: center;
+  }
+  .item:hover .tools,
+  .item.sel .tools {
+    display: flex;
+  }
+  .tools button {
+    width: 22px;
+    height: 22px;
+  }
+  .solo {
+    font: 600 11px var(--mono);
+  }
+  @media (hover: none) {
+    .tools {
+      display: flex;
+    }
   }
 </style>

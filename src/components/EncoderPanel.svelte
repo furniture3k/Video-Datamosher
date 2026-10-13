@@ -10,20 +10,17 @@
 </script>
 
 <div class="col">
-  <p class="small muted intro">
-    Before moshing, your clips are re-encoded into an old-school codec. These settings shape the <b>texture</b> of the mosh:
-    block size, how motion is tracked, and how often clean frames appear.
-  </p>
+  <p class="small muted intro">Clips are re-encoded into an old codec before moshing. These settings decide the texture: block size, how motion is tracked, how often clean frames appear.</p>
 
-  <div class="section-title">Look</div>
+  <div class="label">Look</div>
   <Field
     type="select"
     label="Mosh codec"
     value={e.codec}
     options={[
-      { value: 'mpeg4', label: 'MPEG-4 / Xvid (classic)' },
-      { value: 'mpeg2', label: 'MPEG-2 (DVD, blocky)' },
-      { value: 'mpeg1', label: 'MPEG-1 (VCD, crusty)' },
+      { value: 'mpeg4', label: 'MPEG-4 Part 2 (Xvid)' },
+      { value: 'mpeg2', label: 'MPEG-2' },
+      { value: 'mpeg1', label: 'MPEG-1' },
     ]}
     help="Xvid is the classic datamosh codec. MPEG-1/2 give chunkier, older-looking smears."
     onchange={setE('codec')}
@@ -45,7 +42,7 @@
     onchange={setE('motionEst')}
   />
 
-  <div class="section-title">Size & time</div>
+  <div class="label sect">Size & time</div>
   <Field
     type="select"
     label="Export width"
@@ -76,10 +73,10 @@
     <span class="grow">Forced keyframes: {e.keyMarkers.length}</span>
     {#if e.keyMarkers.length}<button class="small" onclick={() => store.edit((p) => (p.encoder.keyMarkers = []))}>Clear</button>{/if}
   </div>
-  <div class="small muted">Press <span class="kbd">K</span> or double-click the Keyframes row in the timeline to force a clean frame (a "reset") at that point.</div>
+  <div class="small faint">Press <span class="kbd">K</span> or double-click the keyframe lane to force a clean frame at that point.</div>
 
   {#if adv}
-    <div class="section-title">Encoder internals</div>
+    <div class="label sect">Encoder internals</div>
     <Field label="B-frames" min={0} max={2} step={1} value={e.bframes} help="Bi-directional frames. Usually 0 for moshing; turning them on gives odd forward/backward artefacts." onchange={setE('bframes')} />
     <Field label="Motion range" min={0} max={64} step={1} value={e.meRange} help="Max motion search distance (0 = encoder default). Small values limit how far blocks can travel." onchange={setE('meRange')} />
     <Field
@@ -108,14 +105,14 @@
     {/if}
     <Field type="bool" label="Trellis quantisation" value={e.trellis} help="Slower, cleaner compression." onchange={setE('trellis')} />
 
-    <div class="section-title">Decoder (playback of the broken file)</div>
+    <div class="label sect">Decoder</div>
     <Field type="bool" label="Guess missing motion" value={d.guessMvs} help="When data is damaged, invent motion from neighbours (error concealment)." onchange={setD('guessMvs')} />
     <Field type="bool" label="Deblock damage" value={d.deblock} help="Smooth over damaged blocks." onchange={setD('deblock')} />
     <Field type="bool" label="Favour inter prediction" value={d.favorInter} help="Prefer motion over intra when concealing errors." onchange={setD('favorInter')} />
     <Field type="bool" label="Ignore errors" value={d.ignoreErrors} help="Keep decoding through heavy corruption." onchange={setD('ignoreErrors')} />
     <Field type="bool" label="Show all frames" value={d.showAll} help="Output frames even when the decoder thinks they are invalid." onchange={setD('showAll')} />
   {:else}
-    <button class="ghost small" style="align-self:flex-start;color:var(--accent)" onclick={() => store.setPref('advanced', true)}>+ Encoder internals & decoder settings</button>
+    <button class="ghost small" style="align-self:flex-start;margin-left:-6px" onclick={() => store.setPref('advanced', true)}>Show encoder internals</button>
   {/if}
 </div>
 
@@ -124,7 +121,9 @@
     margin: 0;
     line-height: 1.45;
   }
-  .section-title {
-    margin-top: 8px;
+  .sect {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
   }
 </style>

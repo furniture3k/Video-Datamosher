@@ -19,8 +19,8 @@
 </script>
 
 <Modal title="Generate a clip">
-  <p class="small muted">Procedural footage made by the video engine. Handy for testing or as raw material to mosh with.</p>
-  <label class="row small">Length <input type="number" min="1" max="30" bind:value={seconds} /> seconds</label>
+  <p class="small muted">Procedural footage rendered by the video engine.</p>
+  <label class="row small len">Length <input type="number" min="1" max="30" bind:value={seconds} /> seconds</label>
   <div class="grid">
     {#each GENERATORS as g}
       <button disabled={busy} onclick={() => add(g.id)}>{g.name}</button>
@@ -30,6 +30,9 @@
 </Modal>
 
 <style>
+  .len {
+    margin-top: 10px;
+  }
   .grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -37,6 +40,7 @@
     margin-top: 12px;
   }
   .grid button {
-    padding: 14px;
+    height: 34px;
+    justify-content: flex-start;
   }
 </style>

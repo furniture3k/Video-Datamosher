@@ -5,6 +5,7 @@
   import { randomParam } from '../engine/presets';
   import { makeRng, randomSeed } from '../engine/rng';
   import AutomationEditor from './AutomationEditor.svelte';
+  import Icon from './Icon.svelte';
 
   let { effect, def }: { effect: EffectInstance; def: ParamDef } = $props();
   const value = $derived(effect.params[def.key]);
@@ -42,103 +43,152 @@
   const playSrc = $derived(store.render?.frames[store.ui.playhead]?.src ?? 0);
 </script>
 
-<div class="pc" class:locked>
-  <div class="top row">
-    <span class="label grow" title={def.help}>{def.label}<span class="q" title={def.help}>?</span></span>
+<div class="pc" class:locked class:automated={!!auto}>
+  <div class="top">
+    <span class="label-text" title={def.help}>{def.label}</span>
+    <div class="tools">
+      {#if automatable}
+        <button class="icon ghost" class:on={!!auto} title="Automate over time (curve or LFO)" aria-label="Automate" onclick={toggleAuto}><Icon name="curve" size={13} /></button>
+      {/if}
+      <button class="icon ghost" title="Randomize this" aria-label="Randomize" onclick={dice}><Icon name="dice" size={13} /></button>
+      <button class="icon ghost" class:on={locked} title={locked ? 'Locked: Randomize and Nudge skip this' : 'Lock against Randomize and Nudge'} aria-label="Lock" onclick={toggleLock}
+        ><Icon name={locked ? 'lock' : 'unlock'} size={13} /></button
+      >
+    </div>
     {#if def.type === 'number' || def.type === 'int'}
       {#if !auto}
-        <input type="number" min={def.min} max={def.max} step={def.type === 'int' ? 1 : (def.step ?? 0.01)} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
-        {#if def.unit}<span class="small muted">{def.unit}</span>{/if}
+        <input class="val" type="number" min={def.min} max={def.max} step={def.type === 'int' ? 1 : (def.step ?? 0.01)} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
+        {#if def.unit}<span class="unit">{def.unit}</span>{/if}
+      {:else}
+        <span class="val auto mono">auto</span>
       {/if}
     {:else if def.type === 'bool' && !auto}
-      <input type="checkbox" class="switch" checked={!!value} onchange={(e) => set((e.target as HTMLInputElement).checked)} />
+      <input type="checkbox" class="switch" checked={!!value} aria-label={def.label} onchange={(e) => set((e.target as HTMLInputElement).checked)} />
+    {:else if def.type === 'bool'}
+      <span class="val auto mono">auto</span>
     {/if}
-    {#if automatable}
-      <button class="mini" class:on={!!auto} title="Automate: change this over time (curve or LFO)" onclick={toggleAuto}>〰</button>
-    {/if}
-    <button class="mini" title="Randomise this setting" onclick={dice}>⚄</button>
-    <button class="mini" class:on={locked} title={locked ? 'Locked: Chaos / Mutate will not change this' : 'Lock against Chaos / Mutate'} onclick={toggleLock}>{locked ? '🔒' : '🔓'}</button>
   </div>
   {#if auto}
     <AutomationEditor {effect} {def} />
   {:else if def.type === 'number' || def.type === 'int'}
     <input
       type="range"
+      aria-label={def.label}
+      title="Double-click to reset"
       min={isLog ? 0 : def.min}
       max={isLog ? 1 : def.max}
       step={isLog ? 0.001 : def.type === 'int' ? 1 : (def.step ?? 0.01)}
       value={toSlider(Number(value))}
       oninput={(e) => set(fromSlider(+(e.target as HTMLInputElement).value))}
+      ondblclick={() => set(def.default)}
     />
   {:else if def.type === 'select'}
-    <div class="seg">
-      {#if def.options.length <= 3}
+    {#if def.options.length <= 3}
+      <div class="seg full">
         {#each def.options as o}
           <button class:on={value === o.value} onclick={() => set(o.value)}>{o.label}</button>
         {/each}
-      {:else}
-        <select value={value} onchange={(e) => set((e.target as HTMLSelectElement).value)}>
-          {#each def.options as o}<option value={o.value}>{o.label}</option>{/each}
-        </select>
-      {/if}
-    </div>
+      </div>
+    {:else}
+      <select value={value} aria-label={def.label} onchange={(e) => set((e.target as HTMLSelectElement).value)}>
+        {#each def.options as o}<option value={o.value}>{o.label}</option>{/each}
+      </select>
+    {/if}
   {:else if def.type === 'frame'}
     <div class="row">
-      <input type="range" min="0" max={Math.max(0, store.totalFrames - 1)} value={Number(value)} oninput={(e) => set(+(e.target as HTMLInputElement).value)} />
-      <input type="number" min="0" max={store.totalFrames} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
-      <button class="mini" title="Use playhead position" onclick={() => set(playSrc)}>⌖</button>
+      <input type="range" aria-label={def.label} min="0" max={Math.max(0, store.totalFrames - 1)} value={Number(value)} oninput={(e) => set(+(e.target as HTMLInputElement).value)} />
+      <input class="val" type="number" min="0" max={store.totalFrames} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
+      <button class="icon ghost" title="Use playhead position" aria-label="Use playhead" onclick={() => set(playSrc)}><Icon name="import" size={13} /></button>
     </div>
   {/if}
 </div>
 
 <style>
   .pc {
-    padding: 5px 0;
-    border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+    padding: 6px 0 4px;
   }
-  .pc.locked .label {
-    color: var(--accent3);
+  .top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 22px;
   }
-  .label {
-    font-size: 12.5px;
-  }
-  .q {
-    display: inline-grid;
-    place-items: center;
-    width: 14px;
-    height: 14px;
-    margin-left: 5px;
-    border-radius: 50%;
-    border: 1px solid var(--faint);
-    color: var(--muted);
-    font-size: 9px;
-    cursor: help;
-    vertical-align: 1px;
-  }
-  .mini {
-    padding: 0 4px;
-    font-size: 11px;
+  .label-text {
+    flex: 1;
     min-width: 0;
-    background: transparent;
-    border-color: transparent;
-    opacity: 0.6;
+    font-size: 12.5px;
+    color: var(--text-2);
+    cursor: help;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .mini:hover,
-  .mini.on {
+  .pc:hover .label-text {
+    color: var(--text);
+  }
+  .pc.locked .label-text::after {
+    content: ' ·locked';
+    color: var(--text-3);
+    font-size: 11px;
+  }
+  .tools {
+    display: flex;
+    opacity: 0;
+  }
+  .pc:hover .tools,
+  .tools:focus-within {
     opacity: 1;
   }
-  .seg {
-    display: flex;
-    gap: 3px;
-    flex-wrap: wrap;
-    margin-top: 3px;
+  .tools button {
+    width: 22px;
+    height: 22px;
   }
-  .seg button {
+  .tools button.on {
+    opacity: 1;
+  }
+  .pc.locked .tools,
+  .pc.automated .tools {
+    opacity: 1;
+  }
+  .val {
+    width: 64px;
+    height: 22px;
+    border-color: transparent;
+    background: transparent;
+    color: var(--text);
+  }
+  .val:hover,
+  .val:focus {
+    border-color: var(--line-2);
+    background: var(--bg);
+  }
+  .val.auto {
+    width: auto;
+    font-size: 11px;
+    color: var(--accent);
+  }
+  .unit {
+    font-size: 11px;
+    color: var(--text-3);
+    margin-left: -4px;
+    min-width: 14px;
+  }
+  .seg.full {
+    display: flex;
+    margin-top: 4px;
+  }
+  .seg.full button {
     flex: 1;
     font-size: 11.5px;
-    padding: 4px 6px;
+    padding: 0 4px;
   }
-  .seg select {
+  select {
     width: 100%;
+    margin-top: 4px;
+  }
+  @media (hover: none) {
+    .tools {
+      opacity: 1;
+    }
   }
 </style>

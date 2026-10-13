@@ -1,176 +1,192 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
   import { saveProjectFile, loadProjectFile } from '../lib/projectio.svelte';
+  import { loadExample } from '../lib/media';
   import { randomSeed } from '../engine/rng';
+  import Icon from './Icon.svelte';
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
   let loadInput: HTMLInputElement;
   let menuOpen = $state(false);
+  const hasClips = $derived(store.project.clips.length > 0);
 </script>
 
+<svelte:window onclick={() => (menuOpen = false)} />
+
 <header>
-  <div class="brand" title="MOSHPIT, a datamosh studio">
-    <span class="logo">MOSH<span>PIT</span></span>
+  <div class="brand" title="moshpit">
+    <span class="tally" class:busy={store.status.busy}></span>
+    <span class="word mono">moshpit</span>
   </div>
   <input
     class="name"
     value={store.project.name}
     aria-label="Project name"
+    spellcheck="false"
     onchange={(e) => store.edit((p) => (p.name = (e.target as HTMLInputElement).value))}
   />
 
-  <div class="group">
-    <button class="icon ghost" title="Undo (Ctrl+Z)" disabled={!store.historySize.undo} onclick={() => store.undo()}>↶</button>
-    <button class="icon ghost" title="Redo (Ctrl+Shift+Z)" disabled={!store.historySize.redo} onclick={() => store.redo()}>↷</button>
-  </div>
+  <div class="sep"></div>
+  <button class="icon ghost" title="Undo  Ctrl+Z" aria-label="Undo" disabled={!store.historySize.undo} onclick={() => store.undo()}><Icon name="undo" /></button>
+  <button class="icon ghost" title="Redo  Ctrl+Shift+Z" aria-label="Redo" disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" /></button>
+  <div class="sep"></div>
 
-  <div class="group creative">
-    <button onclick={() => (store.ui.dialog = 'presets')} title="Preset gallery (P)">✨ Presets</button>
-    <button class="chaos" onclick={onchaos} disabled={!store.project.clips.length} title="Roll a random mosh (R). Locked settings and pinned effects are kept.">🎲 Chaos</button>
-    <input
-      type="range"
-      min="0"
-      max="1"
-      step="0.05"
-      bind:value={store.ui.chaosIntensity}
-      title="Chaos intensity: {Math.round(store.ui.chaosIntensity * 100)}%"
-      aria-label="Chaos intensity"
-      class="intensity"
-    />
-    <button onclick={onmutate} disabled={!store.project.effects.length} title="Nudge all unlocked settings a little (M)">🧬 Mutate</button>
-    <button onclick={() => (store.ui.dialog = 'variations')} disabled={!store.project.clips.length} title="Render a grid of variations and pick one (V)">▦ Variations</button>
-  </div>
+  <nav class="tools">
+    <button class="ghost" onclick={() => (store.ui.dialog = 'presets')} title="Presets  P"><Icon name="list" />Presets</button>
+    <div class="roll">
+      <button class="ghost" onclick={onchaos} disabled={!hasClips} title="Roll a random effect stack  R. Locked settings and pinned effects stay put."><Icon name="dice" />Randomize</button>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.05"
+        bind:value={store.ui.chaosIntensity}
+        title="How wild the roll is: {Math.round(store.ui.chaosIntensity * 100)}%"
+        aria-label="Randomize amount"
+      />
+    </div>
+    <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  M"><Icon name="nudge" />Nudge</button>
+    <button class="ghost" onclick={() => (store.ui.dialog = 'variations')} disabled={!hasClips} title="Compare several variations side by side  V"><Icon name="grid" />Variations</button>
+  </nav>
 
-  <div class="group seed" title="Global seed: every random choice derives from this. Same seed gives the same result.">
-    <span class="small muted">seed</span>
+  <label class="seed" title="Every random choice comes from this number. Same seed, same result.">
+    <span class="label">Seed</span>
     <input
       type="number"
       value={store.project.globalSeed}
       onchange={(e) => store.edit((p) => (p.globalSeed = +(e.target as HTMLInputElement).value || 0))}
     />
-    <button class="icon ghost" title="New random seed" onclick={() => store.edit((p) => (p.globalSeed = randomSeed()))}>⟳</button>
-  </div>
+    <button class="icon ghost" title="New seed" aria-label="New seed" onclick={() => store.edit((p) => (p.globalSeed = randomSeed()))}><Icon name="reset" size={14} /></button>
+  </label>
 
   <div class="spacer"></div>
 
-  <label class="row small mode" title="Advanced mode shows every setting">
-    <span class:active={!store.ui.advanced}>Simple</span>
-    <input type="checkbox" class="switch" checked={store.ui.advanced} onchange={(e) => store.setPref('advanced', (e.target as HTMLInputElement).checked)} />
-    <span class:active={store.ui.advanced}>Advanced</span>
-  </label>
-
-  <button onclick={() => (store.ui.dialog = 'live')} title="Real-time flow mosh with webcam or video">◉ Live</button>
-  <button class="primary" onclick={() => (store.ui.dialog = 'export')} disabled={!store.project.clips.length} title="Export (E)">⇩ Export</button>
+  <div class="seg" role="group" aria-label="Interface detail">
+    <button class:on={!store.ui.advanced} onclick={() => store.setPref('advanced', false)}>Simple</button>
+    <button class:on={store.ui.advanced} onclick={() => store.setPref('advanced', true)}>Advanced</button>
+  </div>
+  <button onclick={() => (store.ui.dialog = 'live')} title="Real-time mosh of your camera, screen or a video" aria-label="Live"><Icon name="live" /><span class="txt">Live</span></button>
+  <button class="primary" onclick={() => (store.ui.dialog = 'export')} disabled={!hasClips} title="Export  E"><Icon name="export" />Export</button>
 
   <div class="menu-wrap">
-    <button class="icon ghost" onclick={() => (menuOpen = !menuOpen)} aria-label="More" title="More">☰</button>
+    <button class="icon ghost" onclick={(e) => (e.stopPropagation(), (menuOpen = !menuOpen))} aria-label="More" title="More"><Icon name="more" /></button>
     {#if menuOpen}
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="menu panel" onclick={() => (menuOpen = false)}>
-        <button class="ghost" onclick={saveProjectFile}>💾 Save project…<span class="kbd">Ctrl S</span></button>
-        <button class="ghost" onclick={() => loadInput.click()}>📂 Load project…</button>
-        <button class="ghost" onclick={() => (store.ui.dialog = 'share')}>🔗 Share / paste mosh code…</button>
+      <div class="menu" role="menu">
+        <button class="ghost" onclick={saveProjectFile}><Icon name="save" />Save project<span class="kbd">Ctrl S</span></button>
+        <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
+        <button class="ghost" onclick={() => (store.ui.dialog = 'share')}><Icon name="link" />Share code…</button>
         <hr />
-        <button class="ghost" onclick={() => store.setPref('autoRender', !store.ui.autoRender)}>{store.ui.autoRender ? '☑' : '☐'} Auto-render on change</button>
-        <button class="ghost" onclick={() => store.setPref('theme', store.ui.theme === 'dark' ? 'light' : 'dark')}>◑ {store.ui.theme === 'dark' ? 'Light' : 'Dark'} theme</button>
+        <button class="ghost" onclick={() => loadExample()}><Icon name="gen" />Load example</button>
         <button
           class="ghost"
           onclick={() => {
-            if (confirm('Start a new project? Your current clips and effects will be cleared (unsaved work is lost).')) {
-              store.set({ ...$state.snapshot(store.project), clips: [], effects: [], name: 'Untitled mosh' } as never);
+            if (confirm('Start a new project? Clips and effects will be cleared.')) {
+              store.set({ ...$state.snapshot(store.project), clips: [], effects: [], name: 'Untitled' } as never);
               store.render = null;
             }
-          }}>🗋 New project</button
+          }}><Icon name="file" />New project</button
         >
         <hr />
-        <button class="ghost" onclick={() => (store.ui.dialog = 'help')}>❓ Help & shortcuts<span class="kbd">?</span></button>
-        <button class="ghost" onclick={() => (store.ui.welcome = true)}>👋 Show welcome</button>
+        <button class="ghost" onclick={() => store.setPref('autoRender', !store.ui.autoRender)}
+          ><Icon name={store.ui.autoRender ? 'check' : 'x'} />Auto-render</button
+        >
+        <button class="ghost" onclick={() => store.setPref('advanced', !store.ui.advanced)}
+          ><Icon name={store.ui.advanced ? 'check' : 'x'} />Advanced controls</button
+        >
+        <button class="ghost" onclick={() => store.setPref('theme', store.ui.theme === 'dark' ? 'light' : 'dark')}
+          ><Icon name="theme" />{store.ui.theme === 'dark' ? 'Light' : 'Dark'} theme</button
+        >
+        <button class="ghost" onclick={() => (store.ui.dialog = 'help')}><Icon name="help" />Help & shortcuts<span class="kbd">?</span></button>
       </div>
     {/if}
   </div>
-  <input bind:this={loadInput} type="file" accept=".json,application/json" hidden onchange={(e) => {
-    const f = (e.target as HTMLInputElement).files?.[0];
-    if (f) loadProjectFile(f);
-    (e.target as HTMLInputElement).value = '';
-  }} />
+  <input
+    bind:this={loadInput}
+    type="file"
+    accept=".json,application/json"
+    hidden
+    onchange={(e) => {
+      const f = (e.target as HTMLInputElement).files?.[0];
+      if (f) loadProjectFile(f);
+      (e.target as HTMLInputElement).value = '';
+    }}
+  />
 </header>
 
 <style>
   header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 12px;
-    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 8px;
+    height: 40px;
+    background: var(--surface);
   }
-  .brand .logo {
-    font-weight: 700;
-    font-size: 20px;
-    letter-spacing: 0.04em;
-    font-family: var(--mono);
-    text-shadow: 2px 0 var(--accent), -2px 0 var(--accent2);
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 6px 0 4px;
   }
-  .brand .logo span {
-    color: var(--accent);
-    text-shadow: 2px 0 var(--accent2), -1px 0 var(--accent3);
+  .tally {
+    width: 9px;
+    height: 9px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+  .tally.busy {
+    animation: blink 1s steps(2) infinite;
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0.25;
+    }
+  }
+  .word {
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.01em;
   }
   .name {
     background: transparent;
     border-color: transparent;
-    font-weight: 500;
-    width: 170px;
+    color: var(--text-2);
+    width: 150px;
   }
-  .name:hover {
-    border-color: var(--line);
+  .name:hover,
+  .name:focus {
+    border-color: var(--line-2);
+    color: var(--text);
   }
-  .group {
+  .sep {
+    width: 1px;
+    height: 18px;
+    background: var(--line-2);
+    margin: 0 4px;
+  }
+  .tools {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
   }
-  .creative {
-    padding: 3px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--panel);
+  .roll {
+    display: flex;
+    align-items: center;
   }
-  .chaos {
-    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 35%, var(--panel2)), color-mix(in srgb, var(--accent2) 30%, var(--panel2)));
-    font-weight: 700;
+  .roll input {
+    width: 54px;
+    margin-right: 6px;
   }
-  .intensity {
-    width: 60px;
+  .seed {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 8px;
   }
   .seed input {
-    width: 96px;
+    width: 92px;
   }
   .spacer {
     flex: 1;
-  }
-  .mode span {
-    color: var(--faint);
-  }
-  .mode span.active {
-    color: var(--text);
-    font-weight: 700;
-  }
-  @media (max-width: 860px) {
-    header {
-      padding: 8px 16px;
-    }
-    .creative {
-      flex-wrap: wrap;
-      width: 100%;
-    }
-    .creative button {
-      flex: 1;
-    }
-    .name {
-      width: 120px;
-    }
-    .spacer {
-      display: none;
-    }
   }
   .menu-wrap {
     position: relative;
@@ -178,22 +194,61 @@
   .menu {
     position: absolute;
     right: 0;
-    top: 110%;
+    top: calc(100% + 4px);
     z-index: 40;
     display: flex;
     flex-direction: column;
-    padding: 6px;
-    min-width: 250px;
+    padding: 4px;
+    min-width: 220px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r);
     box-shadow: var(--shadow);
   }
   .menu button {
-    text-align: left;
-    display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
+    color: var(--text);
+    height: 28px;
+  }
+  .menu .kbd {
+    margin-left: auto;
   }
   .menu hr {
     border: none;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--line-2);
     width: 100%;
+    margin: 4px 0;
+  }
+  @media (max-width: 1180px) {
+    .seed {
+      display: none;
+    }
+  }
+  @media (max-width: 860px) {
+    header {
+      height: auto;
+      flex-wrap: wrap;
+      padding: 6px 12px;
+      row-gap: 6px;
+    }
+    .tools {
+      order: 10;
+      width: 100%;
+      flex-wrap: wrap;
+    }
+    .name {
+      flex: 1;
+      width: auto;
+      min-width: 60px;
+    }
+    .txt,
+    .word {
+      display: none;
+    }
+    .spacer,
+    .sep,
+    .seg {
+      display: none;
+    }
   }
 </style>

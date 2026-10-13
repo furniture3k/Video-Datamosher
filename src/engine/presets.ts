@@ -25,7 +25,7 @@ export interface PresetEffect {
 export interface Preset {
   id: string;
   name: string;
-  emoji: string;
+  emoji?: string;
   description: string;
   encoder?: Partial<EncoderSettings>;
   effects: PresetEffect[];
@@ -36,7 +36,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'melt',
     name: 'Classic Melt',
-    emoji: '🫠',
     description: 'All keyframes removed. Every cut melts into the next and nothing ever resets.',
     encoder: { gop: 600 },
     effects: [{ type: 'kill', start: 0, end: 1 }],
@@ -44,7 +43,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'transitions',
     name: 'Cut Transitions',
-    emoji: '🎬',
     description: 'Only the keyframes at clip cuts are removed, so each new clip moves on top of the previous image. Add 2+ clips.',
     encoder: { keyAtCuts: true, gop: 600 },
     effects: [{ type: 'kill', start: 0, end: 1, params: { mode: 'cuts' } }],
@@ -52,7 +50,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'bloom',
     name: 'Bloom Explosion',
-    emoji: '💥',
     description: 'The strongest motion frame repeats over and over, so pixels erupt outward.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -62,7 +59,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'slowmelt',
     name: 'Slow Melt',
-    emoji: '🕯',
     description: 'Every motion frame plays twice, so movement is amplified into a syrupy drift.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -72,7 +68,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'pulse',
     name: 'Stutter Pulse',
-    emoji: '💓',
     description: 'Rhythmic ping-pong loops that build up smear in beats.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -82,7 +77,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'echo',
     name: 'Liquid Echo',
-    emoji: '🌊',
     description: 'Past motion keeps leaking back in, giving ghostly double movement.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -92,7 +86,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'rain',
     name: 'Pixel Rain',
-    emoji: '🌧',
     description: 'Glitched motion data sends macroblocks raining across the frame.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -102,7 +95,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'storm',
     name: 'Datastorm',
-    emoji: '⛈',
     description: 'Random keyframe loss, shuffled motion and heavy corruption. Chaotic.',
     encoder: { gop: 24 },
     effects: [
@@ -114,7 +106,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'transfer',
     name: 'Motion Swap',
-    emoji: '🔀',
     description: 'The first half of the video moves with the motion of the second half.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -124,7 +115,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'ghost',
     name: 'Ghost Residue',
-    emoji: '👻',
     description: 'Encodes with zero motion estimation, so scenes dissolve into each other as ghostly residue instead of moving.',
     encoder: { motionEst: 'zero', gop: 600 },
     effects: [{ type: 'kill', start: 0, end: 1 }],
@@ -132,7 +122,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'crunch',
     name: 'Crunch Core',
-    emoji: '🧱',
     description: 'Very low quality, big chunky blocks and random blooms.',
     encoder: { quality: 22, motionEst: 'xone', mbd: 'simple' },
     effects: [
@@ -143,7 +132,6 @@ export const PRESETS: Preset[] = [
   {
     id: 'vhs',
     name: 'VHS Death',
-    emoji: '📼',
     description: 'Nudged bytes, chroma split and scanline tearing over an MPEG-2 base.',
     encoder: { codec: 'mpeg2', quality: 10, gop: 15 },
     effects: [
@@ -155,14 +143,12 @@ export const PRESETS: Preset[] = [
   {
     id: 'liquid',
     name: 'Liquid Flow',
-    emoji: '💧',
     description: 'Flow-engine warp with amplified, smoothed vectors for silky liquid smears.',
     effects: [{ type: 'vectorWarp', start: 0, end: 1, params: { amplify: 2.5, smooth: true, residual: 0.08, block: '8' } }],
   },
   {
     id: 'gravity',
     name: 'Gravity Melt',
-    emoji: '🍯',
     description: 'Everything drips downward while still following the motion.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -172,14 +158,12 @@ export const PRESETS: Preset[] = [
   {
     id: 'vortex',
     name: 'Vortex',
-    emoji: '🌀',
     description: 'Motion vectors rotated sideways so everything spins and curls.',
     effects: [{ type: 'vectorWarp', start: 0, end: 1, params: { amplify: 2, rotate: 90, residual: 0.1, block: '16' } }],
   },
   {
     id: 'sorted',
     name: 'Sorted Dreams',
-    emoji: '🌅',
     description: 'A mosh with pixel-sorted streaks on top.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
@@ -216,7 +200,6 @@ export function presetFromProject(project: Project, total: number, name: string)
   return {
     id: 'user-' + uid(),
     name,
-    emoji: '⭐',
     description: 'Your saved preset',
     user: true,
     // the look, not the size: keep resolution / aspect / markers out of presets

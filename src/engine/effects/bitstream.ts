@@ -7,10 +7,9 @@ export const keyframeKiller: BitstreamEffect = {
   kind: 'bitstream',
   type: 'kill',
   name: 'Keyframe Killer',
-  icon: '✂',
-  color: '#ff4d6d',
-  description:
-    'Removes I-frames (full pictures). Motion that follows gets painted onto the previous image instead of a fresh one, so scenes melt into each other. This is the classic datamosh transition.',
+  icon: 'KEY',
+  color: '#d8664f',
+  description: 'Removes I-frames (full pictures). The motion after a missing keyframe lands on the previous image, so one shot melts into the next.',
   params: [
     {
       key: 'mode',
@@ -25,8 +24,8 @@ export const keyframeKiller: BitstreamEffect = {
       ],
       help: 'Choose which I-frames inside the range get removed.',
     },
-    { key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Chance that each keyframe is removed (Random mode).' },
-    { key: 'every', label: 'Every Nth', type: 'int', min: 1, max: 20, default: 2, help: 'Remove every Nth keyframe (Every Nth mode).' },
+    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Chance that each keyframe is removed (Random mode).' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 1, max: 20, default: 2, help: 'Remove every Nth keyframe (Every Nth mode).' },
     {
       key: 'replace',
       label: 'Fill gap with',
@@ -40,7 +39,7 @@ export const keyframeKiller: BitstreamEffect = {
       help: 'Removing a frame shortens the video by one frame. Filling the gap keeps the timing and adds a tiny extra smear.',
       advanced: true,
     },
-    { key: 'cutWindow', label: 'Cut tolerance', type: 'int', min: 0, max: 12, default: 2, unit: 'frames', help: 'How close to a clip cut a keyframe must be to count as "at the cut".', advanced: true },
+    { show: (p) => p.mode === 'cuts', key: 'cutWindow', label: 'Cut tolerance', type: 'int', min: 0, max: 12, default: 2, unit: 'frames', help: 'How close to a clip cut a keyframe must be to count as "at the cut".', advanced: true },
   ],
   apply(frames, e, ctx) {
     const out: Frame[] = [];
@@ -74,10 +73,9 @@ export const bloom: BitstreamEffect = {
   kind: 'bitstream',
   type: 'bloom',
   name: 'Bloom',
-  icon: '✿',
-  color: '#ffb84d',
-  description:
-    'Repeats a motion (P) frame many times. The same movement keeps being applied, so pixels stretch, swirl and bloom outward.',
+  icon: 'BLM',
+  color: '#e0a046',
+  description: 'Repeats a P-frame. The same motion is applied over and over and the pixels smear outward.',
   params: [
     { key: 'repeats', label: 'Repeats', type: 'int', min: 1, max: 240, default: 24, help: 'How many times the chosen frame is repeated. More repeats give a longer, wilder smear.', chaos: [4, 60] },
     {
@@ -93,8 +91,8 @@ export const bloom: BitstreamEffect = {
       ],
       help: '"Strongest" picks the frame with the most motion data, which usually gives the most dramatic bloom.',
     },
-    { key: 'interval', label: 'Every Nth', type: 'int', min: 1, max: 300, default: 12, help: 'For "Every Nth": bloom every N motion frames. Set to 1 for a slow-motion melt.' },
-    { key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, help: 'For "Random": chance that each motion frame blooms.' },
+    { show: (p) => p.target === 'every', key: 'interval', label: 'Every Nth', type: 'int', min: 1, max: 300, default: 12, help: 'For "Every Nth": bloom every N motion frames. Set to 1 for a slow-motion melt.' },
+    { show: (p) => p.target === 'random', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, help: 'For "Random": chance that each motion frame blooms.' },
     { key: 'jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01, default: 0, help: 'Randomly varies the repeat count for each bloom.', advanced: true },
   ],
   apply(frames, e, ctx) {
@@ -127,9 +125,9 @@ export const stutter: BitstreamEffect = {
   kind: 'bitstream',
   type: 'stutter',
   name: 'Stutter Loop',
-  icon: '↻',
-  color: '#c77dff',
-  description: 'Loops a short group of motion frames, so the movement rocks back and forth and builds up in rhythmic pulses.',
+  icon: 'STU',
+  color: '#a98bd4',
+  description: 'Loops a short run of motion frames. Movement rocks back and forth and builds up in pulses.',
   params: [
     { key: 'group', label: 'Group size', type: 'int', min: 2, max: 60, default: 6, unit: 'frames', help: 'How many frames are in each loop.' },
     { key: 'loops', label: 'Loops', type: 'int', min: 1, max: 30, default: 3, help: 'How many times each group plays.' },
@@ -197,9 +195,9 @@ export const shuffle: BitstreamEffect = {
   kind: 'bitstream',
   type: 'shuffle',
   name: 'Shuffle',
-  icon: '⤨',
-  color: '#4dd8ff',
-  description: 'Scrambles the order of motion frames in small windows. Movement jerks and jitters chaotically.',
+  icon: 'SHF',
+  color: '#5fa8c8',
+  description: 'Reorders motion frames inside small windows. Movement jerks and jitters.',
   params: [
     { key: 'window', label: 'Window', type: 'int', min: 2, max: 120, default: 8, unit: 'frames', help: 'Frames are only shuffled within windows of this size.' },
     { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 1, help: 'Chance that each window gets shuffled.' },
@@ -228,9 +226,9 @@ export const reverse: BitstreamEffect = {
   kind: 'bitstream',
   type: 'reverse',
   name: 'Reverse Motion',
-  icon: '⇆',
-  color: '#7dffb3',
-  description: 'Plays motion frames backwards. The motion vectors no longer match the picture, so things un-melt in strange ways.',
+  icon: 'REV',
+  color: '#6cc0a0',
+  description: 'Plays motion frames backwards. The vectors no longer match the picture, so things un-melt oddly.',
   params: [
     { key: 'window', label: 'Window', type: 'int', min: 0, max: 300, default: 0, unit: 'frames', help: '0 = reverse the whole range; otherwise reverse it in chunks of this size.' },
     { key: 'keepKeys', label: 'Keep keyframes in place', type: 'bool', default: true, help: 'Leave I-frames where they are.', advanced: true },
@@ -244,9 +242,9 @@ export const drop: BitstreamEffect = {
   kind: 'bitstream',
   type: 'drop',
   name: 'Frame Drop',
-  icon: '⌫',
-  color: '#a0a0b8',
-  description: 'Deletes frames. Dropping motion frames makes the picture stutter and skip; the next frames then apply onto the "wrong" picture.',
+  icon: 'DRP',
+  color: '#8d8a84',
+  description: 'Deletes frames. Later frames then apply to the wrong picture, which reads as skips and stutter.',
   params: [
     {
       key: 'mode',
@@ -259,8 +257,8 @@ export const drop: BitstreamEffect = {
       ],
       help: 'How frames are picked for deletion.',
     },
-    { key: 'every', label: 'Every Nth', type: 'int', min: 2, max: 30, default: 3, help: 'Delete every Nth frame.' },
-    { key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, help: 'Chance each frame is deleted.' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 2, max: 30, default: 3, help: 'Delete every Nth frame.' },
+    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, help: 'Chance each frame is deleted.' },
     {
       key: 'types',
       label: 'Frame types',
@@ -290,9 +288,9 @@ export const echo: BitstreamEffect = {
   kind: 'bitstream',
   type: 'echo',
   name: 'Echo',
-  icon: '◎',
-  color: '#ff7de9',
-  description: 'Re-inserts motion from a few frames ago, like an echo. Past movement leaks into the present as ghostly double-motion.',
+  icon: 'ECH',
+  color: '#c97fae',
+  description: 'Re-inserts motion from a few frames back, so past movement doubles up with the present.',
   params: [
     { key: 'delay', label: 'Delay', type: 'int', min: 1, max: 120, default: 6, unit: 'frames', help: 'How far back the echoed motion comes from.' },
     { key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.6, help: 'Chance that each frame echoes.' },
@@ -320,10 +318,9 @@ export const splice: BitstreamEffect = {
   kind: 'bitstream',
   type: 'splice',
   name: 'Motion Transfer',
-  icon: '⇢',
-  color: '#5cff5c',
-  description:
-    'Takes the movement (motion frames) from another part of the timeline and applies it here. The image in this range starts moving with borrowed motion, for example a still face moving with a dancer.',
+  icon: 'XFR',
+  color: '#86c766',
+  description: 'Takes the motion from another part of the timeline and applies it here, e.g. a still face moving with a dancer.',
   params: [
     { key: 'from', label: 'Motion source frame', type: 'frame', default: 0, help: 'First frame of the motion to borrow. Use the timeline to pick it.' },
     { key: 'length', label: 'Source length', type: 'int', min: 1, max: 900, default: 48, unit: 'frames', help: 'How many frames of motion to borrow.' },
@@ -338,7 +335,7 @@ export const splice: BitstreamEffect = {
       ],
       help: 'Replace: the range is filled (looping) with the borrowed motion. Insert: the borrowed motion is added at the start of the range.',
     },
-    { key: 'loops', label: 'Loops (insert)', type: 'int', min: 1, max: 20, default: 1, help: 'For Insert: how many times the borrowed motion is inserted.' },
+    { show: (p) => p.mode === 'insert', key: 'loops', label: 'Loops', type: 'int', min: 1, max: 20, default: 1, help: 'For Insert: how many times the borrowed motion is inserted.' },
     { key: 'speed', label: 'Speed', type: 'number', min: 0.25, max: 4, step: 0.05, default: 1, help: 'Playback speed of the borrowed motion (frames are skipped or repeated).', advanced: true },
   ],
   apply(frames, e, ctx) {
@@ -390,10 +387,9 @@ export const byteGlitch: BitstreamEffect = {
   kind: 'bitstream',
   type: 'glitch',
   name: 'Byte Glitch',
-  icon: '▦',
-  color: '#ffe14d',
-  description:
-    'Corrupts the compressed data itself. Gives broken macroblocks, colour bleeds, tearing and pixel rain. Glitching keyframes changes colours and textures; glitching motion frames sends blocks flying.',
+  icon: 'GLT',
+  color: '#d8cf4a',
+  description: 'Damages the compressed data. On keyframes it shifts colour and texture; on motion frames it throws blocks around.',
   params: [
     { key: 'mode', label: 'Corruption', type: 'select', default: 'flip', options: GLITCH_MODES, help: 'How the bytes are damaged.' },
     { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 100, step: 0.5, default: 3, help: 'Corruption operations per frame.', chaos: [1, 12], log: true },
@@ -410,7 +406,7 @@ export const byteGlitch: BitstreamEffect = {
       ],
       help: 'Which frame types to corrupt.',
     },
-    { key: 'runLength', label: 'Run length', type: 'int', min: 1, max: 512, default: 16, unit: 'bytes', help: 'Size of runs for the run/copy/swap/insert/delete modes.', log: true },
+    { show: (p) => ['zero', 'max', 'run', 'repeat', 'swap', 'insert', 'delete'].includes(String(p.mode)), key: 'runLength', label: 'Run length', type: 'int', min: 1, max: 512, default: 16, unit: 'bytes', help: 'Size of runs for the run/copy/swap/insert/delete modes.', log: true },
     { key: 'regionStart', label: 'Region start', type: 'number', min: 0, max: 1, step: 0.01, default: 0, help: 'Only corrupt from this point of each frame (0 = top of the image, roughly).', advanced: true },
     { key: 'regionEnd', label: 'Region end', type: 'number', min: 0, max: 1, step: 0.01, default: 1, help: 'Only corrupt up to this point of each frame (1 = bottom).', advanced: true },
     { key: 'protect', label: 'Protect bytes', type: 'int', min: 0, max: 256, default: 4, help: 'Extra bytes after the frame header that are never touched. Raise this if the video breaks too badly.', advanced: true },
