@@ -1,100 +1,118 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
-  import { addFiles } from '../lib/media';
-  import { clipDuration } from '../engine/mosh';
+  import { addFiles, addToTimeline } from '../lib/media';
+  import { mediaState } from '../lib/mediastate.svelte';
+  import { removeMedia, setTransition, transitionAtPlayhead } from '../lib/edit';
+  import { BLEND_TRANSITIONS, MOSH_TRANSITIONS } from '../engine/timeline';
+  import type { MediaItem, TransitionType } from '../engine/types';
   import Icon from './Icon.svelte';
-  let fileInput: HTMLInputElement;
+  let fileInput = $state<HTMLInputElement>();
+  let tab = $state<'media' | 'transitions'>('media');
 
   const tc = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
+  const uses = $derived.by(() => {
+    const m = new Map<string, number>();
+    for (const c of store.project.clips) m.set(c.mediaId, (m.get(c.mediaId) ?? 0) + 1);
+    return m;
+  });
+  const kind = (m: MediaItem) => (m.source.kind === 'file' && m.source.isImage ? 'image' : !m.hasVideo ? 'audio' : 'video');
 
-  function move(i: number, d: number) {
-    store.edit((p) => {
-      const j = i + d;
-      if (j < 0 || j >= p.clips.length) return;
-      const [c] = p.clips.splice(i, 1);
-      p.clips.splice(j, 0, c);
-    });
+  function dragMedia(e: DragEvent, m: MediaItem) {
+    e.dataTransfer!.setData('application/x-moshpit-media', m.id);
+    e.dataTransfer!.effectAllowed = 'copy';
   }
-  function remove(id: string) {
-    store.edit((p) => (p.clips = p.clips.filter((c) => c.id !== id)));
-    if (store.ui.selectedClip === id) store.ui.selectedClip = null;
+  function dragTransition(e: DragEvent, t: string) {
+    e.dataTransfer!.setData('application/x-moshpit-transition', t);
+    e.dataTransfer!.effectAllowed = 'copy';
   }
-  function select(id: string) {
-    store.ui.selectedClip = id;
-    store.ui.tab = 'clip';
+  function applyTransition(t: TransitionType) {
+    if (store.ui.selectedTransition) setTransition(store.ui.selectedTransition, t);
+    else transitionAtPlayhead(t);
   }
-  let dragFrom = -1;
 </script>
 
 <div class="bin">
-  <div class="head">
-    <span class="label">Media</span>
-    <span class="faint mono small">{tc(store.project.clips.reduce((s, c) => s + clipDuration(c), 0))}</span>
+  <div class="tabs" role="tablist">
+    <button role="tab" class:active={tab === 'media'} aria-selected={tab === 'media'} onclick={() => (tab = 'media')}>Media<span class="count mono">{store.project.media.length || ''}</span></button>
+    <button role="tab" class:active={tab === 'transitions'} aria-selected={tab === 'transitions'} onclick={() => (tab = 'transitions')}>Transitions</button>
   </div>
 
-  <div class="actions">
-    <button onclick={() => fileInput.click()} title="Import video or image files"><Icon name="import" />Import</button>
-    <button onclick={() => (store.ui.dialog = 'record')} title="Record from camera or screen"><span class="rec"><Icon name="rec" size={12} /></span>Record</button>
-    <button onclick={() => (store.ui.dialog = 'generate')} title="Generate a test clip"><Icon name="gen" />Generate</button>
-  </div>
-  <input
-    bind:this={fileInput}
-    type="file"
-    multiple
-    accept="video/*,image/*,.mkv,.avi,.mov,.gif"
-    hidden
-    onchange={(e) => {
-      const f = (e.target as HTMLInputElement).files;
-      if (f) addFiles(f);
-      (e.target as HTMLInputElement).value = '';
-    }}
-  />
+  {#if tab === 'media'}
+    <div class="actions">
+      <button onclick={() => fileInput?.click()} title="Import video, image or sound files"><Icon name="import" />Import</button>
+      <button onclick={() => (store.ui.dialog = 'record')} title="Record from camera or screen"><span class="rec"><Icon name="rec" size={12} /></span>Record</button>
+      <button onclick={() => (store.ui.dialog = 'generate')} title="Generate a test clip"><Icon name="gen" />Generate</button>
+    </div>
+    <input
+      bind:this={fileInput}
+      type="file"
+      multiple
+      accept="video/*,image/*,audio/*,.mkv,.avi,.mov,.gif,.mp3,.wav,.m4a,.flac,.ogg"
+      hidden
+      onchange={(e) => {
+        const f = (e.target as HTMLInputElement).files;
+        if (f) addFiles(f);
+        (e.target as HTMLInputElement).value = '';
+      }}
+    />
 
-  {#if store.status.engine}
-    <div class="status small muted">{store.status.engine}</div>
-  {/if}
+    {#if store.status.engine}
+      <div class="status small muted">{store.status.engine}</div>
+    {/if}
 
-  <div class="list">
-    {#each store.project.clips as c, i (c.id)}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="clip"
-        class:sel={store.ui.selectedClip === c.id}
-        draggable="true"
-        ondragstart={() => (dragFrom = i)}
-        ondragover={(e) => e.preventDefault()}
-        ondrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (dragFrom >= 0 && dragFrom !== i) move(dragFrom, i - dragFrom);
-          dragFrom = -1;
-        }}
-      >
-        <button class="main" onclick={() => select(c.id)} title={c.source.name}>
-          <span class="thumb">
-            {#if c.thumb}<img src={c.thumb} alt="" />{/if}
-            <span class="idx mono">{i + 1}</span>
-          </span>
-          <span class="meta">
-            <span class="nm">{c.source.name}</span>
-            <span class="sub mono">
-              {tc(clipDuration(c))}{#if c.speed !== 1}&ensp;{c.speed}×{/if}{#if c.reverse}&ensp;rev{/if}{#if c.hasAudio}&ensp;♪{/if}
+    <div class="list">
+      {#each store.project.media as m (m.id)}
+        {@const st = mediaState[m.id]}
+        {@const k = kind(m)}
+        <div class="item" draggable="true" ondragstart={(e) => dragMedia(e, m)} role="listitem" title="Drag onto the timeline, or double-click to add it at the end">
+          <button class="main" ondblclick={() => addToTimeline(m)} onclick={() => {}}>
+            <span class="thumb" class:audio={k === 'audio'}>
+              {#if m.thumb}<img src={m.thumb} alt="" draggable="false" />{:else}<Icon name={k === 'audio' ? 'music' : 'film'} />{/if}
+              {#if uses.get(m.id)}<span class="used mono" title="Clips using this media">{uses.get(m.id)}</span>{/if}
             </span>
-          </span>
-        </button>
-        <div class="ctl">
-          <button class="icon ghost" title="Move up" aria-label="Move up" disabled={i === 0} onclick={() => move(i, -1)}><Icon name="up" size={13} /></button>
-          <button class="icon ghost" title="Move down" aria-label="Move down" disabled={i === store.project.clips.length - 1} onclick={() => move(i, 1)}><Icon name="down" size={13} /></button>
-          <button class="icon ghost" title="Remove clip" aria-label="Remove clip" onclick={() => remove(c.id)}><Icon name="x" size={13} /></button>
+            <span class="meta">
+              <span class="nm">{m.source.name}</span>
+              <span class="sub mono">
+                {#if k === 'image'}still{:else}{tc(m.duration)}{/if}{#if m.hasVideo && m.width}&ensp;{m.width}×{m.height}{/if}{#if m.hasAudio}&ensp;♪{/if}
+              </span>
+              {#if st?.proxy === 'working' || st?.proxy === 'pending'}
+                <span class="prep small"><span class="pbar"><span style="width:{Math.round((st.progress ?? 0) * 100)}%"></span></span>preview copy</span>
+              {/if}
+            </span>
+          </button>
+          <div class="ctl">
+            <button class="icon ghost" title="Add to the timeline" aria-label="Add to timeline" onclick={() => addToTimeline(m)}><Icon name="plus" size={13} /></button>
+            <button class="icon ghost" title="Remove from project" aria-label="Remove media" onclick={() => removeMedia(m.id)}><Icon name="x" size={13} /></button>
+          </div>
         </div>
+      {:else}
+        <button class="empty" onclick={() => fileInput?.click()}>
+          <span>Drop video, images or music here</span>
+          <span class="faint small">mp4, mov, webm, mkv, avi, gif, png, jpg, mp3, wav</span>
+        </button>
+      {/each}
+    </div>
+  {:else}
+    <div class="list trans">
+      <p class="small muted hint">Drag onto a cut in the video track, or click to apply to the selected cut (or the one nearest the playhead).</p>
+      <div class="label sect">Mosh</div>
+      <div class="grid">
+        {#each Object.entries(MOSH_TRANSITIONS) as [id, t]}
+          <button class="tr mosh" draggable="true" ondragstart={(e) => dragTransition(e, id)} onclick={() => applyTransition(id as TransitionType)} title={t.description}>
+            <span class="sw mosh"></span>{t.name}
+          </button>
+        {/each}
       </div>
-    {:else}
-      <button class="empty" onclick={() => fileInput.click()}>
-        <span>Drop video or images here</span>
-        <span class="faint small">mp4, mov, webm, mkv, avi, gif, png, jpg</span>
-      </button>
-    {/each}
-  </div>
+      <div class="label sect">Classic</div>
+      <div class="grid">
+        {#each Object.entries(BLEND_TRANSITIONS) as [id, t]}
+          <button class="tr" draggable="true" ondragstart={(e) => dragTransition(e, id)} onclick={() => applyTransition(id as TransitionType)}>
+            <span class="sw {id}"></span>{t.name}
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -104,13 +122,29 @@
     flex-direction: column;
     min-height: 0;
   }
-  .head {
+  .tabs {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
     height: 32px;
-    padding: 0 12px;
     border-bottom: 1px solid var(--line);
+    flex: none;
+  }
+  .tabs button {
+    flex: 1;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+  .tabs button.active {
+    color: var(--text);
+    box-shadow: inset 0 -1px 0 var(--text);
+  }
+  .count {
+    font-size: 10px;
+    color: var(--text-3);
+    margin-left: 4px;
   }
   .actions {
     display: grid;
@@ -136,23 +170,14 @@
     overflow: auto;
     min-height: 60px;
   }
-  .clip {
+  .item {
     display: flex;
     align-items: center;
     border-bottom: 1px solid var(--line);
-    position: relative;
+    cursor: grab;
   }
-  .clip.sel {
+  .item:hover {
     background: var(--surface-2);
-  }
-  .clip.sel::before {
-    content: '';
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background: var(--accent);
   }
   .main {
     flex: 1;
@@ -161,10 +186,11 @@
     background: none;
     border: none;
     border-radius: 0;
-    padding: 8px 4px 8px 12px;
+    padding: 7px 4px 7px 10px;
     justify-content: flex-start;
     gap: 10px;
     text-align: left;
+    cursor: grab;
   }
   .main:hover:not(:disabled) {
     background: none;
@@ -176,6 +202,13 @@
     position: relative;
     flex: none;
     overflow: hidden;
+    display: grid;
+    place-items: center;
+    color: var(--text-3);
+  }
+  .thumb.audio {
+    color: #7fd39b;
+    background: color-mix(in srgb, #4fa06a 18%, var(--bg));
   }
   .thumb img {
     width: 100%;
@@ -183,13 +216,13 @@
     object-fit: cover;
     display: block;
   }
-  .idx {
+  .used {
     position: absolute;
-    left: 0;
-    top: 0;
+    right: 0;
+    bottom: 0;
     font-size: 10px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #ddd;
+    background: var(--accent);
+    color: var(--accent-ink);
     padding: 0 3px;
   }
   .meta {
@@ -207,19 +240,36 @@
     color: var(--text-3);
     font-size: 11px;
   }
+  .prep {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-3);
+    font-size: 10px;
+  }
+  .pbar {
+    width: 40px;
+    height: 2px;
+    background: var(--line-2);
+    display: block;
+  }
+  .pbar span {
+    display: block;
+    height: 100%;
+    background: var(--text-2);
+  }
   .ctl {
     display: flex;
     flex-direction: column;
     padding-right: 4px;
     opacity: 0;
   }
-  .clip:hover .ctl,
-  .clip.sel .ctl {
+  .item:hover .ctl {
     opacity: 1;
   }
   .ctl button {
-    height: 16px;
-    width: 20px;
+    height: 18px;
+    width: 22px;
   }
   .empty {
     margin: 12px;
@@ -233,9 +283,56 @@
     color: var(--text-2);
     white-space: normal;
   }
-  .empty:hover:not(:disabled) {
-    border-color: var(--text-3);
-    background: none;
+  .trans {
+    padding: 10px;
+  }
+  .hint {
+    margin: 0 0 6px;
+    line-height: 1.4;
+  }
+  .sect {
+    margin: 12px 0 6px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+  .tr {
+    justify-content: flex-start;
+    gap: 7px;
+    font-size: 12px;
+    cursor: grab;
+    padding: 0 6px;
+  }
+  .sw {
+    width: 18px;
+    height: 12px;
+    flex: none;
+    border-radius: 2px;
+    background: linear-gradient(90deg, #555 0 50%, #bbb 50%);
+  }
+  .sw.mosh {
+    background: linear-gradient(90deg, #555, var(--accent), #bbb);
+  }
+  .sw.dissolve {
+    background: linear-gradient(90deg, #555, #bbb);
+  }
+  .sw.dip {
+    background: linear-gradient(90deg, #555, #000, #bbb);
+  }
+  .sw.dipwhite {
+    background: linear-gradient(90deg, #555, #fff, #bbb);
+  }
+  .sw.circleopen {
+    background: radial-gradient(circle, #bbb 40%, #555 42%);
+  }
+  .sw.pixelize {
+    background: repeating-conic-gradient(#555 0 25%, #bbb 0 50%) 0 0 / 6px 6px;
+  }
+  .sw.wipeup,
+  .sw.wipedown {
+    background: linear-gradient(180deg, #555 0 50%, #bbb 50%);
   }
   @media (hover: none) {
     .ctl {

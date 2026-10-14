@@ -1,6 +1,12 @@
 <script lang="ts" module>
   // 16px line icons, drawn for this app. Stroke = currentColor.
   const P: Record<string, string> = {
+    magnet: '<path d="M4 2.5v5a4 4 0 0 0 8 0v-5M4 5.5h2.5M9.5 5.5H12M6.5 2.5v5a1.5 1.5 0 0 0 3 0v-5"/>',
+    text: '<path d="M3 4V2.5h10V4M8 2.5v11M6 13.5h4"/>',
+    music: '<path d="M6 12V3.5l7-1.5V10.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="10.5" r="1.5"/>',
+    film: '<path d="M2.5 3h11v10h-11zM5 3v10M11 3v10M2.5 6H5M2.5 10H5M11 6h2.5M11 10h2.5"/>',
+    fit: '<path d="M2.5 8h11M5 5.5L2.5 8 5 10.5M11 5.5l2.5 2.5-2.5 2.5"/>',
+    blade: '<path d="M8 1.5v13M5 4l3-2.5L11 4"/>',
     play: '<path d="M5 3.5v9l7.5-4.5z" fill="currentColor" stroke="none"/>',
     pause: '<path d="M5 3.5v9M11 3.5v9" stroke-width="2.2"/>',
     prev: '<path d="M11.5 4l-5 4 5 4zM4.5 4v8"/>',

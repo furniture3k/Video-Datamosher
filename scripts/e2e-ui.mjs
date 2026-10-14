@@ -26,7 +26,7 @@ page.on('console', (m) => m.type() === 'error' && !/Failed to load resource|favi
 page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'Test preset' : undefined));
 
 const S = (fn, arg) => page.evaluate(fn, arg);
-const idle = () => page.waitForFunction(() => { const s = window.__moshpit.store; return !s.status.busy && !s.status.pending; }, null, { timeout: 180000 });
+const idle = () => page.waitForFunction(() => { const s = window.__moshpit.store; return !s.status.busy && !s.status.pending && !s.status.engine; }, null, { timeout: 180000 });
 const settle = async () => {
   await page.waitForTimeout(500);
   await idle();
@@ -49,6 +49,7 @@ const step = async (name, fn) => {
 await page.goto(url);
 await step('demo', async () => {
   await page.getByRole('button', { name: 'Load example' }).click();
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.some((c) => c.transition), null, { timeout: 120000 });
   await settle();
 });
 
@@ -154,12 +155,76 @@ await step('save + load project file', async () => {
 
 await step('remove a clip, then undo brings it back and renders', async () => {
   await page.waitForTimeout(1500);
-  await page.locator('.clip').first().getByTitle('Remove clip').click();
+  await page.locator('.clip.video').first().click();
+  await page.keyboard.press('Delete');
+  if ((await S(() => window.__moshpit.store.project.clips.length)) !== 1) throw new Error('delete did nothing: ' + (await S(() => JSON.stringify({ n: window.__moshpit.store.project.clips.length, sel: window.__moshpit.store.ui.selectedClips, dlg: window.__moshpit.store.ui.dialog, ae: document.activeElement?.outerHTML.slice(0, 80) }))));
   await page.waitForTimeout(2000); // past the autosave
   await page.keyboard.press('Control+z');
   await settle();
   const n = await S(() => window.__moshpit.store.project.clips.length);
   if (n !== 2) throw new Error('clips: ' + n);
+});
+
+await step('editor: split, trim, reorder, transitions', async () => {
+  await S(() => window.__moshpit.store.seek(1));
+  await page.locator('.wrap').first().click({ position: { x: 5, y: 5 } }).catch(() => {});
+  await S(() => (window.__moshpit.store.ui.selectedClips = []));
+  await page.keyboard.press('s');
+  if ((await S(() => window.__moshpit.store.project.clips.length)) !== 3) throw new Error('split failed');
+  // trim the right edge of the first clip with the mouse
+  const edge = page.locator('.clip.video').first().locator('.edge.r');
+  const box = await edge.boundingBox();
+  await page.mouse.move(box.x + 3, box.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 25, box.y + 10, { steps: 5 });
+  await page.mouse.up();
+  const out = await S(() => window.__moshpit.store.project.clips[0].out);
+  if (!(out < 1)) throw new Error('trim failed: ' + out);
+  // drag the last clip to the front
+  const lastId = await S(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').at(-1).id);
+  const last = page.locator('.clip.video').last();
+  const lb = await last.boundingBox();
+  await page.mouse.move(lb.x + lb.width / 2, lb.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(lb.x + lb.width / 2 - 30, lb.y + 20, { steps: 3 });
+  const vb = await page.locator('.v-lane').boundingBox();
+  await page.mouse.move(vb.x + 2, lb.y + 20, { steps: 8 });
+  await page.mouse.up();
+  const first = await S(() => window.__moshpit.store.project.clips[0].id);
+  if (first !== lastId) throw new Error('reorder failed');
+  // every transition type renders
+  for (const t of ['dissolve', 'wipeleft', 'pixelize', 'melt', 'bloom', 'glitch', 'stutter', 'liquid']) {
+    await S((t) => { const s = window.__moshpit.store; const v = s.project.clips.filter((c) => c.track === 'v1'); window.__moshpit.edit.setTransition(v[1].id, t); }, t);
+    await settle();
+  }
+  await page.locator('.trans').first().click();
+  await page.locator('.tabs button', { hasText: 'Clip' }).waitFor();
+  await page.getByRole('button', { name: 'Remove transition' }).click();
+  await settle();
+});
+
+await step('editor: titles (clean and melted) + audio track + detach', async () => {
+  await page.getByRole('button', { name: 'Text', exact: true }).click();
+  await page.locator('textarea[aria-label=Text]').fill('MOSH');
+  await page.locator('.field').filter({ hasText: 'Melt with the video' }).locator('input').check();
+  await settle();
+  await page.locator('.field').filter({ hasText: 'Melt with the video' }).locator('input').uncheck();
+  await settle();
+  await page.getByRole('button', { name: /Audio track/ }).first().click();
+  const tracks = await S(() => window.__moshpit.store.project.tracks.length);
+  if (tracks < 4) throw new Error('no new track');
+});
+
+await step('editor: edit view plays and keeps time', async () => {
+  await S(() => window.__moshpit.store.setPref('view', 'edit'));
+  await S(() => window.__moshpit.store.seek(0));
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(1200);
+  await page.keyboard.press('Space');
+  const t = await S(() => window.__moshpit.store.ui.time);
+  if (!(t > 0.5)) throw new Error('edit playback did not advance: ' + t);
+  await S(() => window.__moshpit.store.setPref('view', 'auto'));
+  await settle();
 });
 
 await step('light theme + new project + undo', async () => {
@@ -181,6 +246,20 @@ await step('playback runs and loops', async () => {
   const p2 = await S(() => window.__moshpit.store.ui.playhead);
   await page.keyboard.press('Space');
   if (!(p1 > 5 && p2 !== p1)) throw new Error(`playhead ${p1} -> ${p2}`);
+});
+
+await step('phone layout: one panel at a time, timeline usable', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  for (const tab of ['Media', 'Inspector', 'Timeline']) {
+    await page.locator('.mtabs button', { hasText: tab }).click();
+    await page.waitForTimeout(150);
+  }
+  const box = await page.locator('footer .v-lane').boundingBox();
+  if (!box || box.y + box.height > 844 || box.height < 30) throw new Error('timeline not on screen: ' + JSON.stringify(box));
+  const overflow = await S(() => document.documentElement.scrollWidth > window.innerWidth + 1 || document.documentElement.scrollHeight > window.innerHeight + 1);
+  if (overflow) throw new Error('page overflows the phone screen');
+  await page.setViewportSize({ width: 1440, height: 900 });
 });
 
 await browser.close();

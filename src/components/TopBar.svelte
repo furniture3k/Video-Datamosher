@@ -4,10 +4,11 @@
   import { loadExample } from '../lib/media';
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
+  import { newProject } from '../engine/types';
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
   let loadInput: HTMLInputElement;
   let menuOpen = $state(false);
-  const hasClips = $derived(store.project.clips.length > 0);
+  const hasClips = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
 </script>
 
 <svelte:window onclick={() => (menuOpen = false)} />
@@ -79,8 +80,10 @@
         <button
           class="ghost"
           onclick={() => {
-            if (confirm('Start a new project? Clips and effects will be cleared.')) {
-              store.set({ ...$state.snapshot(store.project), clips: [], effects: [], name: 'Untitled' } as never);
+            if (confirm('Start a new project? Media, clips and effects will be cleared.')) {
+              store.set({ ...newProject(), encoder: $state.snapshot(store.project.encoder), name: 'Untitled' });
+              store.ui.selectedClips = [];
+              store.seek(0);
               store.render = null;
             }
           }}><Icon name="file" />New project</button

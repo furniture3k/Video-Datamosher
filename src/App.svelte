@@ -22,6 +22,7 @@
   import LiveMode from './dialogs/LiveMode.svelte';
   import { saveProjectFile } from './lib/projectio.svelte';
   import { localSet } from './lib/storage';
+  import * as edit from './lib/edit';
 
   let dragging = $state(false);
 
@@ -71,11 +72,24 @@
       saveProjectFile();
       return;
     }
-    if (inField(e) || mod || e.altKey) return;
+    if (inField(e)) return;
+    if (mod && !store.ui.dialog) {
+      const k = e.key.toLowerCase();
+      if (k === 'c' && edit.copySelected()) e.preventDefault();
+      else if (k === 'v' && edit.paste()) e.preventDefault();
+      else if (k === 'x' && edit.copySelected()) (e.preventDefault(), edit.deleteSelected());
+      else if (k === 'k') (e.preventDefault(), edit.splitAtPlayhead());
+      else if (k === 'd' && edit.duplicateSelected()) e.preventDefault();
+      return;
+    }
+    if (mod || e.altKey) return;
     if (store.ui.dialog === 'live') return;
     if (e.key === 'Escape') {
       if (store.ui.dialog) store.ui.dialog = null;
-      else if (store.ui.welcome) {
+      else if (store.ui.selectedClips.length || store.ui.selectedTransition) {
+        store.ui.selectedClips = [];
+        store.ui.selectedTransition = null;
+      } else if (store.ui.welcome) {
         store.ui.welcome = false;
         localSet('seenWelcome', true);
       }
@@ -84,6 +98,12 @@
     if (store.ui.dialog || store.ui.welcome) return;
     const n = store.render?.frames.length ?? 0;
     const step = e.shiftKey ? 10 : 1;
+    const mosh = store.showingMosh;
+    const stepBy = (d: number) => {
+      store.ui.playing = false;
+      if (mosh) store.seekFrame(store.ui.playhead + d);
+      else store.seek(store.ui.time + d / store.project.encoder.fps);
+    };
     switch (e.key) {
       case ' ':
         e.preventDefault();
@@ -91,19 +111,48 @@
         break;
       case 'ArrowRight':
         e.preventDefault();
-        store.ui.playing = false;
-        store.ui.playhead = Math.min(n - 1, store.ui.playhead + step);
+        stepBy(step);
         break;
       case 'ArrowLeft':
         e.preventDefault();
-        store.ui.playing = false;
-        store.ui.playhead = Math.max(0, store.ui.playhead - step);
+        stepBy(-step);
         break;
+      case 'ArrowUp':
+      case 'ArrowDown': {
+        // jump to the previous / next cut
+        e.preventDefault();
+        const edges = [0, ...store.cuts.map((c) => c / store.project.encoder.fps), store.duration];
+        const t = store.ui.time;
+        const to = e.key === 'ArrowDown' ? edges.find((x) => x > t + 1e-3) : [...edges].reverse().find((x) => x < t - 1e-3);
+        if (to !== undefined) store.seek(to);
+        break;
+      }
       case 'Home':
-        store.ui.playhead = 0;
+        if (mosh) store.seekFrame(0);
+        else store.seek(0);
         break;
       case 'End':
-        store.ui.playhead = Math.max(0, n - 1);
+        if (mosh) store.seekFrame(n - 1);
+        else store.seek(store.duration);
+        break;
+      case 's':
+        edit.splitAtPlayhead();
+        break;
+      case 't':
+        edit.transitionAtPlayhead('melt');
+        break;
+      case 'n':
+        store.ui.snap = !store.ui.snap;
+        break;
+      case '=':
+      case '+':
+        edit.zoom(1.5);
+        break;
+      case '-':
+        edit.zoom(1 / 1.5);
+        break;
+      case '\\':
+        edit.zoomFit();
         break;
       case 'i':
         store.ui.loop = [store.ui.playhead, Math.max(store.ui.playhead + 1, store.ui.loop?.[1] ?? n)];
@@ -127,7 +176,7 @@
         store.ui.compare = store.ui.compare === 'off' ? 'split' : 'off';
         break;
       case 'e':
-        if (store.project.clips.length) store.ui.dialog = 'export';
+        if (store.project.clips.length || store.project.texts.length) store.ui.dialog = 'export';
         break;
       case 'p':
         store.ui.dialog = 'presets';
@@ -139,7 +188,7 @@
         if (store.project.clips.length) store.ui.dialog = 'variations';
         break;
       case 'k': {
-        const src = store.render?.frames[store.ui.playhead]?.src ?? 0;
+        const src = store.playFrame;
         store.edit((p) => {
           const m = p.encoder.keyMarkers;
           const i = m.indexOf(src);
@@ -149,11 +198,11 @@
         break;
       }
       case 'd':
-        if (store.ui.selectedEffect) store.duplicateEffect(store.ui.selectedEffect);
+        if (!edit.duplicateSelected() && store.ui.selectedEffect) store.duplicateEffect(store.ui.selectedEffect);
         break;
       case 'Delete':
       case 'Backspace':
-        if (store.ui.selectedEffect) store.removeEffect(store.ui.selectedEffect);
+        if (!edit.deleteSelected() && store.ui.selectedEffect) store.removeEffect(store.ui.selectedEffect);
         break;
       case '?':
         store.ui.dialog = 'help';
@@ -162,6 +211,18 @@
         store.doRender(true);
         break;
     }
+  }
+
+  function resizeDown(e: PointerEvent) {
+    const y0 = e.clientY;
+    const h0 = store.ui.timelineHeight;
+    const move = (ev: PointerEvent) => (store.ui.timelineHeight = Math.max(150, Math.min(window.innerHeight - 220, h0 - (ev.clientY - y0))));
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      store.setPref('timelineHeight', store.ui.timelineHeight);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
   }
 
   function onDrop(e: DragEvent) {
@@ -189,11 +250,20 @@
 >
   <TopBar onchaos={runChaos} onmutate={runMutate} />
   <main>
-    <aside class="left"><MediaBin /></aside>
+    <aside class="left" class:mshow={store.ui.mobilePanel === 'media'}><MediaBin /></aside>
     <section class="center"><Player /></section>
-    <aside class="right"><Inspector /></aside>
+    <aside class="right" class:mshow={store.ui.mobilePanel === 'inspector'}><Inspector /></aside>
   </main>
-  <footer><Timeline /></footer>
+  <nav class="mtabs" aria-label="Panels">
+    {#each [['timeline', 'Timeline'], ['media', 'Media'], ['inspector', 'Inspector']] as [id, label]}
+      <button class:on={store.ui.mobilePanel === id} onclick={() => (store.ui.mobilePanel = id as never)}>
+        {label}{#if id === 'inspector' && (store.ui.selectedClips.length || store.ui.selectedTransition || store.ui.selectedEffect)}<span class="dot"></span>{/if}
+      </button>
+    {/each}
+  </nav>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="resizer" title="Drag to resize the timeline" onpointerdown={resizeDown}></div>
+  <footer class:mshow={store.ui.mobilePanel === 'timeline'} style="--tlh:{store.ui.timelineHeight}px"><Timeline /></footer>
 
   {#if dragging}
     <div class="dropzone"><div class="label">Drop to import</div></div>
@@ -216,16 +286,26 @@
   .app {
     height: 100%;
     display: grid;
-    grid-template-rows: auto 1fr auto;
-    gap: 1px;
+    grid-template-rows: auto 1fr auto auto;
+    gap: 0;
     background: var(--line);
     position: relative;
   }
   main {
     display: grid;
-    grid-template-columns: 248px 1fr 340px;
+    grid-template-columns: 260px 1fr 330px;
     min-height: 0;
     gap: 1px;
+    border-top: 1px solid var(--line);
+  }
+  .resizer {
+    height: 5px;
+    cursor: ns-resize;
+    background: var(--line);
+    border-top: 1px solid var(--line);
+  }
+  .resizer:hover {
+    background: var(--line-2);
   }
   aside,
   section,
@@ -254,29 +334,72 @@
       grid-template-columns: 220px 1fr 300px;
     }
   }
+  footer {
+    height: var(--tlh);
+  }
+  .mtabs {
+    display: none;
+  }
+  /* Phones: player on top, then one panel at a time (timeline / media / inspector) filling the rest */
   @media (max-width: 860px) {
-    :global(html),
-    :global(body) {
-      overflow: auto;
-    }
     .app {
-      height: auto;
-      min-height: 100%;
+      height: 100%;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
     }
     main {
-      display: flex;
-      flex-direction: column;
+      display: contents;
     }
     .center {
-      order: -1;
+      order: 1;
+      flex: none;
     }
-    .right {
-      height: 75vh;
+    .mtabs {
+      order: 2;
+      display: flex;
+      flex: none;
+      height: 38px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
     }
-    .left {
-      max-height: 60vh;
+    .mtabs button {
+      flex: 1;
+      height: 100%;
+      border: none;
+      border-radius: 0;
+      background: none;
+      color: var(--text-3);
+      font-size: 13px;
+      gap: 5px;
+    }
+    .mtabs button.on {
+      color: var(--text);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .left,
+    .right,
+    footer {
+      order: 3;
+      display: none;
+      flex: 1;
+      min-height: 0;
+      height: auto;
+    }
+    .left.mshow,
+    .right.mshow,
+    footer.mshow {
+      display: block;
+    }
+    .resizer {
+      display: none;
     }
   }
 </style>

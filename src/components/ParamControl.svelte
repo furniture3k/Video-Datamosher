@@ -40,7 +40,7 @@
     v = def.type === 'int' ? Math.round(v) : Math.round(v / (def.step ?? 0.01)) * (def.step ?? 0.01);
     return +v.toFixed(4);
   };
-  const playSrc = $derived(store.render?.frames[store.ui.playhead]?.src ?? 0);
+  const playSrc = $derived(store.playFrame);
 </script>
 
 <div class="pc" class:locked class:automated={!!auto}>

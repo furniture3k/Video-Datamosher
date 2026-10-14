@@ -2,22 +2,20 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ff, hasFfmpeg, tmpdir } from './helpers';
-import { prepArgs, decodeToMjpegArgs, inputName, GENERATORS, audioArgs } from '../src/engine/args';
+import { ff, hasFfmpeg, tmpdir, fileMedia, clipOf, place } from './helpers';
+import { prepArgs, decodeToMjpegArgs, GENERATORS, audioMixArgs } from '../src/engine/args';
+import { timelineDuration } from '../src/engine/timeline';
 import { framesFromAvi, applyBitstream, writeMoshed } from '../src/engine/mosh';
 import { splitJpegs } from '../src/engine/jpeg';
-import { newProject, type Clip, type EncoderSettings, type Project } from '../src/engine/types';
+import { newProject, type Clip, type EncoderSettings, type MediaItem, type Project } from '../src/engine/types';
 import { makeEffect } from '../src/engine/presets';
 
 const d = hasFfmpeg ? describe : describe.skip;
 
 d('encoder / clip option matrix', () => {
   let dir: string;
-  const fileClip = (id: string, ext: string, extra: Partial<Clip> = {}): Clip => ({
-    id,
-    source: { kind: 'file', fileId: id, name: id, mime: '', isImage: ext === 'png', ext },
-    duration: 2, width: 320, height: 240, fps: 25, hasAudio: ext === 'mp4', in: 0, out: 2, speed: 1, reverse: false, fit: 'fit', ...extra,
-  });
+  const vmedia = fileMedia('v', 'mp4');
+  const imedia = fileMedia('i', 'png', { width: 200, height: 300 });
   beforeAll(() => {
     dir = tmpdir();
     ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=320x240:r=25:d=2', '-f', 'lavfi', '-i', 'sine=d=2', '-c:v', 'libx264', '-c:a', 'aac', '-shortest', 'v.mp4']);
@@ -25,9 +23,8 @@ d('encoder / clip option matrix', () => {
   });
 
   function run(p: Project, mosh = true) {
-    p.clips.forEach((c, i) => {
-      if (c.source.kind === 'file') fs.copyFileSync(path.join(dir, c.source.ext === 'png' ? 'i.png' : 'v.mp4'), path.join(dir, inputName(c, i)));
-    });
+    place(dir, 'v.mp4', vmedia);
+    place(dir, 'i.png', imedia);
     ff(dir, prepArgs(p, p.encoder.width, 'p.avi'));
     const prep = framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'p.avi'))), p.encoder.codec);
     expect(prep.frames.length).toBeGreaterThan(10);
@@ -38,10 +35,11 @@ d('encoder / clip option matrix', () => {
     return { prep, n: splitJpegs(new Uint8Array(fs.readFileSync(path.join(dir, 'm.mjpeg')))).length, frames };
   }
 
-  const base = (enc: Partial<EncoderSettings> = {}, clips?: Clip[]): Project => {
+  const base = (enc: Partial<EncoderSettings> = {}, clips?: Clip[], media: MediaItem[] = []): Project => {
     const p = newProject();
     p.encoder = { ...p.encoder, width: 320, ...enc };
-    p.clips = clips ?? [fileClip('a', 'mp4')];
+    p.media = [vmedia, imedia, ...media];
+    p.clips = clips ?? [clipOf(vmedia)];
     return p;
   };
 
@@ -86,21 +84,22 @@ d('encoder / clip option matrix', () => {
     ['stretch', { fit: 'stretch' }],
   ] as [string, Partial<Clip>][])
     it(`clip: ${name} (video + audio)`, () => {
-      const p = base({}, [fileClip('a', 'mp4', extra), fileClip('b', 'mp4')]);
+      const p = base({}, [clipOf(vmedia, extra), clipOf(vmedia)]);
       run(p);
-      p.clips.forEach((c, i) => fs.copyFileSync(path.join(dir, 'v.mp4'), path.join(dir, inputName(c, i))));
-      ff(dir, audioArgs(p, 'a.raw')!);
-      expect(fs.statSync(path.join(dir, 'a.raw')).size).toBeGreaterThan(1000);
+      const mix = audioMixArgs(p, timelineDuration(p))!;
+      ff(dir, mix.args);
+      const want = Math.round(timelineDuration(p) * 44100) * 4;
+      expect(Math.abs(fs.statSync(path.join(dir, 'mosh.raw')).size - want)).toBeLessThan(44100 * 4 * 0.05);
     });
 
   it('still image clip', () => {
-    run(base({}, [fileClip('img', 'png', { duration: 60, out: 2 }), fileClip('a', 'mp4')]));
+    run(base({}, [clipOf(imedia, { out: 2 }), clipOf(vmedia)]));
   });
 
   for (const g of GENERATORS)
     it(`generator: ${g.id}`, () => {
-      const c: Clip = { ...fileClip('g', 'mp4'), source: { kind: 'generator', generator: g.id, name: g.name }, width: 320, height: 180, hasAudio: false, duration: 60, out: 1.5 };
-      const { prep } = run(base({}, [c]));
+      const gm: MediaItem = { ...fileMedia('g', 'mp4'), source: { kind: 'generator', generator: g.id, name: g.name }, width: 320, height: 180, hasAudio: false, duration: 60 };
+      const { prep } = run(base({}, [clipOf(gm, { out: 1.5 })], [gm]));
       expect(prep.frames.length).toBeGreaterThanOrEqual(35);
     });
 });

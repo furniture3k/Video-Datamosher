@@ -9,7 +9,7 @@
   let where = $state<'all' | 'playhead'>('all');
   function add(type: string) {
     const total = store.totalFrames;
-    const src = store.render?.frames[store.ui.playhead]?.src ?? 0;
+    const src = store.playFrame;
     const range: [number, number] = where === 'all' ? [0, total] : [src, Math.min(total, src + Math.round(store.fps * 2))];
     store.addEffect(type, range);
     store.ui.dialog = null;

@@ -1,7 +1,19 @@
 // ffmpeg.wasm wrapper: one instance, serialised jobs, crash recovery and cancellation.
-import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
 
 type LogFn = (line: string) => void;
+
+/** Directory where `mounts` appear inside the ffmpeg file system. */
+export const MOUNT = '/m/';
+
+export interface RunOptions {
+  inputs?: Record<string, () => Promise<Uint8Array>>;
+  /** read straight from Blobs/Files without copying them into memory (WORKERFS); paths are MOUNT + name */
+  mounts?: Record<string, Blob>;
+  outputs?: string[];
+  keep?: string[];
+  onFrame?: (n: number) => void;
+}
 
 export class EngineCrash extends Error {}
 /** Thrown when a job is killed on purpose (user cancel). */
@@ -107,7 +119,7 @@ class FFmpegService {
    */
   run(
     args: string[],
-    opts: { inputs?: Record<string, () => Promise<Uint8Array>>; outputs?: string[]; keep?: string[]; onFrame?: (n: number) => void } = {},
+    opts: RunOptions = {},
   ): Promise<{ code: number; log: string; out: Record<string, Uint8Array> }> {
     return this.serial(async () => {
       const gen = this.cancelGen;
@@ -126,13 +138,18 @@ class FFmpegService {
 
   private async runOnce(
     args: string[],
-    opts: { inputs?: Record<string, () => Promise<Uint8Array>>; outputs?: string[]; keep?: string[]; onFrame?: (n: number) => void },
+    opts: RunOptions,
   ): Promise<{ code: number; log: string; out: Record<string, Uint8Array> }> {
     if (this.ff && this.execs >= this.recycleEvery) this.abort();
     const ff = await this.load();
     for (const [name, get] of Object.entries(opts.inputs ?? {})) {
       if (this.files.has(name)) continue;
       await ff.writeFile(name, (await get()).slice());
+    }
+    const mounted = !!opts.mounts && Object.keys(opts.mounts).length > 0;
+    if (mounted) {
+      await ff.createDir(MOUNT).catch(() => {});
+      await ff.mount(FFFSType.WORKERFS, { blobs: Object.entries(opts.mounts!).map(([name, data]) => ({ name, data })) }, MOUNT);
     }
     this.currentLog = [];
     let lastActivity = performance.now();
@@ -181,6 +198,7 @@ class FFmpegService {
         }
       }
     } finally {
+      if (mounted && this.ff === ff) await ff.unmount(MOUNT).catch(() => {});
       for (const name of Object.keys(opts.inputs ?? {})) {
         if (opts.keep?.includes(name)) this.files.add(name);
         else if (!this.files.has(name)) await ff.deleteFile(name).catch(() => {});
@@ -197,3 +215,6 @@ class FFmpegService {
 }
 
 export const ffmpeg = new FFmpegService();
+/** A second engine for background jobs (preview proxies, audio waveforms) so they never block renders. */
+export const ffmpegBg = new FFmpegService();
+ffmpegBg.stallMs = 60000;

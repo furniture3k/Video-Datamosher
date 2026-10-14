@@ -1,21 +1,21 @@
 <img src="docs/banner.svg" alt="moshpit" width="100%">
 
-**moshpit** is a datamoshing tool that runs in the browser. It edits the compressed frames of your video directly (removing keyframes, repeating motion frames, borrowing motion from other shots, corrupting bytes), then gives you a timeline and an effect stack to control all of it.
+**moshpit** is a video editor with a datamosher built in, running in the browser. Cut your clips, music and titles together on a multi-track timeline, then mosh the result: it edits the compressed frames directly (removing keyframes, repeating motion frames, borrowing motion from other shots, corrupting bytes) with an effect stack and mosh transitions to control all of it. Exports go up to 1080p and beyond.
 
 Nothing is uploaded. Decoding and encoding happen locally with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm); the picture effects run on WebGL.
 
 **[Open moshpit →](https://furniture3k.github.io/Video-Datamosher/)**&emsp;[![CI](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml/badge.svg)](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml)
 
 <p align="center">
-  <img src="docs/demo.gif" alt="A test pattern melting into a Mandelbrot zoom" width="520"><br>
-  <sub>Two generated clips and the Bloom Explosion preset, exported as a GIF from the app.</sub>
+  <img src="docs/demo.gif" alt="A title over a test pattern that melts into a Mandelbrot zoom, then blooms into the next shot" width="420"><br>
+  <sub>Three clips cut together in moshpit with a title, a <b>Melt</b> and a <b>Bloom melt</b> transition, exported as a GIF from the app.</sub>
 </p>
 
-![The editor: media, preview, effect inspector and timeline](docs/studio.png)
+![The editor: media library, preview, inspector, and a timeline with mosh effects, titles, video, clip audio and a music track](docs/studio.png)
 
 ## Getting started
 
-Open the site, drop in a video (or use **Load example**), choose a preset and press <kbd>Space</kbd>.
+Open the site, drop in some videos and a song (or use **Load example**), cut them together on the timeline, put a **Melt** on a cut and press <kbd>Space</kbd>.
 
 To run it locally:
 
@@ -28,13 +28,14 @@ npm run dev            # http://localhost:5173
 
 `npm run build` writes a static copy to `dist/` that can be hosted anywhere. The ~30 MB video engine is bundled, so it works offline.
 
-A quick first mosh:
+A quick first video:
 
-1. Import two clips. Footage with a lot of movement in the second clip works best.
-2. **Presets → Cut Transitions.** The keyframe at the cut is removed, so the second clip's motion plays on top of the first clip's picture.
-3. Drag and resize the effect bars on the timeline; adjust settings in the panel on the right.
-4. **Randomize** rolls a new effect stack. Lock the settings you want to keep and roll again.
-5. **Export** to MP4, WebM, GIF, PNG frames, or the raw broken AVI.
+1. **Import** clips, photos and music. Drag them from the Media panel onto the timeline: footage on the video track, sound on an audio track.
+2. Edit like any editor. Drag clips to reorder, drag edges to trim, <kbd>S</kbd> splits at the playhead, right-click a clip for more (detach audio, reverse, duplicate).
+3. Click the **+** on a cut (or drag from the **Transitions** tab). **Melt** removes the keyframe at the cut, so the next clip's motion plays on top of the last picture. Classic dissolves, dips, wipes and slides are there too.
+4. Add titles with **Text**, fade music with the dots on its clip, and choose per track whether sound stays clean or stutters with the mosh.
+5. Layer mosh effects on the **Mosh FX** lanes, or start from **Presets** and **Randomize**.
+6. **Export** to MP4 or WebM at up to 4K, GIF, PNG frames, or the raw broken AVI.
 
 ## Effects
 
@@ -62,19 +63,50 @@ Picture effects run on the decoded frames:
 
 There are 16 presets to start from, and you can save your own.
 
+## Editing
+
+- **Media library.** Video, images, GIFs and sound files (mp3, wav, m4a, flac, ogg). The same media can be used any number of times.
+- **Magnetic video track.** Clips butt up against each other, so deleting or trimming one closes the gap. Drag to reorder, drag edges to trim (ripple), split, duplicate, copy and paste. Speed, reverse and fit per clip.
+- **Transitions.** Mosh transitions (Melt, Bloom melt, Glitch cut, Stutter melt, Liquid melt) and classic ones (cross dissolve, dip to black or white, wipes, slides, circle, pixelize). Drag a transition's band to change its length.
+- **Audio tracks.** As many as you like, with waveforms, volume, fades, mute and solo. Each track either **follows the mosh** (stutters, skips and scrambles with the picture) or stays clean. Video clips' own sound can be muted or detached to a track.
+- **Titles.** Text with font, colour, position, shadow, box and fades. Titles sit clean on top or **melt with the video**.
+- **Instant preview.** The player shows your cut immediately, straight from the source files, and switches to the rendered mosh when it's ready (or pick **Edit** / **Mosh** yourself). Only the clips you change are re-prepared.
+- **Effects stay on their footage.** Moving, trimming, splitting or deleting clips keeps mosh effects, forced keyframes and Motion Transfer sources on the same shots.
+- **Recording.** Record from your camera (front or back) or screen straight onto the timeline.
+- Snapping (<kbd>N</kbd>, or hold <kbd>Shift</kbd> while dragging), zoom (<kbd>Ctrl</kbd>+wheel, <kbd>+</kbd> <kbd>−</kbd>), resizable timeline, right-click menu on clips.
+
+![Transitions: the Transitions tab, a Bloom melt selected on the timeline and its settings in the inspector](docs/transitions.png)
+
+## On your phone
+
+The same app works on phones and tablets. The player stays at the top, and a tab bar switches between the **Timeline**, **Media** and **Inspector** panels.
+
+- **Swipe** the timeline to scroll, **tap** to move the playhead or select a clip.
+- **Press and hold** a clip or effect bar to drag it; **hold and let go** for the clip menu (split, duplicate, reverse, delete).
+- Drag a clip's edges to trim it. Use the **+** next to a media item to add it to the timeline.
+- **Record** uses the phone's camera, with a button to flip between front and back.
+
+![moshpit on a phone: the timeline, the inspector and the media panel](docs/mobile.png)
+
 ## Controls
 
-- **Timeline.** Each effect is a bar you can move and resize; it snaps to cuts, the playhead and other effects (hold <kbd>Shift</kbd> to turn snapping off). The output lane shows every frame of the result, coloured by what happened to it.
+- **Effect lanes.** Each mosh effect is a bar you can move and resize; it snaps to cuts, the playhead and other effects. The output lane shows every frame of the result, coloured by what happened to it.
 - **Automation.** Any number or switch can follow a drawn curve or an LFO over the effect's range.
 - **Randomize, Nudge, Variations.** Roll a new stack, nudge the current settings, or compare a grid of options side by side. Locked settings and pinned effects are left alone.
 - **Seeds.** Every random choice comes from a seed, so a result can always be reproduced.
 - **Share codes.** Copy the whole recipe as a short text code and paste it into another project.
 - **Encoder settings.** Codec (Xvid, MPEG-2, MPEG-1), quality, keyframe interval, forced keyframes, motion search and more. These change the texture of the mosh as much as the effects do.
-- **Audio.** In *follow* mode each frame plays its own slice of sound, so repeats and shuffles are audible. Bitcrush and sample-rate reduction are available.
+- **Moshed sound.** On tracks that follow the mosh, each frame plays its own slice of sound, so repeats and shuffles are audible. Bitcrush and sample-rate reduction are available.
 - **Live.** Real-time warp of a camera, screen or video, with recording back into the project.
 - Unlimited undo, autosave (including media) and project files.
 
-![Presets](docs/presets.png)
+![Presets: 16 starting points, each showing the effects it uses](docs/presets.png)
+
+## Exporting
+
+MP4 (H.264) and WebM (VP8) with sound, GIF, a zip of PNG frames, or the raw moshed AVI. The **mosh resolution** (Encode tab) and the **output size** are separate: mosh at 720p for chunky smears and save at 1080p or 4K, or mosh at full resolution. 1080p exports work well in the browser; 1440p and 4K are fine for short videos.
+
+![The export dialog, set to save a 720p mosh at 1080p](docs/export.png)
 
 ## How it works
 
@@ -82,14 +114,14 @@ Most video frames aren't pictures. A codec stores a full image every so often (a
 
 ```mermaid
 flowchart LR
-  A[Clips] -->|ffmpeg.wasm: trim, scale, join| B[Xvid AVI]
+  T[Timeline: clips, transitions, titles] -->|ffmpeg.wasm, one piece per run of clips| B[Xvid AVI]
   B -->|AVI parser| C[I / P frame list]
   C -->|effect stack| D[Moshed AVI]
   D -->|decode| E[Frames]
   E -->|WebGL| F[Preview / export]
 ```
 
-1. Clips are trimmed, scaled and encoded to MPEG-4 Part 2 (Xvid) in an AVI container, the format traditionally used for moshing.
+1. The timeline is encoded to MPEG-4 Part 2 (Xvid) in an AVI container, the format traditionally used for moshing. Each run of clips is encoded and cached on its own (every piece starts with a keyframe), so an edit only re-encodes the piece it touches. Blend transitions are done with FFmpeg's `xfade`; mosh transitions become effects at the cut.
 2. A TypeScript AVI parser splits the file into frames and reads each frame's header to find its type.
 3. The effect stack rewrites that list of compressed frames. It's deterministic for a given seed.
 4. The result is written back to an AVI and decoded by FFmpeg, which conceals the errors in its own way.
@@ -100,27 +132,32 @@ flowchart LR
 | Key | | Key | |
 |---|---|---|---|
 | <kbd>Space</kbd> | Play / pause | <kbd>R</kbd> | Randomize |
+| <kbd>S</kbd> / <kbd>Ctrl</kbd> <kbd>K</kbd> | Split at playhead | <kbd>T</kbd> | Melt at nearest cut |
+| <kbd>Del</kbd> | Delete clip / transition / effect | <kbd>D</kbd> | Duplicate |
+| <kbd>Ctrl</kbd> <kbd>C</kbd> <kbd>V</kbd> <kbd>X</kbd> | Copy / paste / cut clips | <kbd>N</kbd> | Snapping |
+| <kbd>↑</kbd> <kbd>↓</kbd> | Previous / next cut | <kbd>+</kbd> <kbd>−</kbd> <kbd>\</kbd> | Zoom / fit |
 | <kbd>←</kbd> <kbd>→</kbd> | Step one frame (<kbd>Shift</kbd>: 10) | <kbd>M</kbd> | Nudge |
 | <kbd>Home</kbd> <kbd>End</kbd> | Start / end | <kbd>V</kbd> | Variations |
 | <kbd>I</kbd> <kbd>O</kbd> | Loop in / out | <kbd>P</kbd> | Presets |
 | <kbd>L</kbd> <kbd>X</kbd> | Toggle / clear loop | <kbd>A</kbd> | Add effect |
-| <kbd>K</kbd> | Force a keyframe | <kbd>D</kbd> <kbd>Del</kbd> | Duplicate / delete effect |
+| <kbd>K</kbd> | Force a keyframe | <kbd>Esc</kbd> | Deselect |
 | <kbd>C</kbd> | Compare with source | <kbd>E</kbd> | Export |
 | <kbd>Ctrl</kbd> <kbd>Z</kbd> | Undo (<kbd>Shift</kbd>: redo) | <kbd>?</kbd> | Help |
 
 ## Notes
 
-- Browser FFmpeg is slower than a native install. New clips are trimmed to 30 seconds by default, and output is capped at 9,000 frames.
+- Browser FFmpeg is single-threaded and slower than a native install. Clips import at full length; the output is capped at 14,400 frames (10 minutes at 24 fps). 1080p export works well; 1440p and 4K work for short videos but take a while. Large files are read in place rather than copied into memory, and preview copies are made in the background.
+- A desktop version with native FFmpeg (for fast 4K and long videos) is planned: see [DESKTOP.md](DESKTOP.md).
 - A moshed AVI plays differently in every player because each one conceals errors differently. The MP4, WebM and GIF exports contain exactly what the preview shows.
 - WebM export uses VP8 and Vorbis; the VP9 and Opus encoders in ffmpeg.wasm crash.
-- Works in current Chrome, Edge, Firefox and Safari (iOS 15.4 or later).
+- Works in current Chrome, Edge, Firefox and Safari (iOS 15.4 or later), on desktop and on phones. Dragging media from the library needs a mouse; on touch screens use the **+** button.
 
 ## Development
 
 ```
-src/engine/   framework-free TypeScript: AVI reader/writer, frame analysis, effects,
-              automation, presets, audio, ffmpeg arguments
-src/lib/      browser side: ffmpeg service, renderer, WebGL flow engine, state
+src/engine/   framework-free TypeScript: timeline model and edit operations, AVI reader/writer,
+              frame analysis, effects, automation, presets, audio, ffmpeg arguments
+src/lib/      browser side: ffmpeg service, renderer, live edit preview, WebGL flow engine, state
 src/components, src/dialogs   Svelte 5 interface
 ```
 

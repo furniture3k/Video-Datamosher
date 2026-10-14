@@ -40,3 +40,20 @@ export function splitJpegs(b: Uint8Array): number {
   for (let i = 0; i + 2 < b.length; i++) if (b[i] === 0xff && b[i + 1] === 0xd8 && b[i + 2] === 0xff) n++;
   return n;
 }
+
+import type { Clip, MediaItem } from '../src/engine/types';
+import { inputName } from '../src/engine/args';
+
+export function fileMedia(id: string, ext: string, extra: Partial<MediaItem> = {}): MediaItem {
+  const isImage = ext === 'png' || ext === 'jpg';
+  return { id, source: { kind: 'file', fileId: id, name: id, mime: '', isImage, ext }, duration: isImage ? 3600 : 2, width: 320, height: 240, fps: 25, hasAudio: ext === 'mp4' || ext === 'wav', hasVideo: ext !== 'wav', ...extra };
+}
+
+export function clipOf(m: MediaItem, extra: Partial<Clip> = {}): Clip {
+  return { id: m.id + Math.random().toString(36).slice(2, 6), mediaId: m.id, track: 'v1', start: 0, in: 0, out: Math.min(m.duration, 2), speed: 1, reverse: false, fit: 'fit', volume: 1, muted: false, fadeIn: 0, fadeOut: 0, ...extra };
+}
+
+/** Copy a source file into dir under the media's ffmpeg input name. */
+export function place(dir: string, file: string, m: MediaItem) {
+  fs.copyFileSync(path.join(dir, file), path.join(dir, inputName(m)));
+}

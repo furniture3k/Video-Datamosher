@@ -6,6 +6,7 @@
   import { FlowEngine, CHROMA, defaultFlow, type FlowParams } from '../lib/flow';
   import { vectorWarp } from '../engine/effects/pixel';
   import { addFiles } from '../lib/media';
+  import { finalizeRecording } from '../lib/renderer';
   import Icon from '../components/Icon.svelte';
   import { getFile } from '../lib/storage';
   import { download } from '../lib/storage';
@@ -85,7 +86,7 @@
     }
   }
   async function useClip(id: string) {
-    const c = store.project.clips.find((x) => x.id === id);
+    const c = store.project.media.find((x) => x.id === id);
     if (c?.source.kind !== 'file') return;
     const b = await getFile(c.source.fileId);
     if (b) useFile(b);
@@ -161,11 +162,12 @@
     const t0 = performance.now();
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     recorder.onstop = async () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      const name = `live-mosh-${Date.now() % 100000}.webm`;
+      const blob = new Blob(chunks, { type: recorder?.mimeType || 'video/webm' });
+      const name = `live-mosh-${Date.now() % 100000}`;
+      const file = await finalizeRecording(blob, name);
       if (confirm('Add the recording to your project as a clip? (Cancel = just download it)')) {
-        await addFiles([new File([blob], name, { type: 'video/webm' })], (performance.now() - t0) / 1000);
-      } else download(blob, name);
+        await addFiles([file], { track: 'v1', index: Infinity }, (performance.now() - t0) / 1000);
+      } else download(file, file.name);
     };
     recorder.start(250);
     recording = true;
@@ -207,7 +209,7 @@
     gl?.gl.getExtension('WEBGL_lose_context')?.loseContext();
   });
 
-  const fileClips = $derived(store.project.clips.filter((c) => c.source.kind === 'file' && !c.source.isImage));
+  const fileClips = $derived(store.project.media.filter((c) => c.source.kind === 'file' && !c.source.isImage && c.hasVideo));
 </script>
 
 <svelte:window onkeydown={onKey} />

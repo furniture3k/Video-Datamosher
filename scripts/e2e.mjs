@@ -48,7 +48,8 @@ const step = async (name, fn) => {
 const waitRender = () =>
   page.waitForFunction(() => {
     const c = document.querySelector('.stage canvas');
-    return c && !c.classList.contains('hidden') && !window.__moshpit.store.status.busy && !window.__moshpit.store.status.pending;
+    const s = window.__moshpit.store;
+    return c && !c.classList.contains('hidden') && !s.status.busy && !s.status.pending && !s.status.engine && s.showingMosh;
   }, null, { timeout: 180000 });
 
 try {
@@ -58,6 +59,7 @@ try {
   });
   await step('load demo (generators + preset) and render', async () => {
     await page.getByRole('button', { name: 'Load example' }).click();
+    await page.waitForFunction(() => window.__moshpit.store.project.clips.some((c) => c.transition), null, { timeout: 120000 });
     await waitRender();
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(shots, '1-demo.png') });
@@ -136,7 +138,10 @@ try {
   if (sample)
     await step('import a real file with audio + audio export', async () => {
       await page.locator('input[type=file][multiple]').setInputFiles(sample);
-      await page.locator('.clip', { hasText: 'dancer.mp4' }).waitFor({ timeout: 60000 });
+      const item = page.locator('.item', { hasText: 'dancer.mp4' });
+      await item.waitFor({ timeout: 60000 });
+      await item.dragTo(page.locator('.v-lane'), { targetPosition: { x: 4, y: 25 } });
+      await page.locator('.clip.video', { hasText: 'dancer' }).waitFor();
       await page.waitForTimeout(800);
       await waitRender();
       await page.locator('.tabs button', { hasText: 'Audio' }).click();
@@ -156,6 +161,19 @@ try {
       }
       await page.keyboard.press('Escape');
     });
+  await step('record from the (fake) camera onto the timeline', async () => {
+    const n = await page.evaluate(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length);
+    await page.getByRole('button', { name: 'Record' }).first().click();
+    await page.getByRole('button', { name: 'Camera' }).click();
+    await page.locator('.modal video.on').waitFor();
+    await page.locator('.modal').getByRole('button', { name: 'Record' }).click();
+    await page.waitForTimeout(2500);
+    await page.getByRole('button', { name: 'Stop and add' }).click();
+    await page.waitForFunction((n) => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length === n + 1, n, { timeout: 60000 });
+    const m = await page.evaluate(() => window.__moshpit.store.project.media.at(-1));
+    // the recording is tidied so it has a real duration (and can be seeked)
+    if (!(m.duration > 1.5 && m.duration < 4)) throw new Error('recording duration ' + m.duration);
+  });
   await step('live mode with (fake) webcam', async () => {
     await page.getByRole('button', { name: 'Live', exact: true }).click();
     await page.getByRole('button', { name: 'Camera' }).click();

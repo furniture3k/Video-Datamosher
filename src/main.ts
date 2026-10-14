@@ -13,7 +13,9 @@ export default app;
 // Debug handle (handy in the browser console and for automated tests)
 import { store } from './lib/store.svelte';
 import { ffmpeg } from './lib/ffmpeg';
-(window as unknown as Record<string, unknown>).__moshpit = { store, ffmpeg };
+import { mediaState } from './lib/mediastate.svelte';
+import * as edit from './lib/edit';
+(window as unknown as Record<string, unknown>).__moshpit = { store, ffmpeg, mediaState, edit };
 import * as mosh from './engine/mosh';
 import * as renderer from './lib/renderer';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { mosh, renderer });

@@ -1,40 +1,38 @@
 import { store } from './store.svelte';
 import { download, localGet, localSet } from './storage';
-import { newProject, type Project } from '../engine/types';
+import { type MediaItem, type Project } from '../engine/types';
+import { migrate } from '../engine/migrate';
 import { uid, type Preset } from '../engine/presets';
 
 export function saveProjectFile() {
   const p = $state.snapshot(store.project) as Project;
-  const data = { ...p, clips: p.clips.map((c) => ({ ...c, thumb: undefined })) };
+  const data = { ...p, media: p.media.map((m) => ({ ...m, thumb: undefined })) };
   download(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `${(p.name || 'mosh').replace(/[^\w-]+/g, '_')}.mosh.json`);
   store.toast('Saved. Media files are not included in the project file.', 'ok');
 }
 
-/** Load a project file. Clips whose media is in the current session are matched by name. */
+/** Load a project file. Media already in this session is matched by file name. */
 export async function loadProjectFile(file: File) {
   try {
-    const p = JSON.parse(await file.text()) as Project;
-    if (p.version !== 1) throw new Error('Unknown project version');
-    const base = newProject();
-    const current = store.project.clips;
-    const used = new Set<string>();
+    const p = migrate(JSON.parse(await file.text()));
+    const current = store.project.media;
+    const media: MediaItem[] = [];
     const idMap = new Map<string, string>();
-    const clips = p.clips
-      .map((c) => {
-        if (c.source.kind === 'generator') return c;
-        const match = current.find((x) => x.source.kind === 'file' && x.source.name === c.source.name);
-        if (!match) return null;
-        // the same media may appear twice: clip ids must stay unique
-        const id = used.has(match.id) ? uid() : match.id;
-        used.add(id);
-        idMap.set(c.id, id);
-        return { ...c, id, source: match.source, thumb: match.thumb };
-      })
-      .filter((c): c is NonNullable<typeof c> => !!c);
-    const missing = p.clips.length - clips.length;
-    if (p.audio?.clipId) p.audio.clipId = idMap.get(p.audio.clipId) ?? (clips.some((c) => c.id === p.audio.clipId) ? p.audio.clipId : null);
-    store.set({ ...base, ...p, clips: clips.length ? clips : current, encoder: { ...base.encoder, ...p.encoder }, decoder: { ...base.decoder, ...p.decoder }, audio: { ...base.audio, ...p.audio } });
-    if (missing) store.toast(`${missing} clip(s) are missing their media. Import the files and open the project again.`, 'error', 7000);
+    for (const m of p.media) {
+      if (m.source.kind === 'generator') {
+        media.push(m);
+        continue;
+      }
+      const match = current.find((x) => x.source.kind === 'file' && x.source.name === (m.source as { name: string }).name);
+      if (!match) continue;
+      idMap.set(m.id, match.id);
+      if (!media.includes(match)) media.push(match);
+    }
+    const known = new Set(media.map((m) => m.id));
+    const clips = p.clips.map((c) => ({ ...c, mediaId: idMap.get(c.mediaId) ?? c.mediaId })).filter((c) => known.has(c.mediaId));
+    const missing = p.media.filter((m) => m.source.kind === 'file').length - idMap.size;
+    store.set({ ...p, media: [...media, ...current.filter((m) => !known.has(m.id))], clips });
+    if (missing > 0) store.toast(`${missing} media file(s) are missing. Import them and open the project again.`, 'error', 7000);
     else store.toast('Opened.', 'ok');
   } catch (e) {
     store.toast('Could not load project: ' + (e as Error).message, 'error');
@@ -82,7 +80,7 @@ export async function applyShareCode(code: string) {
     ...store.project,
     encoder: { ...store.project.encoder, ...data.enc, keyMarkers: (data.enc.keyMarkers ?? []).map(R) },
     decoder: { ...store.project.decoder, ...data.dec },
-    audio: { ...store.project.audio, ...data.au, clipId: null },
+    audio: (({ source: _s, clipId: _c, ...a }) => ({ ...store.project.audio, ...a }))(data.au ?? {}),
     globalSeed: data.seed ?? store.project.globalSeed,
     effects: (data.fx as Fx[]).map((e) => ({ ...e, start: R(e.start), end: Math.max(R(e.start) + 1, R(e.end)), params: e.type === 'splice' ? { ...e.params, from: R(Number(e.params.from)) } : e.params })),
   });
