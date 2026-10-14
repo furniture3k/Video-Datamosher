@@ -34,8 +34,9 @@ CI runs the same checks plus the desktop app's WebDriver test on Linux.
 ## Releases
 
 Bump `version` in `package.json` (and `src-tauri/Cargo.toml`), add an entry to `CHANGELOG.md`,
-then push a tag like `v1.2.0`. The **Desktop app** workflow builds the installers and attaches
-them to a draft release; publish it once the files are there. The website deploys from `main`.
+then push a tag like `v1.2.0`, or run the **Desktop app** workflow from the Actions tab with
+**release** ticked (it tags `v<version>` itself). It builds the installers, attaches them to a
+release and publishes it once every build succeeded. The website deploys from `main`.
 
 ## License
 

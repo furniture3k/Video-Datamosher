@@ -195,7 +195,7 @@ npm run desktop          # dev window with hot reload (uses the ffmpeg on your P
 npm run desktop:build    # installer for this machine in src-tauri/target/release/bundle/
 ```
 
-Pushing a `v*` tag builds the Windows, macOS and Linux installers in GitHub Actions and attaches them to a draft release.
+Pushing a `v*` tag (or running the **Desktop app** workflow with **release** ticked) builds the Windows, macOS and Linux installers in GitHub Actions and publishes them as a release.
 
 ## License
 
