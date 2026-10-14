@@ -85,6 +85,12 @@
     | { k: 'trans'; id: string; x0: number; d0: number; before: Project };
   let drag = $state<Drag | null>(null);
 
+  /** Clicking the timeline takes keyboard focus away from inspector fields, so shortcuts work. */
+  function releaseFocus() {
+    const a = document.activeElement as HTMLElement | null;
+    if (a && a !== document.body && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(a.tagName)) a.blur();
+  }
+
   function scrubDown(e: PointerEvent) {
     if (e.button !== 0) return;
     store.ui.playing = false;
@@ -121,8 +127,7 @@
   function fxDown(e: PointerEvent, id: string, mode: 'move' | 'l' | 'r') {
     e.stopPropagation();
     const fx = store.project.effects.find((f) => f.id === id)!;
-    store.ui.selectedEffect = id;
-    store.ui.tab = 'effects';
+    store.selectEffect(id);
     drag = { k: 'fx', id, mode, x0: e.clientX, s0: fx.start, e0: fx.end };
   }
 
@@ -440,7 +445,8 @@
     <button class="icon ghost" class:on={!store.ui.pxPerSec} title="Fit the whole timeline" aria-label="Zoom to fit" onclick={edit.zoomFit}><Icon name="fit" /></button>
   </div>
 
-  <div class="tl" bind:this={scroller} bind:clientWidth={viewW} onwheel={onWheel}>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="tl" bind:this={scroller} bind:clientWidth={viewW} onwheel={onWheel} onpointerdowncapture={releaseFocus}>
     <div class="inner" style="width:{G + W}px">
       <!-- ruler -->
       <div class="row ruler-row">
@@ -474,7 +480,7 @@
         {#each store.project.effects as fx (fx.id)}
           {@const def = EFFECTS[fx.type]}
           <div class="row">
-            <button class="g fxname ghost" class:sel={store.ui.selectedEffect === fx.id} class:off={!fx.enabled} onclick={() => ((store.ui.selectedEffect = fx.id), (store.ui.tab = 'effects'))}>
+            <button class="g fxname ghost" class:sel={store.ui.selectedEffect === fx.id} class:off={!fx.enabled} onclick={() => store.selectEffect(fx.id)}>
               <span class="code" style="--c:{def?.color}">{def?.icon}</span>
               <span class="fxlabel">{fx.name || def?.name}</span>
             </button>

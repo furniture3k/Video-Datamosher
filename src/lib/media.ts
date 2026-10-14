@@ -93,7 +93,7 @@ export function addToTimeline(m: MediaItem, place: Place = 'auto') {
       p.clips.push(c);
     }
   });
-  store.ui.selectedClips = [c.id];
+  store.selectClip(c.id);
   return c;
 }
 

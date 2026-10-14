@@ -355,8 +355,12 @@
   let draggingSplit = false;
   function splitMove(e: PointerEvent) {
     if (!draggingSplit) return;
+    // the canvas is letterboxed (object-fit: contain): measure against the picture itself
     const rc = canvas.getBoundingClientRect();
-    store.ui.split = Math.min(1, Math.max(0, (e.clientX - rc.left) / rc.width));
+    const k = Math.min(rc.width / canvas.width, rc.height / canvas.height);
+    const cw = canvas.width * k;
+    const left = rc.left + (rc.width - cw) / 2;
+    store.ui.split = Math.min(1, Math.max(0, (e.clientX - left) / cw));
   }
 
   const TAG_LABEL: Record<string, string> = { orig: '', dup: 'repeated', glitch: 'glitched', moved: 'moved', spliced: 'transferred', replaced: 'filled' };
@@ -380,6 +384,7 @@
     class="stage"
     bind:this={wrap}
     onpointerdown={(e) => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
       if (store.ui.compare === 'split') {
         draggingSplit = true;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -491,10 +496,10 @@
   }
   canvas {
     position: absolute;
-    inset: 0;
-    margin: auto;
-    max-width: calc(100% - 24px);
-    max-height: calc(100% - 24px);
+    inset: 12px;
+    width: calc(100% - 24px);
+    height: calc(100% - 24px);
+    object-fit: contain;
   }
   canvas.split {
     cursor: ew-resize;

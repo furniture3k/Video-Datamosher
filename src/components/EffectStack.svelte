@@ -34,7 +34,7 @@
         if (dragFrom >= 0 && dragFrom !== i) store.moveEffect(store.project.effects[dragFrom].id, i - dragFrom);
         dragFrom = -1;
       }}
-      onclick={() => (store.ui.selectedEffect = fx.id)}
+      onclick={() => store.selectEffect(fx.id)}
     >
       <input
         type="checkbox"

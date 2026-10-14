@@ -3,7 +3,16 @@
   const keys: [string, string][] = [
     ['Space', 'Play / pause'],
     ['← / →', 'Step one frame (Shift = 10)'],
+    ['↑ / ↓', 'Previous / next cut'],
     ['Home / End', 'Jump to start / end'],
+    ['S  or  Ctrl K', 'Split at playhead'],
+    ['Del', 'Delete selected clip, transition or effect'],
+    ['D', 'Duplicate selected clip (or effect)'],
+    ['Ctrl C / Ctrl V / Ctrl X', 'Copy / paste at playhead / cut clips'],
+    ['T', 'Melt transition at the nearest cut'],
+    ['N', 'Snapping on / off (Shift while dragging = no snap)'],
+    ['+ / − / \\', 'Zoom timeline in / out / fit'],
+    ['Esc', 'Deselect'],
     ['I / O', 'Set loop in / out at playhead'],
     ['L / X', 'Toggle loop / clear loop'],
     ['Enter', 'Render now'],
@@ -13,7 +22,6 @@
     ['M', 'Nudge settings'],
     ['V', 'Variations grid'],
     ['K', 'Force a keyframe at playhead'],
-    ['D / Del', 'Duplicate / delete selected effect'],
     ['C', 'Compare with original'],
     ['E', 'Export'],
     ['Ctrl Z / Ctrl Shift Z', 'Undo / redo'],
@@ -37,9 +45,11 @@
       </p>
       <h4>Quick start</h4>
       <ol>
-        <li>Add two or more clips, or <b>Generate</b> some.</li>
-        <li>Open <b>Presets</b> and try <b>Cut Transitions</b> or <b>Bloom Explosion</b>.</li>
-        <li>Select an effect bar on the timeline; drag it, resize it, and tweak its settings on the right.</li>
+        <li><b>Import</b> video, photos and music (or <b>Generate</b> clips). Drag them from the Media panel onto the timeline.</li>
+        <li>Cut it like any editor: drag clips to reorder, drag their edges to trim, <span class="kbd">S</span> to split, right-click for more. Music goes on an audio track; drag the dots on an audio clip to fade it.</li>
+        <li>Click the <b>+</b> on a cut (or drag from the <b>Transitions</b> tab) for a dissolve, wipe, or a <b>Melt</b>: a datamosh transition.</li>
+        <li>The player shows your cut instantly (<b>edit</b>) and switches to the rendered <b>mosh</b> when it's ready.</li>
+        <li>Open <b>Presets</b> and try <b>Cut Transitions</b> or <b>Bloom Explosion</b>, or add effects and drag their bars on the Mosh FX lanes. Effects stay on their footage when you re-edit.</li>
         <li><b>Randomize</b> rolls a new stack. Lock settings you like and pin effects to keep them.</li>
         <li>Hover a setting and click the curve icon to automate it with a curve or LFO.</li>
         <li><b>Export</b> to MP4, WebM, GIF, PNG frames or the raw broken AVI.</li>
@@ -54,7 +64,9 @@
       <h4>Tips</h4>
       <ul>
         <li>Moshes are strongest when the second clip has lots of motion and the first has strong colours.</li>
-        <li>A low preview width (Encode tab) makes experimenting much faster.</li>
+        <li>A low preview width (Encode tab) makes experimenting much faster. Only the clips you change are re-prepared.</li>
+        <li>Audio tracks can play clean (like a soundtrack) or <b>follow the mosh</b> (the <b>~</b> button) so they stutter with the picture.</li>
+        <li>Titles can sit clean on top or <b>melt with the video</b>.</li>
         <li>Quality 6–12 and a long keyframe interval give the classic chunky look.</li>
         <li>Everything runs in your browser; nothing is uploaded.</li>
       </ul>

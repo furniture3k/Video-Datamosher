@@ -7,6 +7,7 @@ import { paramAt } from '../engine/automation';
 import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project, TextClip } from '../engine/types';
 import { drawTexts, textAlpha } from './text';
+import { Cancelled } from './ffmpeg';
 
 export function pixelEffectsOf(project: Project): EffectInstance[] {
   return activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'pixel');
@@ -168,7 +169,7 @@ export class PostRunner {
     if (!this.active || !jpegs.length) return jpegs;
     const out: Uint8Array[] = [];
     for (let i = 0; i < jpegs.length; i++) {
-      if (signal?.cancelled) throw new Error('cancelled');
+      if (signal?.cancelled) throw new Cancelled();
       const bmp = await createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
       const k = offset + i;
       const fr = frames[Math.min(k, frames.length - 1)] ?? { src: k };

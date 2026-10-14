@@ -128,17 +128,31 @@ class Store {
     this.ui.time = (r.frames[this.ui.playhead]?.src ?? 0) / r.fps;
   }
 
+  /** Select an effect (clip selection is cleared so Delete/Duplicate act on the effect). */
+  selectEffect(id: string | null) {
+    this.ui.selectedEffect = id;
+    if (id) {
+      this.ui.selectedClips = [];
+      this.ui.selectedTransition = null;
+      this.ui.tab = 'effects';
+    }
+  }
+
   selectClip(id: string | null, add = false) {
     if (!id) this.ui.selectedClips = [];
     else if (add) this.ui.selectedClips = this.ui.selectedClips.includes(id) ? this.ui.selectedClips.filter((x) => x !== id) : [...this.ui.selectedClips, id];
     else this.ui.selectedClips = [id];
     this.ui.selectedTransition = null;
-    if (id) this.ui.tab = 'clip';
+    if (id) {
+      this.ui.selectedEffect = null;
+      this.ui.tab = 'clip';
+    }
   }
 
   selectTransition(clipId: string) {
     this.ui.selectedTransition = clipId;
     this.ui.selectedClips = [];
+    this.ui.selectedEffect = null;
     this.ui.tab = 'clip';
   }
 
@@ -221,8 +235,7 @@ class Store {
     const fx = makeEffect(type, s, Math.max(s + 1, e));
     if (EFFECTS[type].kind === 'bitstream' && type === 'splice') fx.params.from = Math.min(total - 1, Math.round(total / 2));
     this.edit((p) => p.effects.push(fx));
-    this.ui.selectedEffect = fx.id;
-    this.ui.tab = 'effects';
+    this.selectEffect(fx.id);
     return fx;
   }
 
@@ -231,7 +244,7 @@ class Store {
     if (i < 0) return;
     const copy = { ...(clone($state.snapshot(this.project.effects[i])) as EffectInstance), id: uid() };
     this.edit((p) => p.effects.splice(i + 1, 0, copy));
-    this.ui.selectedEffect = copy.id;
+    this.selectEffect(copy.id);
   }
 
   removeEffect(id: string) {

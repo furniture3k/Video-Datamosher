@@ -145,5 +145,25 @@ Everything above has been built, with these deliberate changes from the plan:
 
 - **Motion-vector editing** is done with a GPU **flow engine** (Vector Warp) instead of rewriting MPEG-4 macroblock syntax. It gives the same controls (amplify, rotate, swap, quantise, noise) on any footage, runs in real time, and also powers Live Mode. Rewriting the real bitstream vectors stays a possible future addition.
 - **WebM export uses VP8 + Vorbis**, because the VP9 and Opus encoders in ffmpeg.wasm crash.
-- **Native "turbo mode"** (desktop FFmpeg) was not built. The browser version handles typical clips (≤30 s at ≤720p) fine.
+- **Native "turbo mode"** (desktop FFmpeg) was not built yet; it's planned in [DESKTOP.md](DESKTOP.md).
 - Extra additions: procedural clip generators, webcam/screen recording, mosh share codes, and audio that follows the mosh.
+
+---
+
+## 8. Video editor (second round)
+
+The app is now a video editor first, with the datamosher working on the edit:
+
+- **Model.** A project holds a media library, a magnetic video track, any number of audio tracks,
+  transitions and titles (format version 2; older projects convert automatically).
+- **Rendering.** The timeline is cut into pieces at hard cuts; each piece is encoded on its own and
+  cached, and the pieces' frame lists are joined before the effect stack runs. Frames before the
+  first change are reused when decoding. Blend transitions use `xfade`; mosh transitions expand
+  into Keyframe Killer / Bloom / Glitch / Stutter / Vector Warp effects at their cut.
+- **Sound.** Clips are mixed into two buses: tracks that follow the mosh, and clean tracks.
+- **Preview.** An instant edit preview plays the source files (or background proxies) with Web
+  Audio; the rendered mosh replaces it when it's up to date.
+- **Export.** Media and the moshed stream are read in place (WORKERFS). Pixel effects and titles
+  run in bounded chunks that are joined without re-encoding, so 1080p (and short 4K) exports fit
+  in browser memory. The 30-second import limit is gone; the output cap is 10 minutes at 24 fps.
+- **Next:** a desktop build with native FFmpeg. See [DESKTOP.md](DESKTOP.md).

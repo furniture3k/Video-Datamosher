@@ -167,3 +167,14 @@ describe('migration', () => {
     expect(() => migrate({ version: 9 })).toThrow();
   });
 });
+
+describe('frame rate changes', () => {
+  it('keep effects at the same moments', () => {
+    const a = proj(); // 10 fps
+    a.effects = [makeEffect('bloom', 45, 55)];
+    const b = clone(a);
+    b.encoder.fps = 20;
+    remapToFootage(a, b);
+    expect([b.effects[0].start, b.effects[0].end]).toEqual([90, 110]);
+  });
+});
