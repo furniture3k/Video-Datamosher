@@ -1,12 +1,18 @@
 name: Desktop app
 
 # Builds the installers (Windows .msi/.exe, macOS .dmg for Apple Silicon and Intel, Linux
-# .AppImage/.deb/.rpm). Pushing a tag like v1.2.0 attaches them to a GitHub Release, which is
-# published once every build succeeded; running it by hand just uploads them as artifacts.
+# .AppImage/.deb/.rpm). Pushing a tag like v1.2.0, or running it by hand with "release" ticked
+# (which tags v<version from package.json>), attaches them to a GitHub Release that is published
+# once every build succeeded. Run by hand without "release", it only uploads them as artifacts.
 on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      release:
+        description: Publish a release (creates the tag v<version> from package.json)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -49,8 +55,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           args: --target ${{ matrix.target }}
-          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
-          releaseName: moshpit ${{ github.ref_name }}
+          # __VERSION__ is the app version; tauri-action creates the tag with the release if needed
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || (inputs.release && 'v__VERSION__' || '') }}
+          releaseName: moshpit v__VERSION__
           releaseBody: |
             Desktop builds of moshpit with native FFmpeg.
 
@@ -75,10 +82,11 @@ jobs:
   publish:
     # once every installer built, publish the draft release (a failed build leaves it as a draft)
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release
     runs-on: ubuntu-latest
     steps:
-      - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - uses: actions/checkout@v4
+      - run: gh release edit "${TAG:-v$(node -p "require('./package.json').version")}" --repo "$GITHUB_REPOSITORY" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}

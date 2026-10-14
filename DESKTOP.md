@@ -61,10 +61,11 @@ npm run desktop:build    # installers in src-tauri/target/release/bundle/
 there is none). `npm run desktop:build` always downloads a static build for the current platform
 (`scripts/fetch-ffmpeg.mjs`; `--target <triple>` for another one, `MOSHPIT_FFMPEG_URL` for your own archive).
 
-Releases: pushing a tag like `v1.1.0` runs `.github/workflows/desktop.yml`, which builds Windows
+Releases: pushing a tag like `v1.1.0` (or running the workflow by hand with **release** ticked,
+which tags `v<version>` from `package.json`) runs `.github/workflows/desktop.yml`, which builds Windows
 (x64 `.msi` + `-setup.exe`), macOS (Apple Silicon and Intel `.dmg`) and Linux (`.AppImage`,
-`.deb`, `.rpm`) and attaches them to a draft GitHub Release. Running the workflow by hand
-builds the same files as workflow artifacts. Bump `version` in `package.json` first; the app
+`.deb`, `.rpm`), attaches them to a draft GitHub Release and publishes it once every build
+succeeded. Running the workflow by hand without **release** only builds them as workflow artifacts. Bump `version` in `package.json` first; the app
 takes its version from there.
 
 Tests: `ci.yml` builds the app on Linux and drives it through WebDriver
