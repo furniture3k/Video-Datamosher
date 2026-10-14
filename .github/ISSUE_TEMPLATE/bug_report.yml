@@ -1,0 +1,34 @@
+name: Bug report
+description: Something doesn't work or looks wrong
+labels: [bug]
+body:
+  - type: dropdown
+    id: version
+    attributes:
+      label: Which version?
+      options:
+        - Website (browser)
+        - Installed web app (phone / tablet / desktop browser)
+        - Desktop app – Windows
+        - Desktop app – macOS
+        - Desktop app – Linux
+    validations:
+      required: true
+  - type: input
+    id: details
+    attributes:
+      label: Browser / OS and app version
+      placeholder: e.g. Safari on iOS 18, or moshpit 1.1.0 on macOS 15 (Apple Silicon)
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: share
+    attributes:
+      label: Share code (optional)
+      description: "**⋯ → Share code…** copies your effect recipe so the mosh can be reproduced."
+      render: text

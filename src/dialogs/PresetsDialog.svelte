@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { askText } from '../lib/ask';
   import Modal from '../components/Modal.svelte';
   import { store } from '../lib/store.svelte';
   import { PRESETS, applyPreset, presetFromProject, type Preset } from '../engine/presets';
@@ -18,8 +19,8 @@
     store.set(applyPreset($state.snapshot(store.project) as Project, p, store.totalFrames, store.cuts, mode));
     store.ui.dialog = null;
   }
-  function saveCurrent() {
-    const name = prompt('Preset name', 'Untitled preset');
+  async function saveCurrent() {
+    const name = await askText('Preset name', 'Untitled preset');
     if (!name) return;
     userPresets.save(presetFromProject($state.snapshot(store.project) as Project, store.totalFrames, name));
     mine = userPresets.list();

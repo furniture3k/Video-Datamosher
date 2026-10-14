@@ -15,6 +15,8 @@ export interface RunOptions {
   mounts?: Record<string, Blob>;
   outputs?: string[];
   keep?: string[];
+  /** desktop engine only: outputs left on disk in the engine's folder (see Engine.file) instead of read into memory */
+  leave?: string[];
   onFrame?: (n: number) => void;
 }
 
@@ -36,6 +38,8 @@ export interface Engine {
   has(name: string): boolean;
   run(args: string[], opts?: RunOptions): Promise<RunResult>;
   remove(name: string): Promise<void>;
+  /** desktop engine only: where a `leave` output is, relative to the engine's root folder */
+  file?(name: string): string;
 }
 
 export class EngineCrash extends Error {}

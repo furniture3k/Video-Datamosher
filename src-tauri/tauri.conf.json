@@ -18,7 +18,9 @@
         "minWidth": 900,
         "minHeight": 560,
         "backgroundColor": "#0c0c0c",
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "create": false,
+        "label": "main"
       }
     ],
     "security": {
@@ -50,6 +52,15 @@
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
       }
-    }
+    },
+    "licenseFile": "../LICENSE",
+    "license": "GPL-3.0-or-later",
+    "resources": {
+      "../LICENSE": "LICENSE.txt",
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "binaries/FFMPEG-NOTICE.txt": "FFMPEG-NOTICE.txt"
+    },
+    "homepage": "https://github.com/furniture3k/Video-Datamosher",
+    "publisher": "moshpit contributors"
   }
 }

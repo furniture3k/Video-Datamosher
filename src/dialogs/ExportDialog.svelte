@@ -6,6 +6,7 @@
   import { ffmpeg } from '../lib/ffmpeg';
   import { download, localGet, localSet } from '../lib/storage';
   import { isDesktop } from '../lib/platform';
+  import { blobToDisk, saveFromDisk, revealFile } from '../lib/ffmpeg-native';
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
@@ -14,7 +15,8 @@
   let running = $state(false);
   let stage = $state('');
   let progress = $state(0);
-  let result = $state<{ url: string; name: string; size: number; type: string } | null>(null);
+  /** url: web preview/download; file: desktop, the export on disk until saved; savedTo: where it was saved */
+  let result = $state<{ url?: string; file?: string; savedTo?: string; name: string; size: number; type: string } | null>(null);
   let error = $state('');
   let signal = { cancelled: false };
   const hasPixel = $derived(store.project.effects.some((e) => e.enabled && ['vectorWarp', 'chroma', 'pixelSort'].includes(e.type)));
@@ -42,13 +44,29 @@
     result = null;
     signal = { cancelled: false };
     try {
-      const { blob, name } = await exportVideo($state.snapshot(store.project) as Project, $state.snapshot(o), (s, p) => ((stage = s), (progress = p)), signal);
-      result = { url: URL.createObjectURL(blob), name, size: blob.size, type: blob.type };
-      download(blob, name);
+      const r = await exportVideo($state.snapshot(store.project) as Project, $state.snapshot(o), (s, p) => ((stage = s), (progress = p)), signal);
+      if (isDesktop) {
+        result = { file: r.file ?? (await blobToDisk(r.blob!, r.name)), name: r.name, size: r.size, type: r.type };
+        running = false;
+        await save();
+      } else {
+        result = { url: URL.createObjectURL(r.blob!), name: r.name, size: r.size, type: r.type };
+        download(r.blob!, r.name);
+      }
     } catch (e) {
       if (!(e instanceof Cancelled)) error = (e as Error).message;
     } finally {
       running = false;
+    }
+  }
+  /** Desktop: native Save dialog; the export is moved to the chosen place. */
+  async function save() {
+    if (!result?.file) return;
+    try {
+      const to = await saveFromDisk(result.file, result.name);
+      if (to) result = { ...result, file: undefined, savedTo: to };
+    } catch (e) {
+      error = 'Could not save: ' + ((e as Error)?.message ?? e);
     }
   }
   function cancel() {
@@ -150,16 +168,20 @@
     {#if error}<div class="err small">{error}</div>{/if}
     {#if result}
       <div class="done">
-        {#if result.type.startsWith('video/mp4') || result.type.startsWith('video/webm')}
+        {#if !result.url}
+          <!-- desktop: nothing to preview here, the file is on disk -->
+        {:else if result.type.startsWith('video/mp4') || result.type.startsWith('video/webm')}
           <!-- svelte-ignore a11y_media_has_caption -->
           <video src={result.url} controls loop autoplay muted></video>
         {:else if result.type === 'image/gif'}
           <img src={result.url} alt="export preview" />
         {/if}
         <div class="row small">
-          <span class="grow mono">{result.name} · {mb(result.size)}</span>
-          {#if isDesktop}
-            <button class="link" onclick={() => fetch(result!.url).then((r) => r.blob()).then((b) => download(b, result!.name))}>Save again</button>
+          <span class="grow mono">{result.savedTo ?? result.name} · {mb(result.size)}</span>
+          {#if result.savedTo}
+            <button class="link" onclick={() => revealFile(result!.savedTo!)}>Show in folder</button>
+          {:else if result.file}
+            <button class="link" onclick={save}>Save…</button>
           {:else}
             <a href={result.url} download={result.name}>Download again</a>
           {/if}

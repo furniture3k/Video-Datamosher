@@ -1,8 +1,17 @@
 {
   "name": "moshpit",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Video editor with a datamosher built in, for the browser and desktop",
+  "license": "GPL-3.0-or-later",
+  "homepage": "https://furniture3k.github.io/Video-Datamosher/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/furniture3k/Video-Datamosher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/furniture3k/Video-Datamosher/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "node scripts/copy-ffmpeg-core.mjs && vite",

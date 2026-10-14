@@ -70,6 +70,12 @@
         <li>Quality 6–12 and a long keyframe interval give the classic chunky look.</li>
         <li>Everything runs on your device; nothing is uploaded.</li>
       </ul>
+      <p class="small muted">
+        moshpit is free software under the <a href="https://github.com/furniture3k/Video-Datamosher/blob/main/LICENSE" target="_blank" rel="noopener">GNU GPL v3 or later</a>.
+        It uses FFmpeg (GPL) and other open-source components; see the
+        <a href="https://github.com/furniture3k/Video-Datamosher/blob/main/THIRD-PARTY-NOTICES.md" target="_blank" rel="noopener">third-party notices</a>
+        and the <a href="https://github.com/furniture3k/Video-Datamosher" target="_blank" rel="noopener">source code</a>.
+      </p>
     </div>
     <div class="col">
       <h4>Keyboard shortcuts</h4>
@@ -85,6 +91,9 @@
 </Modal>
 
 <style>
+  a {
+    color: var(--text);
+  }
   .cols {
     display: grid;
     grid-template-columns: 1.6fr 1fr;

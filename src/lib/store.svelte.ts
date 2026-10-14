@@ -1,6 +1,6 @@
 // Global app state (Svelte 5 runes), undo/redo, autosave and auto-render.
 import { newProject, type Project, type EffectInstance, type Clip } from '../engine/types';
-import { MAX_OUTPUT_FRAMES } from '../engine/mosh';
+import { limits } from '../engine/mosh';
 import { timelineFrames, timelineDuration, cutFrames, remapToFootage } from '../engine/timeline';
 import { migrate } from '../engine/migrate';
 import { renderPreview, renderKey, proxyKey, Cancelled, type RenderResult } from './renderer';
@@ -321,8 +321,8 @@ class Store {
       }, signal);
       this.render = r;
       this.renderKey = key;
-      if (r.frames.length >= MAX_OUTPUT_FRAMES)
-        this.toast(`Output capped at ${MAX_OUTPUT_FRAMES} frames. Lower the Bloom or Stutter repeats.`, 'error', 6000);
+      if (r.frames.length >= limits.maxOutputFrames)
+        this.toast(`Output capped at ${limits.maxOutputFrames} frames. Lower the Bloom or Stutter repeats.`, 'error', 6000);
       if (this.renderFresh) this.ui.playhead = Math.min(r.frames.length - 1, this.frameAtTime(this.ui.time));
       if (this.ui.playhead >= r.frames.length) this.ui.playhead = Math.max(0, r.frames.length - 1);
       if (this.ui.loop && this.ui.loop[1] > r.frames.length) this.ui.loop = null;

@@ -1,6 +1,7 @@
 // IndexedDB persistence for media files, autosaved project and user presets.
-import { invoke } from '@tauri-apps/api/core';
+import { blobToDisk, saveFromDisk, removeEngineFile } from './ffmpeg-native';
 import { isDesktop } from './platform';
+import { tell } from './ask';
 
 const DB = 'moshpit';
 let dbp: Promise<IDBDatabase> | null = null;
@@ -107,11 +108,12 @@ export function download(data: Blob | Uint8Array, name: string, type = 'applicat
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
 
-/** Desktop app: the webview can't download, so save through the native Save dialog. */
+/** Desktop app: the webview can't download, so copy the file to disk in chunks and use the native Save dialog. */
 async function saveNative(blob: Blob, name: string) {
   try {
-    await invoke('save_file', new Uint8Array(await blob.arrayBuffer()), { headers: { 'x-name': encodeURIComponent(name) } });
+    const path = await blobToDisk(blob, name);
+    if (!(await saveFromDisk(path, name))) removeEngineFile(path); // cancelled
   } catch (e) {
-    alert('Could not save ' + name + ': ' + ((e as Error)?.message ?? e));
+    tell('Could not save ' + name + ': ' + ((e as Error)?.message ?? e));
   }
 }

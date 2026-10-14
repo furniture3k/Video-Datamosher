@@ -71,8 +71,17 @@ export function processAudio(buf: Int16Array, s: AudioSettings, seed = 1): Int16
 }
 
 export function wav(pcm: Int16Array, rate = SAMPLE_RATE, channels = 2): Uint8Array {
+  const [head, data] = wavParts(pcm, rate, channels);
+  const out = new Uint8Array(head.length + data.length);
+  out.set(head);
+  out.set(data, head.length);
+  return out;
+}
+
+/** A WAV file as [44-byte header, the samples' bytes (not copied)]. */
+export function wavParts(pcm: Int16Array, rate = SAMPLE_RATE, channels = 2): [Uint8Array, Uint8Array] {
   const data = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-  const out = new Uint8Array(44 + data.length);
+  const out = new Uint8Array(44);
   const v = new DataView(out.buffer);
   const w = (o: number, s: string) => [...s].forEach((c, i) => (out[o + i] = c.charCodeAt(0)));
   w(0, 'RIFF');
@@ -88,6 +97,5 @@ export function wav(pcm: Int16Array, rate = SAMPLE_RATE, channels = 2): Uint8Arr
   v.setUint16(34, 16, true);
   w(36, 'data');
   v.setUint32(40, data.length, true);
-  out.set(data, 44);
-  return out;
+  return [out, data];
 }

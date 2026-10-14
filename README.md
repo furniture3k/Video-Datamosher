@@ -47,7 +47,7 @@ A quick first video:
 
 It opens in its own window with no browser bars, and the whole app, including the video engine, is kept on the device, so it starts and works offline. Updates arrive the next time it's opened online.
 
-**Desktop app (Windows, macOS, Linux).** The same editor in a native window, running a native FFmpeg instead of the browser one. Native FFmpeg uses every CPU core, so preparing and exporting are several times faster, and long videos, 1440p and 4K stop being a strain. Exports are saved with the normal Save dialog. Download it from [Releases](https://github.com/furniture3k/Video-Datamosher/releases):
+**Desktop app (Windows, macOS, Linux).** The same editor in a native window, running a native FFmpeg instead of the browser one. Native FFmpeg uses every CPU core, so preparing and exporting are many times faster, 1440p and 4K are practical, and output can be 30 minutes long (10 minutes in the browser). Exports are saved with the normal Save dialog. Download it from [Releases](https://github.com/furniture3k/Video-Datamosher/releases):
 
 | | File |
 |---|---|
@@ -167,7 +167,7 @@ flowchart LR
 
 ## Notes
 
-- Browser FFmpeg is single-threaded and slower than a native install. Clips import at full length; the output is capped at 14,400 frames (10 minutes at 24 fps). 1080p export works well; 1440p and 4K work for short videos but take a while. Large files are read in place rather than copied into memory, and preview copies are made in the background.
+- Browser FFmpeg is single-threaded and slower than a native install. Clips import at full length; the output is capped at 14,400 frames (10 minutes at 24 fps) in the browser and 43,200 frames (30 minutes at 24 fps) in the desktop app. 1080p export works well; 1440p and 4K work for short videos but take a while. Large files are read in place rather than copied into memory, and preview copies are made in the background.
 - The [desktop app](#apps) uses native FFmpeg and doesn't have these limits in practice: it's the better choice for 4K and long videos.
 - A moshed AVI plays differently in every player because each one conceals errors differently. The MP4, WebM and GIF exports contain exactly what the preview shows.
 - WebM export uses VP8 and Vorbis; the VP9 and Opus encoders in ffmpeg.wasm crash.
@@ -196,6 +196,13 @@ npm run desktop:build    # installer for this machine in src-tauri/target/releas
 ```
 
 Pushing a `v*` tag builds the Windows, macOS and Linux installers in GitHub Actions and attaches them to a draft release.
+
+## License
+
+moshpit is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License v3.0 or later](LICENSE). It builds on FFmpeg and other open-source
+software; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Contributions are welcome: see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

@@ -1,0 +1,11 @@
+name: Idea or feature request
+description: A new effect, preset, export option or anything else
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: What you're trying to make, and how this would help. Links to examples of the look are great.
+    validations:
+      required: true

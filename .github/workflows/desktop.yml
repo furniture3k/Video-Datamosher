@@ -1,8 +1,8 @@
 name: Desktop app
 
 # Builds the installers (Windows .msi/.exe, macOS .dmg for Apple Silicon and Intel, Linux
-# .AppImage/.deb/.rpm). Pushing a tag like v1.2.0 attaches them to a draft GitHub Release;
-# running it by hand just uploads them as workflow artifacts.
+# .AppImage/.deb/.rpm). Pushing a tag like v1.2.0 attaches them to a GitHub Release, which is
+# published once every build succeeded; running it by hand just uploads them as artifacts.
 on:
   push:
     tags: ['v*']
@@ -71,3 +71,14 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
           if-no-files-found: error
+
+  publish:
+    # once every installer built, publish the draft release (a failed build leaves it as a draft)
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}

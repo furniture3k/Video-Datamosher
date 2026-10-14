@@ -1,7 +1,7 @@
 // Bitstream effects: each one rewrites the list of compressed frames.
 import type { BitstreamEffect } from './types';
 import type { Frame } from '../types';
-import { bool, copy, inRange, isMotion, num, rangeRuns, str, tOf } from './util';
+import { bool, copy, inRange, isMotion, num, rangeRuns, str, tOf, frameSize } from './util';
 
 export const keyframeKiller: BitstreamEffect = {
   kind: 'bitstream',
@@ -100,7 +100,7 @@ export const bloom: BitstreamEffect = {
     let chosen: Frame | null = null;
     if (target === 'first') chosen = frames.find((f) => inRange(f, e) && isMotion(f)) ?? null;
     if (target === 'strongest')
-      chosen = frames.filter((f) => inRange(f, e) && isMotion(f)).reduce<Frame | null>((a, f) => (!a || f.data.length > a.data.length ? f : a), null);
+      chosen = frames.filter((f) => inRange(f, e) && isMotion(f)).reduce<Frame | null>((a, f) => (!a || frameSize(f) > frameSize(a) ? f : a), null);
     const out: Frame[] = [];
     let motionCount = 0;
     for (const f of frames) {

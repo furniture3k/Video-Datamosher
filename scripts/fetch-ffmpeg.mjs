@@ -37,8 +37,37 @@ const URLS = {
   'x86_64-apple-darwin': RIEDL + 'amd64/release/ffmpeg.zip',
 };
 
+const NOTICE = path.join(dir, 'FFMPEG-NOTICE.txt');
+/** Written next to the binary and bundled with the app: which FFmpeg this is and where its source is. */
+function writeNotice(origin) {
+  let version = '';
+  try {
+    version = execFileSync(dest, ['-version'], { encoding: 'utf8' }).split(/\r?\n/)[0];
+  } catch {
+    /* built for another architecture: can't run it here */
+  }
+  fs.writeFileSync(
+    NOTICE,
+    `moshpit bundles FFmpeg as a separate program (moshpit-ffmpeg).
+
+${version || 'FFmpeg'}
+Built for: ${target}
+Obtained from: ${origin}
+
+FFmpeg is free software. This build includes GPL components (such as libx264), so it is
+licensed under the GNU General Public License (version 2 or later, or version 3 or later
+when built with --enable-version3; \`moshpit-ffmpeg -version\` prints the configuration).
+See https://ffmpeg.org/legal.html.
+Source code: https://git.ffmpeg.org/ffmpeg.git (the version line above names the release or
+commit) and https://ffmpeg.org/download.html. The build scripts are linked from the page above.
+moshpit's own source: https://github.com/furniture3k/Video-Datamosher
+`,
+  );
+}
+
 fs.mkdirSync(dir, { recursive: true });
 if (fs.existsSync(dest) && !argv.includes('--force')) {
+  if (!fs.existsSync(NOTICE)) writeNotice('a local copy');
   console.log('ffmpeg ready:', path.relative('.', dest));
   process.exit(0);
 }
@@ -49,6 +78,7 @@ if (dev) {
     if (which) {
       fs.copyFileSync(which, dest);
       fs.chmodSync(dest, 0o755);
+      writeNotice(`the ffmpeg installed on the build machine (${which})`);
       console.log('using the ffmpeg on PATH:', which);
       process.exit(0);
     }
@@ -90,4 +120,5 @@ if (/\.(zip|tar\.xz|tar\.gz|tgz)$/.test(file)) {
 fs.copyFileSync(bin, dest);
 fs.chmodSync(dest, 0o755);
 fs.rmSync(tmp, { recursive: true, force: true });
+writeNotice(url);
 console.log('ffmpeg ready:', path.relative('.', dest));
