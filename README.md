@@ -37,6 +37,27 @@ A quick first video:
 5. Layer mosh effects on the **Mosh FX** lanes, or start from **Presets** and **Randomize**.
 6. **Export** to MP4 or WebM at up to 4K, GIF, PNG frames, or the raw broken AVI.
 
+## Apps
+
+**Install from the browser (phones, tablets, laptops).** moshpit is an installable web app. Open the site, then:
+
+- **iPhone / iPad:** Safari → Share → **Add to Home Screen**.
+- **Android:** Chrome → menu → **Install app** (or **Add to Home screen**).
+- **Desktop Chrome / Edge:** the install icon in the address bar.
+
+It opens in its own window with no browser bars, and the whole app, including the video engine, is kept on the device, so it starts and works offline. Updates arrive the next time it's opened online.
+
+**Desktop app (Windows, macOS, Linux).** The same editor in a native window, running a native FFmpeg instead of the browser one. Native FFmpeg uses every CPU core, so preparing and exporting are many times faster, 1440p and 4K are practical, and output can be 30 minutes long (10 minutes in the browser). Exports are saved with the normal Save dialog. Download it from [Releases](https://github.com/furniture3k/Video-Datamosher/releases):
+
+| | File |
+|---|---|
+| Windows 10/11 | `moshpit_x.y.z_x64-setup.exe` or `.msi` |
+| macOS (Apple Silicon) | `moshpit_x.y.z_aarch64.dmg` |
+| macOS (Intel) | `moshpit_x.y.z_x64.dmg` |
+| Linux | `.AppImage`, `.deb` or `.rpm` |
+
+The builds aren't code-signed yet. On macOS, right-click the app and choose **Open** the first time; on Windows, choose **More info → Run anyway** if SmartScreen asks. See [DESKTOP.md](DESKTOP.md) for building it yourself.
+
 ## Effects
 
 Bitstream effects change the compressed video itself. The decoder then reconstructs the picture from the damaged instructions, which is where the melting comes from.
@@ -146,8 +167,8 @@ flowchart LR
 
 ## Notes
 
-- Browser FFmpeg is single-threaded and slower than a native install. Clips import at full length; the output is capped at 14,400 frames (10 minutes at 24 fps). 1080p export works well; 1440p and 4K work for short videos but take a while. Large files are read in place rather than copied into memory, and preview copies are made in the background.
-- A desktop version with native FFmpeg (for fast 4K and long videos) is planned: see [DESKTOP.md](DESKTOP.md).
+- Browser FFmpeg is single-threaded and slower than a native install. Clips import at full length; the output is capped at 14,400 frames (10 minutes at 24 fps) in the browser and 43,200 frames (30 minutes at 24 fps) in the desktop app. 1080p export works well; 1440p and 4K work for short videos but take a while. Large files are read in place rather than copied into memory, and preview copies are made in the background.
+- The [desktop app](#apps) uses native FFmpeg and doesn't have these limits in practice: it's the better choice for 4K and long videos.
 - A moshed AVI plays differently in every player because each one conceals errors differently. The MP4, WebM and GIF exports contain exactly what the preview shows.
 - WebM export uses VP8 and Vorbis; the VP9 and Opus encoders in ffmpeg.wasm crash.
 - Works in current Chrome, Edge, Firefox and Safari (iOS 15.4 or later), on desktop and on phones. Dragging media from the library needs a mouse; on touch screens use the **+** button.
@@ -166,6 +187,22 @@ npm test                           # engine and integration tests (uses native f
 npm run check                      # type check
 npm run build && npm run test:e2e  # drives the built app in Chromium
 ```
+
+Desktop app ([Tauri 2](https://tauri.app); needs [Rust](https://rustup.rs) and, on Linux, the [WebKitGTK packages](https://tauri.app/start/prerequisites/)):
+
+```bash
+npm run desktop          # dev window with hot reload (uses the ffmpeg on your PATH, or downloads one)
+npm run desktop:build    # installer for this machine in src-tauri/target/release/bundle/
+```
+
+Pushing a `v*` tag builds the Windows, macOS and Linux installers in GitHub Actions and attaches them to a draft release.
+
+## License
+
+moshpit is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License v3.0 or later](LICENSE). It builds on FFmpeg and other open-source
+software; see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Contributions are welcome: see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

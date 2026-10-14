@@ -1,13 +1,15 @@
 // Orchestrates prep -> mosh -> decode -> post for previews and exports.
-import { ffmpeg, ffmpegBg, Cancelled, MOUNT } from './ffmpeg';
+import { ffmpeg, ffmpegBg, Cancelled, MOUNT, type RunOptions } from './ffmpeg';
+import { fileSize, framesFromDisk, loadFrames, assembleAvi, removeEngineFile, moveEngineFile, writeEngineFile } from './ffmpeg-native';
+import { isDesktop } from './platform';
 import { getFile } from './storage';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { type TextOverlay, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
-import { framesFromAvi, applyBitstream, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
+import { framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, mediaOf, type Segment } from '../engine/timeline';
 import { splitJpegs } from '../engine/jpeg';
-import { buildAudio, wav, SAMPLE_RATE } from '../engine/audio';
+import { buildAudio, wav, wavParts, SAMPLE_RATE } from '../engine/audio';
 import { zip } from '../engine/zip';
 import type { Frame, MediaItem, Project, TextClip } from '../engine/types';
 import { drawText } from './text';
@@ -128,7 +130,8 @@ function renderTextPng(tx: TextClip, w: number, h: number): Promise<Blob> {
   return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('text render failed'))), 'image/png'));
 }
 
-export async function prepare(project: Project, width: number, progress?: Progress, signal?: Signal, preview = true): Promise<Prepared> {
+/** `disk` (desktop exports): segments stay on disk as disk-backed frames, see framesFromDisk. */
+export async function prepare(project: Project, width: number, progress?: Progress, signal?: Signal, preview = true, disk = false): Promise<Prepared> {
   if (!project.clips.length && !project.texts?.length) throw new Error('Add a clip first');
   const fps = project.encoder.fps;
   const { mounts, path } = await mountsFor(project, preview);
@@ -146,12 +149,22 @@ export async function prepare(project: Project, width: number, progress?: Progre
     const n = seg ? seg.f1 - seg.f0 : totalFrames;
     let part = preview ? segCache.get(key) : undefined;
     if (!part) {
-      const args = seg ? segmentArgs(project, seg, width, 'prep.avi', path, overlays) : prepArgs(project, width, 'prep.avi', path, overlays);
+      const name = disk ? `prep_${parts.length}.avi` : 'prep.avi';
+      const args = seg ? segmentArgs(project, seg, width, name, path, overlays) : prepArgs(project, width, name, path, overlays);
       const base = done;
-      const r = await ffmpeg.run(args, { mounts, outputs: ['prep.avi'], onFrame: (k) => progress?.('Preparing clips', Math.min(1, (base + k) / totalFrames)) });
-      check(signal);
-      part = framesFromAvi(r.out['prep.avi'], project.encoder.codec);
-      if (!part.frames.length) throw new Error('Preparing produced no frames.\n' + r.log.slice(-800));
+      const onFrame = (k: number) => progress?.('Preparing clips', Math.min(1, (base + k) / totalFrames));
+      let log: string;
+      if (disk) {
+        log = (await ffmpeg.run(args, { mounts, leave: [name], onFrame })).log;
+        check(signal);
+        part = await framesFromDisk(ffmpeg.file!(name), project.encoder.codec);
+      } else {
+        const r = await ffmpeg.run(args, { mounts, outputs: [name], onFrame });
+        check(signal);
+        part = framesFromAvi(r.out[name], project.encoder.codec);
+        log = r.log;
+      }
+      if (!part.frames.length) throw new Error('Preparing produced no frames.\n' + log.slice(-800));
       if (preview) segCache.set(key, part, prepBytes(part));
     }
     parts.push(part);
@@ -162,14 +175,16 @@ export async function prepare(project: Project, width: number, progress?: Progre
 
 // ---------------------------------------------------------------- decode
 
-async function decode(project: Project, avi: Uint8Array | Blob, quality: number, total: number, label: string, progress?: Progress, opts: { scaleW?: number; from?: number; to?: number } = {}): Promise<Uint8Array[]> {
-  const blob = avi instanceof Blob ? avi : new Blob([avi as BlobPart]);
+/** `avi`: the moshed stream in memory, or (desktop) the name of a file in the engine's folder. */
+async function decode(project: Project, avi: Uint8Array | Blob | string, quality: number, total: number, label: string, progress?: Progress, opts: { scaleW?: number; from?: number; to?: number } = {}): Promise<Uint8Array[]> {
+  const onDisk = typeof avi === 'string';
+  const blob = onDisk ? null : avi instanceof Blob ? avi : new Blob([avi as BlobPart]);
   const vf: string[] = [];
   if (opts.from || opts.to !== undefined) vf.push(`select='between(n,${opts.from ?? 0},${(opts.to ?? 1e9) - 1})'`);
   if (opts.scaleW) vf.push(`scale=${even(opts.scaleW)}:-2`);
   const args = [
     ...decoderInputArgs(project.decoder),
-    '-i', MOUNT + 'mosh.avi',
+    '-i', onDisk ? avi : MOUNT + 'mosh.avi',
     '-fps_mode', 'passthrough',
     ...(vf.length ? ['-vf', vf.join(',')] : []),
     ...(opts.to !== undefined ? ['-frames:v', String(opts.to - (opts.from ?? 0))] : []),
@@ -177,7 +192,7 @@ async function decode(project: Project, avi: Uint8Array | Blob, quality: number,
     '-f', 'image2pipe', 'out.mjpeg',
   ];
   const r = await ffmpeg.run(args, {
-    mounts: { 'mosh.avi': blob },
+    mounts: blob ? { 'mosh.avi': blob } : {},
     outputs: ['out.mjpeg'],
     onFrame: (n) => progress?.(label, Math.min(1, n / Math.max(1, total))),
   });
@@ -271,16 +286,23 @@ export async function timelineAudio(project: Project): Promise<Buses> {
 
 /** Final sound for a list of output frames, as WAV bytes (or null when silent). */
 export async function moshedAudioWav(project: Project, frames: Pick<Frame, 'src' | 'tag'>[]): Promise<Uint8Array | null> {
+  const pcm = await moshedAudio(project, frames);
+  return pcm && wav(pcm);
+}
+
+/** The finished soundtrack (interleaved stereo at SAMPLE_RATE) for these output frames. */
+export async function moshedAudio(project: Project, frames: Pick<Frame, 'src' | 'tag'>[]): Promise<Int16Array | null> {
   const { mosh, clean } = await timelineAudio(project);
   if (!mosh && !clean) return null;
   const fps = project.encoder.fps;
   const len = Math.round(frames.length * (SAMPLE_RATE / fps)) * 2;
-  const out = mosh ? buildAudio(mosh.slice(), frames, fps, project.audio, project.globalSeed) : new Int16Array(len);
+  // buildAudio only reads the bus (and writes a new buffer), so the cached bus isn't copied
+  const out = mosh ? buildAudio(mosh, frames, fps, project.audio, project.globalSeed) : new Int16Array(len);
   if (clean) {
     const v = project.audio.volume;
     for (let i = 0; i < out.length && i < clean.length; i++) out[i] = Math.max(-32768, Math.min(32767, out[i] + clean[i] * v));
   }
-  return wav(out);
+  return out;
 }
 
 // ---------------------------------------------------------------- media helpers
@@ -369,115 +391,169 @@ export const exportTuning = { maxChunk: Infinity };
 /** Frames per decode pass, so decoded frames of a big export never take more than ~300 MB. */
 const chunkFrames = (w: number, h: number) => Math.max(48, Math.min(4000, Math.floor(300e6 / (w * h * 0.16))));
 
-export async function exportVideo(project: Project, o: ExportOptions, progress: Progress, signal: Signal): Promise<{ blob: Blob; name: string }> {
+/**
+ * A finished export: in memory (`blob`), or on desktop a file in the native engine's folder
+ * (`file`, saved with saveFromDisk) so long videos never pass through the webview.
+ */
+export interface Exported {
+  name: string;
+  type: string;
+  size: number;
+  blob?: Blob;
+  file?: string;
+}
+
+const fromBlob = (blob: Blob, name: string): Exported => ({ blob, name, type: blob.type, size: blob.size });
+
+/** Run the final encode; on desktop the output stays on disk. */
+async function finish(args: string[], opts: RunOptions, out: string, type: string, name: string): Promise<Exported> {
+  if (isDesktop) {
+    await ffmpeg.run(args, { ...opts, leave: [out] });
+    const file = ffmpeg.file!(out);
+    return { file, name, type, size: (await fileSize(file)) ?? 0 };
+  }
+  const r = await ffmpeg.run(args, { ...opts, outputs: [out] });
+  return fromBlob(new Blob([r.out[out] as BlobPart], { type }), name);
+}
+
+export async function exportVideo(project: Project, o: ExportOptions, progress: Progress, signal: Signal): Promise<Exported> {
   const width = project.encoder.width;
-  const prep = await prepare(project, width, progress, signal, false);
-  check(signal);
-  progress('Moshing', 0);
-  const frames = applyBitstream(prep, project, cutsOf(project));
-  const avi = writeMoshedBlob(prep, frames);
-  const base = (project.name || 'mosh').replace(/[^\w-]+/g, '_');
-  const fps = project.encoder.fps;
-  progress('Mixing audio', 0);
-  const audio = o.audio && o.format !== 'gif' && o.format !== 'png' ? await moshedAudioWav(project, frames) : null;
-  check(signal);
-
-  if (o.format === 'avi') {
-    if (!audio) return { blob: avi, name: `${base}.avi` };
-    const r = await ffmpeg.run(['-i', MOUNT + 'mosh.avi', '-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'pcm_s16le', '-shortest', 'out.avi'], {
-      mounts: { 'mosh.avi': avi },
-      inputs: { 'a.wav': async () => audio },
-      outputs: ['out.avi'],
-    });
-    return { blob: new Blob([r.out['out.avi'] as BlobPart], { type: 'video/x-msvideo' }), name: `${base}.avi` };
-  }
-
-  const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
-  const runner = new PostRunner(project, 0.95, true);
-  const post = runner.active;
-  const n = frames.length;
-
-  // No pixel effects: encode straight from the moshed file in one pass.
-  if (!post && o.format !== 'png') {
-    const out = `out.${o.format}`;
-    const r = await ffmpeg.run(exportArgs(o, project.decoder, fps, { file: MOUNT + 'mosh.avi', mjpeg: false }, audio ? 'a.wav' : null, out), {
-      mounts: { 'mosh.avi': avi },
-      inputs: audio ? { 'a.wav': async () => audio } : {},
-      outputs: [out],
-      onFrame: (k) => progress('Encoding ' + o.format.toUpperCase(), Math.min(1, k / n)),
-    });
-    await ffmpeg.remove('a.wav');
-    return { blob: new Blob([r.out[out] as BlobPart], { type }), name: `${base}.${o.format}` };
-  }
-
-  // Pixel effects (or PNGs): decode, process and encode in chunks to keep memory bounded.
-  const { w, h } = outputSize(project, width);
-  const per = o.format === 'gif' ? n : Math.min(exportTuning.maxChunk, chunkFrames(w, h));
-  const pieces: Uint8Array[] = [];
-  const pngs: { name: string; data: Uint8Array }[] = [];
-  const gifJpegs: Uint8Array[] = [];
-  const canvas = document.createElement('canvas');
+  // Desktop: frame payloads stay on disk and the moshed AVI is assembled there, so memory use
+  // doesn't grow with the length of the video.
+  const disk = isDesktop;
   try {
-    for (let a = 0, k = 0; a < n; a += per, k++) {
-      const b = Math.min(n, a + per);
-      const span = (x: number) => (a + x * (b - a)) / n;
-      const chunk = per >= n ? await decode(project, avi, 2, n, 'Decoding', (s, p) => progress(s, p)) : await decode(project, avi, 2, b, 'Decoding', (s, p) => progress(`${s} ${a + 1}–${b} of ${n}`, span(p)), { from: a, to: b });
-      check(signal);
-      const done = await runner.run(chunk, frames, a, (p) => progress(`Pixel effects ${a + 1}–${b} of ${n}`, span(p)), signal);
-      check(signal);
-      if (o.format === 'png') {
-        for (let i = 0; i < done.length; i++) {
-          check(signal);
-          const bmp = await createImageBitmap(new Blob([done[i] as BlobPart], { type: 'image/jpeg' }));
-          const ow = o.width > 0 ? even(o.width) : bmp.width;
-          canvas.width = ow;
-          canvas.height = Math.round((bmp.height * ow) / bmp.width);
-          const ctx = canvas.getContext('2d')!;
-          ctx.imageSmoothingEnabled = o.scaler !== 'neighbor';
-          ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-          bmp.close();
-          const pb = await new Promise<Blob>((res) => canvas.toBlob((x) => res(x!), 'image/png'));
-          pngs.push({ name: `frame_${String(a + i + 1).padStart(5, '0')}.png`, data: new Uint8Array(await pb.arrayBuffer()) });
-          progress('Writing PNGs', (a + i) / n);
-        }
-      } else if (o.format === 'gif') gifJpegs.push(...done);
-      else {
-        const cat = concatBytes(done);
-        const out = `p${k}.${o.format}`;
-        const r = await ffmpeg.run(exportArgs(o, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, out), {
-          inputs: { 'frames.mjpeg': async () => cat },
-          outputs: [out],
-          onFrame: (x) => progress(`Encoding ${o.format.toUpperCase()} ${a + 1}–${b} of ${n}`, span(Math.min(1, x / (b - a)))),
-        });
-        pieces.push(r.out[out]);
+    const prep = await prepare(project, width, progress, signal, false, disk);
+    check(signal);
+    progress('Moshing', 0);
+    const frames = disk ? await applyBitstreamDisk(prep, project, cutsOf(project), loadFrames) : applyBitstream(prep, project, cutsOf(project));
+    const avi = disk ? null : writeMoshedBlob(prep, frames);
+    if (disk) await assembleAvi(ffmpeg.file!('mosh.avi'), prep, frames);
+    check(signal);
+    // the moshed AVI: an engine file on desktop, a mounted Blob in the browser
+    const aviIn = disk ? 'mosh.avi' : MOUNT + 'mosh.avi';
+    const aviMounts: Record<string, Blob> = disk ? {} : { 'mosh.avi': avi! };
+    const base = (project.name || 'mosh').replace(/[^\w-]+/g, '_');
+    const fps = project.encoder.fps;
+    progress('Mixing audio', 0);
+    const pcm = o.audio && o.format !== 'gif' && o.format !== 'png' ? await moshedAudio(project, frames) : null;
+    const audio = !!pcm;
+    // the soundtrack as a.wav: written straight to disk on desktop, an engine input in the browser
+    if (pcm && disk) await writeEngineFile(ffmpeg.file!('a.wav'), wavParts(pcm));
+    const audioIn: Record<string, () => Promise<Uint8Array>> = pcm && !disk ? { 'a.wav': async () => wav(pcm) } : {};
+    check(signal);
+
+    if (o.format === 'avi') {
+      if (!audio) {
+        if (!disk) return fromBlob(avi!, `${base}.avi`);
+        await moveEngineFile(ffmpeg.file!('mosh.avi'), ffmpeg.file!('out.avi'));
+        return { file: ffmpeg.file!('out.avi'), name: `${base}.avi`, type: 'video/x-msvideo', size: (await fileSize(ffmpeg.file!('out.avi'))) ?? 0 };
       }
+      return await finish(['-i', aviIn, '-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'pcm_s16le', '-shortest', 'out.avi'], {
+        mounts: aviMounts,
+        inputs: audioIn,
+      }, 'out.avi', 'video/x-msvideo', `${base}.avi`);
+    }
+
+    const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
+    const runner = new PostRunner(project, 0.95, true);
+    const post = runner.active;
+    const n = frames.length;
+
+    // No pixel effects: encode straight from the moshed file in one pass.
+    if (!post && o.format !== 'png') {
+      const out = `out.${o.format}`;
+      const done = await finish(exportArgs(o, project.decoder, fps, { file: aviIn, mjpeg: false }, audio ? 'a.wav' : null, out), {
+        mounts: aviMounts,
+        inputs: audioIn,
+        onFrame: (k) => progress('Encoding ' + o.format.toUpperCase(), Math.min(1, k / n)),
+      }, out, type, `${base}.${o.format}`);
+      await ffmpeg.remove('a.wav');
+      return done;
+    }
+
+    // Pixel effects (or PNGs): decode, process and encode in chunks to keep memory bounded.
+    const { w, h } = outputSize(project, width);
+    const per = o.format === 'gif' ? n : Math.min(exportTuning.maxChunk, chunkFrames(w, h));
+    // encoded pieces: in memory, or (desktop) left on disk under these names
+    const pieces: Uint8Array[] = [];
+    const pieceNames: string[] = [];
+    const pngs: { name: string; data: Uint8Array }[] = [];
+    const gifJpegs: Uint8Array[] = [];
+    const canvas = document.createElement('canvas');
+    try {
+      for (let a = 0, k = 0; a < n; a += per, k++) {
+        const b = Math.min(n, a + per);
+        const span = (x: number) => (a + x * (b - a)) / n;
+        const src = avi ?? 'mosh.avi';
+        const chunk = per >= n ? await decode(project, src, 2, n, 'Decoding', (s, p) => progress(s, p)) : await decode(project, src, 2, b, 'Decoding', (s, p) => progress(`${s} ${a + 1}–${b} of ${n}`, span(p)), { from: a, to: b });
+        check(signal);
+        const done = await runner.run(chunk, frames, a, (p) => progress(`Pixel effects ${a + 1}–${b} of ${n}`, span(p)), signal);
+        check(signal);
+        if (o.format === 'png') {
+          for (let i = 0; i < done.length; i++) {
+            check(signal);
+            const bmp = await createImageBitmap(new Blob([done[i] as BlobPart], { type: 'image/jpeg' }));
+            const ow = o.width > 0 ? even(o.width) : bmp.width;
+            canvas.width = ow;
+            canvas.height = Math.round((bmp.height * ow) / bmp.width);
+            const ctx = canvas.getContext('2d')!;
+            ctx.imageSmoothingEnabled = o.scaler !== 'neighbor';
+            ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+            bmp.close();
+            const pb = await new Promise<Blob>((res) => canvas.toBlob((x) => res(x!), 'image/png'));
+            pngs.push({ name: `frame_${String(a + i + 1).padStart(5, '0')}.png`, data: new Uint8Array(await pb.arrayBuffer()) });
+            progress('Writing PNGs', (a + i) / n);
+          }
+        } else if (o.format === 'gif') gifJpegs.push(...done);
+        else {
+          const cat = concatBytes(done);
+          const out = `p${k}.${o.format}`;
+          const r = await ffmpeg.run(exportArgs(o, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, out), {
+            inputs: { 'frames.mjpeg': async () => cat },
+            ...(isDesktop ? { leave: [out] } : { outputs: [out] }),
+            onFrame: (x) => progress(`Encoding ${o.format.toUpperCase()} ${a + 1}–${b} of ${n}`, span(Math.min(1, x / (b - a)))),
+          });
+          pieceNames.push(out);
+          if (!isDesktop) pieces.push(r.out[out]);
+        }
+      }
+    } finally {
+      runner.dispose();
+    }
+    if (o.format === 'png') return fromBlob(zip(pngs), `${base}_frames.zip`);
+    if (o.format === 'gif') {
+      const cat = concatBytes(gifJpegs);
+      return await finish(exportArgs(o, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, 'out.gif'), {
+        inputs: { 'frames.mjpeg': async () => cat },
+        onFrame: (x) => progress('Encoding GIF', Math.min(1, x / n)),
+      }, 'out.gif', type, `${base}.gif`);
+    }
+    // join the pieces (and add the sound) without re-encoding
+    progress('Joining', 0);
+    const inputs: Record<string, () => Promise<Uint8Array>> = {};
+    pieces.forEach((p, i) => (inputs[pieceNames[i]] = async () => p));
+    inputs['list.txt'] = async () => new TextEncoder().encode(pieceNames.map((p) => `file '${p}'`).join('\n'));
+    Object.assign(inputs, audioIn);
+    const out = `out.${o.format}`;
+    const args = ['-f', 'concat', '-safe', '0', '-i', 'list.txt'];
+    if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', ...(o.format === 'mp4' ? ['-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart'] : ['-c:a', 'libvorbis', '-q:a', '6']), '-shortest');
+    else args.push('-c', 'copy');
+    args.push(out);
+    try {
+      return await finish(args, { inputs }, out, type, `${base}.${o.format}`);
+    } finally {
+      for (const p of pieceNames) await ffmpeg.remove(p);
     }
   } finally {
-    runner.dispose();
+    if (disk) await cleanupExport();
   }
-  if (o.format === 'png') return { blob: zip(pngs), name: `${base}_frames.zip` };
-  if (o.format === 'gif') {
-    const cat = concatBytes(gifJpegs);
-    const r = await ffmpeg.run(exportArgs(o, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, 'out.gif'), {
-      inputs: { 'frames.mjpeg': async () => cat },
-      outputs: ['out.gif'],
-      onFrame: (x) => progress('Encoding GIF', Math.min(1, x / n)),
-    });
-    return { blob: new Blob([r.out['out.gif'] as BlobPart], { type }), name: `${base}.gif` };
-  }
-  // join the pieces (and add the sound) without re-encoding
-  progress('Joining', 0);
-  const inputs: Record<string, () => Promise<Uint8Array>> = {};
-  pieces.forEach((p, i) => (inputs[`p${i}.${o.format}`] = async () => p));
-  inputs['list.txt'] = async () => new TextEncoder().encode(pieces.map((_, i) => `file 'p${i}.${o.format}'`).join('\n'));
-  if (audio) inputs['a.wav'] = async () => audio;
-  const out = `out.${o.format}`;
-  const args = ['-f', 'concat', '-safe', '0', '-i', 'list.txt'];
-  if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', ...(o.format === 'mp4' ? ['-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart'] : ['-c:a', 'libvorbis', '-q:a', '6']), '-shortest');
-  else args.push('-c', 'copy');
-  args.push(out);
-  const r = await ffmpeg.run(args, { inputs, outputs: [out] });
-  return { blob: new Blob([r.out[out] as BlobPart], { type }), name: `${base}.${o.format}` };
+}
+
+/** Desktop: delete the prepared segments and moshed AVI an export left on disk. */
+async function cleanupExport() {
+  for (let k = 0; ffmpeg.has(`prep_${k}.avi`); k++) await ffmpeg.remove(`prep_${k}.avi`);
+  await removeEngineFile(ffmpeg.file!('mosh.avi'));
+  await removeEngineFile(ffmpeg.file!('a.wav'));
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {

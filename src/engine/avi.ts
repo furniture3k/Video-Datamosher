@@ -87,19 +87,21 @@ export function parseAvi(buf: Uint8Array): { info: AviInfo; chunks: AviChunk[] }
     }
   }
 
-  const s = strh as Uint8Array;
-  const h = avih as Uint8Array;
-  const info: AviInfo = {
-    fourcc: fourcc(s, 4),
-    scale: u32(s, 20) || 1,
-    rate: u32(s, 24) || 25,
-    width: u32(h, 32),
-    height: u32(h, 36),
-    strh: s,
-    strf: strf as Uint8Array,
-    avih: h,
+  return { info: aviInfo(avih, strh, strf), chunks };
+}
+
+/** Stream info from the raw avih / strh / strf payloads. */
+export function aviInfo(avih: Uint8Array, strh: Uint8Array, strf: Uint8Array): AviInfo {
+  return {
+    fourcc: fourcc(strh, 4),
+    scale: u32(strh, 20) || 1,
+    rate: u32(strh, 24) || 25,
+    width: u32(avih, 32),
+    height: u32(avih, 36),
+    strh,
+    strf,
+    avih,
   };
-  return { info, chunks };
 }
 
 class Writer {
@@ -149,16 +151,13 @@ export interface WriteFrame {
   keyframe: boolean;
 }
 
-/**
- * Build an AVI as a list of byte parts. Frame payloads are referenced, not copied, so a Blob made
- * from the parts never needs one huge contiguous buffer (important for long or high-res exports).
- */
-export function writeAviParts(info: AviInfo, frames: WriteFrame[]): Uint8Array[] {
+/** Headers and index of an AVI holding frames of these sizes; the movi payloads go in between. */
+function aviSkeleton(info: AviInfo, frames: { size: number; keyframe: boolean }[]): { head: Uint8Array; idx1: Uint8Array } {
   let maxSize = 0;
   let total = 0;
   for (const f of frames) {
-    maxSize = Math.max(maxSize, f.data.length);
-    total += f.data.length;
+    maxSize = Math.max(maxSize, f.size);
+    total += f.size;
   }
   const fps = info.rate / info.scale;
 
@@ -179,38 +178,97 @@ export function writeAviParts(info: AviInfo, frames: WriteFrame[]): Uint8Array[]
 
   const hdrl = list('hdrl', [chunk('avih', avih), list('strl', [chunk('strh', strh), chunk('strf', info.strf)])]);
 
-  // movi: chunk headers + payloads (+ pad bytes), referenced in place
-  const moviParts: Uint8Array[] = [];
   const idx = new Writer();
   let off = 4; // offsets relative to the 'movi' fourcc
-  const pad = new Uint8Array(1);
   for (const f of frames) {
-    const h = new Uint8Array(8);
-    h.set([0x30, 0x30, 0x64, 0x63]); // '00dc'
-    new DataView(h.buffer).setUint32(4, f.data.length, true);
-    moviParts.push(h, f.data);
-    if (f.data.length & 1) moviParts.push(pad);
     idx.str('00dc');
     idx.u32(f.keyframe ? 0x10 : 0);
     idx.u32(off);
-    idx.u32(f.data.length);
-    off += 8 + f.data.length + (f.data.length & 1);
+    idx.u32(f.size);
+    off += 8 + f.size + (f.size & 1);
   }
   const moviBody = off; // 'movi' fourcc + chunks
-  const moviHead = new Writer();
-  moviHead.str('LIST');
-  moviHead.u32(moviBody);
-  moviHead.str('movi');
   const idx1 = chunk('idx1', idx.concat());
-
-  const riffBody = 4 + hdrl.length + 8 + moviBody + idx1.length;
   const head = new Writer();
   head.str('RIFF');
-  head.u32(riffBody);
+  head.u32(4 + hdrl.length + 8 + moviBody + idx1.length);
   head.str('AVI ');
   head.push(hdrl);
-  head.push(moviHead.concat());
-  return [head.concat(), ...moviParts, idx1];
+  head.str('LIST');
+  head.u32(moviBody);
+  head.str('movi');
+  return { head: head.concat(), idx1 };
+}
+
+/** The 8-byte header of a movi frame chunk. */
+function frameHeader(size: number): Uint8Array {
+  const h = new Uint8Array(8);
+  h.set([0x30, 0x30, 0x64, 0x63]); // '00dc'
+  new DataView(h.buffer).setUint32(4, size, true);
+  return h;
+}
+
+/**
+ * Build an AVI as a list of byte parts. Frame payloads are referenced, not copied, so a Blob made
+ * from the parts never needs one huge contiguous buffer (important for long or high-res exports).
+ */
+export function writeAviParts(info: AviInfo, frames: WriteFrame[]): Uint8Array[] {
+  const { head, idx1 } = aviSkeleton(info, frames.map((f) => ({ size: f.data.length, keyframe: f.keyframe })));
+  const parts: Uint8Array[] = [head];
+  const pad = new Uint8Array(1);
+  for (const f of frames) {
+    parts.push(frameHeader(f.data.length), f.data);
+    if (f.data.length & 1) parts.push(pad);
+  }
+  parts.push(idx1);
+  return parts;
+}
+
+export interface PlanFrame extends WriteFrame {
+  /** payload on disk: `size` bytes at `off` in `file` (then `data` is only its first bytes) */
+  size?: number;
+  off?: number;
+  file?: string;
+}
+
+/**
+ * How to assemble an AVI from inline bytes and ranges of files on disk (for the desktop engine's
+ * engine_assemble). pieces: [0, offset in inline, length] or [1, file index, offset, length].
+ */
+export interface AviPlan {
+  files: string[];
+  pieces: number[][];
+  inline: Uint8Array;
+}
+
+export function aviPlan(info: AviInfo, frames: PlanFrame[]): AviPlan {
+  const sizeOf = (f: PlanFrame) => (f.file !== undefined ? f.size! : f.data.length);
+  const { head, idx1 } = aviSkeleton(info, frames.map((f) => ({ size: sizeOf(f), keyframe: f.keyframe })));
+  const inline = new Writer();
+  const pieces: number[][] = [];
+  const files: string[] = [];
+  const fileIdx = new Map<string, number>();
+  const addInline = (b: Uint8Array) => {
+    if (!b.length) return;
+    const last = pieces[pieces.length - 1];
+    if (last && last[0] === 0 && last[1] + last[2] === inline.length) last[2] += b.length;
+    else pieces.push([0, inline.length, b.length]);
+    inline.push(b);
+  };
+  addInline(head);
+  const pad = new Uint8Array(1);
+  for (const f of frames) {
+    const size = sizeOf(f);
+    addInline(frameHeader(size));
+    if (f.file !== undefined) {
+      let k = fileIdx.get(f.file);
+      if (k === undefined) fileIdx.set(f.file, (k = files.push(f.file) - 1));
+      pieces.push([1, k, f.off!, size]);
+    } else addInline(f.data);
+    if (size & 1) addInline(pad);
+  }
+  addInline(idx1);
+  return { files, pieces, inline: inline.concat() };
 }
 
 export function writeAvi(info: AviInfo, frames: WriteFrame[]): Uint8Array {

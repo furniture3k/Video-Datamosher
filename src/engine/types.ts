@@ -12,6 +12,13 @@ export interface Frame {
   src: number;
   tag: FrameTag;
   payloadStart: number;
+  /**
+   * Disk-backed frames (desktop exports): `data` holds only the first bytes (enough for the frame
+   * header) and the payload is `size` bytes at `off` in the engine file `file`.
+   */
+  size?: number;
+  off?: number;
+  file?: string;
 }
 
 export type ClipSource =

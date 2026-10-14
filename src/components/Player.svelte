@@ -3,7 +3,8 @@
   import { store, type CompareMode } from '../lib/store.svelte';
   import { loadExample } from '../lib/media';
   import Icon from './Icon.svelte';
-  import { originalFrames, moshedAudioWav, type RenderResult } from '../lib/renderer';
+  import { originalFrames, moshedAudio, type RenderResult } from '../lib/renderer';
+  import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
   import { audioCtx } from '../lib/audioctx';
@@ -175,11 +176,20 @@
     if (key === audioKey) return;
     audioKey = key;
     const p = $state.snapshot(store.project) as Project;
-    moshedAudioWav(p, r.frames)
-      .then(async (w) => {
-        if (!w) return (abuf = null);
+    moshedAudio(p, r.frames)
+      .then((pcm) => {
+        if (!pcm || pcm.length < 2) return (abuf = null);
         actx ??= audioCtx();
-        abuf = await actx.decodeAudioData(w.slice().buffer);
+        // straight into an AudioBuffer: no WAV copy and decode (that took several times the memory on long projects)
+        const n = pcm.length >> 1;
+        const b = actx.createBuffer(2, n, SAMPLE_RATE);
+        const L = b.getChannelData(0);
+        const R = b.getChannelData(1);
+        for (let i = 0; i < n; i++) {
+          L[i] = pcm[i * 2] / 32768;
+          R[i] = pcm[i * 2 + 1] / 32768;
+        }
+        abuf = b;
       })
       .catch(() => (abuf = null));
   });

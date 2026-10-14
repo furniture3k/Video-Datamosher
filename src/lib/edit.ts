@@ -1,5 +1,6 @@
 // Editing commands shared by the timeline, the keyboard and menus.
 import { store } from './store.svelte';
+import { ask } from './ask';
 import { forgetMedia } from './media';
 import { splitClip, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS } from '../engine/timeline';
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type TextClip, type TransitionType } from '../engine/types';
@@ -125,10 +126,10 @@ export function addAudioTrack(): string {
   return id;
 }
 
-export function removeTrack(id: string) {
+export async function removeTrack(id: string) {
   if (id === VIDEO_TRACK || id === CLIP_AUDIO) return;
   const n = store.project.clips.filter((c) => c.track === id).length;
-  if (n && !confirm(`Remove this track and its ${n} clip${n > 1 ? 's' : ''}?`)) return;
+  if (n && !(await ask(`Remove this track and its ${n} clip${n > 1 ? 's' : ''}?`))) return;
   store.editTimeline((p) => {
     p.clips = p.clips.filter((c) => c.track !== id);
     p.tracks = p.tracks.filter((t) => t.id !== id);
@@ -167,9 +168,9 @@ export function transitionAtPlayhead(type: TransitionType = 'melt') {
 }
 
 /** Remove a media item from the library (and its clips from the timeline). */
-export function removeMedia(id: string) {
+export async function removeMedia(id: string) {
   const n = store.project.clips.filter((c) => c.mediaId === id).length;
-  if (n && !confirm(`This media is used by ${n} clip${n > 1 ? 's' : ''} on the timeline. Remove it and those clips?`)) return;
+  if (n && !(await ask(`This media is used by ${n} clip${n > 1 ? 's' : ''} on the timeline. Remove it and those clips?`))) return;
   store.editTimeline((p) => {
     deleteClips(p, p.clips.filter((c) => c.mediaId === id).map((c) => c.id));
     p.media = p.media.filter((m) => m.id !== id);

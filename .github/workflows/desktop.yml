@@ -1,0 +1,84 @@
+name: Desktop app
+
+# Builds the installers (Windows .msi/.exe, macOS .dmg for Apple Silicon and Intel, Linux
+# .AppImage/.deb/.rpm). Pushing a tag like v1.2.0 attaches them to a GitHub Release, which is
+# published once every build succeeded; running it by hand just uploads them as artifacts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x64 }
+          - { os: macos-latest, target: aarch64-apple-darwin, name: macos-apple-silicon }
+          - { os: macos-latest, target: x86_64-apple-darwin, name: macos-intel }
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, name: linux-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - run: npm ci
+      - name: Download FFmpeg for ${{ matrix.target }}
+        run: node scripts/fetch-ffmpeg.mjs --target ${{ matrix.target }}
+      - uses: tauri-apps/tauri-action@v0
+        id: tauri
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: moshpit ${{ github.ref_name }}
+          releaseBody: |
+            Desktop builds of moshpit with native FFmpeg.
+
+            - **Windows**: run the `.msi` or `-setup.exe`. If SmartScreen warns about an unknown publisher, choose *More info → Run anyway*.
+            - **macOS**: open the `.dmg` (`aarch64` for Apple Silicon, `x64` for Intel) and drag moshpit to Applications. The app isn't notarised yet: the first time, right-click it and choose *Open*.
+            - **Linux**: the `.AppImage` runs anywhere (`chmod +x` it first); `.deb` and `.rpm` are also attached.
+
+            Includes a GPL build of FFmpeg ([BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) on Windows and Linux, [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de) on macOS); FFmpeg's source is at https://ffmpeg.org/download.html.
+          releaseDraft: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moshpit-${{ matrix.name }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
+          if-no-files-found: error
+
+  publish:
+    # once every installer built, publish the draft release (a failed build leaves it as a draft)
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}

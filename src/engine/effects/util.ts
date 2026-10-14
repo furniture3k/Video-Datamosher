@@ -4,6 +4,8 @@ import { paramAt } from '../automation';
 export const inRange = (f: Frame, e: EffectInstance) => f.src >= e.start && f.src < e.end;
 export const tOf = (f: Frame, e: EffectInstance) => (f.src - e.start) / Math.max(1, e.end - e.start - 1);
 export const isMotion = (f: Frame) => f.type === 'P' || f.type === 'S';
+/** Payload size, also for disk-backed frames whose `data` is only the header bytes. */
+export const frameSize = (f: Frame) => f.size ?? f.data.length;
 export const num = (e: EffectInstance, key: string, t: number) => Number(paramAt(e, key, t));
 export const bool = (e: EffectInstance, key: string, t: number) => Boolean(paramAt(e, key, t));
 export const str = (e: EffectInstance, key: string) => String(e.params[key]);

@@ -1,4 +1,8 @@
 // IndexedDB persistence for media files, autosaved project and user presets.
+import { blobToDisk, saveFromDisk, removeEngineFile } from './ffmpeg-native';
+import { isDesktop } from './platform';
+import { tell } from './ask';
+
 const DB = 'moshpit';
 let dbp: Promise<IDBDatabase> | null = null;
 
@@ -93,6 +97,7 @@ export function localSet(key: string, value: unknown) {
 
 export function download(data: Blob | Uint8Array, name: string, type = 'application/octet-stream') {
   const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type });
+  if (isDesktop) return void saveNative(blob, name);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -101,4 +106,14 @@ export function download(data: Blob | Uint8Array, name: string, type = 'applicat
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+/** Desktop app: the webview can't download, so copy the file to disk in chunks and use the native Save dialog. */
+async function saveNative(blob: Blob, name: string) {
+  try {
+    const path = await blobToDisk(blob, name);
+    if (!(await saveFromDisk(path, name))) removeEngineFile(path); // cancelled
+  } catch (e) {
+    tell('Could not save ' + name + ': ' + ((e as Error)?.message ?? e));
+  }
 }

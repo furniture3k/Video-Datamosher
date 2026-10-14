@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../lib/ask';
   const canScreen = typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getDisplayMedia;
   import { onDestroy, onMount } from 'svelte';
   import { store } from '../lib/store.svelte';
@@ -165,7 +166,7 @@
       const blob = new Blob(chunks, { type: recorder?.mimeType || 'video/webm' });
       const name = `live-mosh-${Date.now() % 100000}`;
       const file = await finalizeRecording(blob, name);
-      if (confirm('Add the recording to your project as a clip? (Cancel = just download it)')) {
+      if (await ask('Add the recording to your project as a clip? (Cancel = just download it)')) {
         await addFiles([file], { track: 'v1', index: Infinity }, (performance.now() - t0) / 1000);
       } else download(file, file.name);
     };

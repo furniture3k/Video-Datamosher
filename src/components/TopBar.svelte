@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ask } from '../lib/ask';
   import { store } from '../lib/store.svelte';
   import { saveProjectFile, loadProjectFile } from '../lib/projectio.svelte';
   import { loadExample } from '../lib/media';
@@ -79,8 +80,8 @@
         <button class="ghost" onclick={() => loadExample()}><Icon name="gen" />Load example</button>
         <button
           class="ghost"
-          onclick={() => {
-            if (confirm('Start a new project? Media, clips and effects will be cleared.')) {
+          onclick={async () => {
+            if (await ask('Start a new project? Media, clips and effects will be cleared.')) {
               store.set({ ...newProject(), encoder: $state.snapshot(store.project.encoder), name: 'Untitled' });
               store.ui.selectedClips = [];
               store.seek(0);

@@ -1,0 +1,79 @@
+// moshpit desktop: the web app in a native window, with a native FFmpeg instead of ffmpeg.wasm.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod engine;
+
+use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
+use tauri::{Manager, Url, WebviewWindowBuilder};
+use tauri_plugin_opener::OpenerExt;
+
+/// The app's own pages; anything else (links to GitHub, docs) opens in the system browser.
+fn is_app_url(url: &Url) -> bool {
+    match url.scheme() {
+        "tauri" | "blob" | "data" | "about" => true,
+        "http" | "https" => matches!(url.host_str(), Some("tauri.localhost")) || (cfg!(dev) && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))),
+        _ => false,
+    }
+}
+
+fn main() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            app.manage(engine::Engine::new()?);
+            let config = app.config().app.windows.first().cloned().ok_or("no window config")?;
+            let opener = app.handle().clone();
+            let opener2 = app.handle().clone();
+            let window = WebviewWindowBuilder::from_config(app, &config)?
+                .on_navigation(move |url| {
+                    if is_app_url(url) {
+                        return true;
+                    }
+                    let _ = opener.opener().open_url(url.as_str(), None::<&str>);
+                    false
+                })
+                .on_new_window(move |url, _| {
+                    let _ = opener2.opener().open_url(url.as_str(), None::<&str>);
+                    NewWindowResponse::Deny
+                })
+                // Record and Live mode use the camera, microphone and screen
+                .on_permission_request(|_, kind| match kind {
+                    PermissionKind::Camera | PermissionKind::Microphone | PermissionKind::DisplayCapture => PermissionResponse::Allow,
+                    _ => PermissionResponse::Default,
+                })
+                .build()?;
+            #[cfg(target_os = "linux")]
+            window.with_webview(|w| {
+                use webkit2gtk::{SettingsExt, WebViewExt};
+                if let Some(s) = w.inner().settings() {
+                    s.set_enable_media_stream(true);
+                    s.set_enable_mediasource(true);
+                }
+            })?;
+            let _ = window;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            engine::engine_info,
+            engine::engine_write,
+            engine::engine_read,
+            engine::engine_remove,
+            engine::engine_run,
+            engine::engine_kill,
+            engine::engine_size,
+            engine::engine_move,
+            engine::avi_scan,
+            engine::engine_read_ranges,
+            engine::engine_assemble,
+            engine::save_path,
+            engine::reveal,
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building moshpit")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<engine::Engine>().cleanup();
+            }
+        });
+}

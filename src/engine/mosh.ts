@@ -28,8 +28,15 @@ export function concatPrepared(parts: Prepared[]): Prepared {
   return { info: parts[0].info, frames };
 }
 
-/** Hard cap on output length (10 minutes at 24 fps). */
+/** Output length cap in the browser (10 minutes at 24 fps). */
 export const MAX_OUTPUT_FRAMES = 14400;
+/**
+ * Output length cap in the desktop app (30 minutes at 24 fps). Exports keep the video on disk, but
+ * the preview (decoded frames, soundtrack) is still held in memory, which is what limits length.
+ */
+export const MAX_OUTPUT_FRAMES_DESKTOP = 43200;
+/** The cap in force; a safety net against runaway stacks (bloom on every frame x 200) eating all memory. */
+export const limits = { maxOutputFrames: MAX_OUTPUT_FRAMES };
 
 export function activeEffects(effects: EffectInstance[]): EffectInstance[] {
   const solo = effects.some((e) => e.solo && e.enabled);
@@ -41,19 +48,49 @@ export function allEffects(project: Project): EffectInstance[] {
   return [...transitionEffects(project, project.encoder.fps), ...project.effects];
 }
 
-export function applyBitstream(prep: Prepared, project: Project, cuts: number[]): Frame[] {
-  let frames = prep.frames.slice();
-  for (const e of activeEffects(allEffects(project))) {
-    const def = EFFECTS[e.type];
-    if (def.kind !== 'bitstream') continue;
-    const rng = makeRng(hashSeed(project.globalSeed, e.seed, e.id));
-    frames = def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames });
-  }
+const bitstreamEffects = (project: Project) => activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'bitstream');
+
+function applyOne(frames: Frame[], e: EffectInstance, prep: Prepared, project: Project, cuts: number[]): Frame[] {
+  const rng = makeRng(hashSeed(project.globalSeed, e.seed, e.id));
+  const def = EFFECTS[e.type];
+  if (def.kind !== 'bitstream') return frames;
+  return def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames });
+}
+
+function finishFrames(frames: Frame[], prep: Prepared): Frame[] {
   // The decoder needs a real keyframe (with headers) first.
   if (frames.length === 0 || frames[0].type !== 'I') frames.unshift(prep.frames[0]);
-  // Safety net against runaway stacks (e.g. bloom on every frame x 200) eating all memory.
-  if (frames.length > MAX_OUTPUT_FRAMES) frames.length = MAX_OUTPUT_FRAMES;
+  if (frames.length > limits.maxOutputFrames) frames.length = limits.maxOutputFrames;
   return frames;
+}
+
+export function applyBitstream(prep: Prepared, project: Project, cuts: number[]): Frame[] {
+  let frames = prep.frames.slice();
+  for (const e of bitstreamEffects(project)) frames = applyOne(frames, e, prep, project, cuts);
+  return finishFrames(frames, prep);
+}
+
+/** Effects that rewrite the bytes of frames (the rest only reorder, repeat or drop them). */
+export const EDITS_BYTES = new Set(['glitch']);
+
+/**
+ * applyBitstream for disk-backed frames: before each effect that edits bytes, `load` gets the
+ * frames it may touch (those in its range) so their full payloads can be read in. Same result.
+ */
+export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts: number[], load: (frames: Frame[]) => Promise<Map<Frame, Frame>>): Promise<Frame[]> {
+  let frames = prep.frames.slice();
+  for (const e of bitstreamEffects(project)) {
+    if (EDITS_BYTES.has(e.type)) {
+      const touched = [...new Set(frames.filter((f) => f.size !== undefined && f.src >= e.start && f.src < e.end))];
+      if (touched.length) {
+        // loaded frames are ordinary in-memory frames: swap them in
+        const loaded = await load(touched);
+        frames = frames.map((f) => loaded.get(f) ?? f);
+      }
+    }
+    frames = applyOne(frames, e, prep, project, cuts);
+  }
+  return finishFrames(frames, prep);
 }
 
 export function writeMoshed(prep: Prepared, frames: Frame[]): Uint8Array {
