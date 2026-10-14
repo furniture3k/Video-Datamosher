@@ -85,14 +85,15 @@ export class PostProcessor {
   }
 
   /** process one frame bitmap through the active effects; result is drawn on this.canvas */
-  processFrame(bmp: ImageBitmap, frame: Pick<Frame, 'src'>, index: number, effects: EffectInstance[]) {
+  processFrame(bmp: ImageBitmap, frame: Pick<Frame, 'src' | 'at'>, index: number, effects: EffectInstance[]) {
     const gl = this.gl;
     gl.upload(this.input, bmp);
     gl.pass(COPY, this.a, { src: this.input.tex });
     let cur = this.a;
     let other = this.b;
     for (const e of effects) {
-      const active = frame.src >= e.start && frame.src < e.end;
+      const pos = frame.at ?? frame.src;
+      const active = pos >= e.start && pos < e.end;
       const was = this.wasActive.get(e.id);
       this.wasActive.set(e.id, active);
       if (e.type === 'vectorWarp') {
@@ -103,13 +104,13 @@ export class PostProcessor {
           continue;
         }
         if (!was) fe.reset();
-        const out = fe.step(cur, flowParamsAt(e, tOf(frame.src, e)));
+        const out = fe.step(cur, flowParamsAt(e, tOf(pos, e)));
         gl.pass(COPY, other, { src: out.tex });
         [cur, other] = [other, cur];
         continue;
       }
       if (!active) continue;
-      const t = tOf(frame.src, e);
+      const t = tOf(pos, e);
       if (e.type === 'chroma') {
         const rng = makeRng(hashSeed(e.seed, index));
         const wob = Number(paramAt(e, 'wobble', t));
@@ -165,7 +166,7 @@ export class PostRunner {
   }
 
   /** jpegs[i] is output frame offset + i */
-  async run(jpegs: Uint8Array[], frames: Pick<Frame, 'src'>[], offset: number, onProgress?: (p: number) => void, signal?: { cancelled: boolean }): Promise<Uint8Array[]> {
+  async run(jpegs: Uint8Array[], frames: Pick<Frame, 'src' | 'at'>[], offset: number, onProgress?: (p: number) => void, signal?: { cancelled: boolean }): Promise<Uint8Array[]> {
     if (!this.active || !jpegs.length) return jpegs;
     const out: Uint8Array[] = [];
     for (let i = 0; i < jpegs.length; i++) {
@@ -180,7 +181,7 @@ export class PostRunner {
         src = this.pp.canvas;
       }
       if (this.texts.length) {
-        const t = fr.src / this.fps;
+        const t = (fr.at ?? fr.src) / this.fps;
         if (this.texts.some((x) => textAlpha(x, t) > 0)) {
           this.c2d ??= document.createElement('canvas');
           this.c2d.width = bmp.width;
@@ -211,7 +212,7 @@ function canvasJpeg(c: HTMLCanvasElement, quality: number): Promise<Uint8Array> 
 
 export async function runPost(
   jpegs: Uint8Array[],
-  frames: Pick<Frame, 'src'>[],
+  frames: Pick<Frame, 'src' | 'at'>[],
   project: Project,
   quality: number,
   onProgress?: (p: number) => void,

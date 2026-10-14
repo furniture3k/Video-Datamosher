@@ -8,8 +8,10 @@ export type FrameTag = 'orig' | 'dup' | 'glitch' | 'moved' | 'spliced' | 'replac
 export interface Frame {
   data: Uint8Array;
   type: FrameType;
-  /** index of the source frame in the prepared (un-moshed) stream */
+  /** index of the source frame in the prepared (un-moshed) stream (its picture data and sound) */
   src: number;
+  /** timeline frame this frame is shown at, when it differs from `src` (repeats, moves, transfers) */
+  at?: number;
   tag: FrameTag;
   payloadStart: number;
   /**
@@ -26,6 +28,40 @@ export type ClipSource =
   | { kind: 'generator'; generator: string; name: string };
 
 export type FitMode = 'fit' | 'fill' | 'stretch';
+
+/** Position, size, rotation and crop of a clip's picture (all optional, identity when missing). */
+export interface Transform {
+  /** 1 = the clip fitted to the frame */
+  zoom: number;
+  /** offset of the centre, as a share of the frame width / height */
+  x: number;
+  y: number;
+  /** degrees, clockwise */
+  rotate: number;
+  flipH: boolean;
+  flipV: boolean;
+  /** share of the fitted picture cut away at each edge */
+  cropL: number;
+  cropR: number;
+  cropT: number;
+  cropB: number;
+}
+
+/** Basic colour correction. */
+export interface Grade {
+  /** -1..1, added */
+  brightness: number;
+  /** 0..3, 1 = unchanged */
+  contrast: number;
+  /** 0..3, 1 = unchanged */
+  saturation: number;
+  /** 0.2..5, 1 = unchanged */
+  gamma: number;
+  /** degrees */
+  hue: number;
+}
+
+export type BlendMode = 'normal' | 'screen' | 'add' | 'multiply' | 'difference';
 
 /** A file (or generator) in the media library. The same media can be used by many clips. */
 export interface MediaItem {
@@ -57,7 +93,9 @@ export type TransitionType =
   | 'bloom'
   | 'glitch'
   | 'stutter'
-  | 'liquid';
+  | 'liquid'
+  | 'ghost'
+  | 'rewind';
 
 export interface Transition {
   type: TransitionType;
@@ -65,6 +103,8 @@ export interface Transition {
   duration: number;
   /** 0..1, how hard mosh transitions hit */
   intensity: number;
+  /** mosh transitions: a fresh keyframe at the end brings the next shot back clean (default on) */
+  resolve?: boolean;
 }
 
 /** A clip on the timeline. */
@@ -89,17 +129,43 @@ export interface Clip {
   fadeOut: number;
   /** video clips: transition from the previous clip into this one */
   transition?: Transition;
+  /** false: the clip stays in place but is not seen or heard */
+  enabled?: boolean;
+  /** label colour on the timeline */
+  label?: string;
+  /** freeze frame: shows the picture at `in` for out - in seconds */
+  freeze?: boolean;
+  /** picture */
+  opacity?: number;
+  blend?: BlendMode;
+  transform?: Partial<Transform>;
+  grade?: Partial<Grade>;
+  /** video fades (to black on the main track, to transparent on upper tracks), seconds */
+  vfadeIn?: number;
+  vfadeOut?: number;
+}
+
+/** A marker on the timeline ruler. */
+export interface Marker {
+  id: string;
+  /** seconds */
+  t: number;
+  color: string;
+  name: string;
 }
 
 export interface Track {
   id: string;
   kind: 'video' | 'audio';
   name: string;
+  /** audio: silent. video: not shown */
   muted: boolean;
   solo: boolean;
   volume: number;
   /** audio follows the mosh (stutters with it) instead of playing clean */
   mosh: boolean;
+  /** clips on a locked track can't be selected, moved or edited */
+  locked?: boolean;
 }
 
 export interface TextClip {
@@ -205,6 +271,7 @@ export interface Project {
   effects: EffectInstance[];
   audio: AudioSettings;
   globalSeed: number;
+  markers?: Marker[];
 }
 
 export const defaultEncoder = (): EncoderSettings => ({
@@ -247,6 +314,14 @@ export const defaultAudio = (): AudioSettings => ({
 });
 
 export const VIDEO_TRACK = 'v1';
+
+export const identityTransform = (): Transform => ({ zoom: 1, x: 0, y: 0, rotate: 0, flipH: false, flipV: false, cropL: 0, cropR: 0, cropT: 0, cropB: 0 });
+export const identityGrade = (): Grade => ({ brightness: 0, contrast: 1, saturation: 1, gamma: 1, hue: 0 });
+export const transformOf = (c: Pick<Clip, 'transform'>): Transform => ({ ...identityTransform(), ...(c.transform ?? {}) });
+export const gradeOf = (c: Pick<Clip, 'grade'>): Grade => ({ ...identityGrade(), ...(c.grade ?? {}) });
+export const isIdentityTransform = (t: Transform) => t.zoom === 1 && !t.x && !t.y && !t.rotate && !t.flipH && !t.flipV && !t.cropL && !t.cropR && !t.cropT && !t.cropB;
+export const isIdentityGrade = (g: Grade) => !g.brightness && g.contrast === 1 && g.saturation === 1 && g.gamma === 1 && !g.hue;
+export const clipOn = (c: Pick<Clip, 'enabled'>) => c.enabled !== false;
 export const CLIP_AUDIO = 'a0';
 
 export const defaultTracks = (): Track[] => [
@@ -267,4 +342,5 @@ export const newProject = (): Project => ({
   effects: [],
   audio: defaultAudio(),
   globalSeed: 1337,
+  markers: [],
 });

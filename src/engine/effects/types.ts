@@ -23,7 +23,8 @@ export type ParamDef = (
       key: string;
       label: string;
       type: 'select';
-      options: { value: string; label: string }[];
+      /** `hint` explains what picking this option does (shown under the control) */
+      options: { value: string; label: string; hint?: string }[];
       default: string;
       help: string;
       advanced?: boolean;
@@ -53,10 +54,18 @@ export interface BitstreamEffect {
   description: string;
   params: ParamDef[];
   apply(frames: Frame[], e: EffectInstance, ctx: EffectContext): Frame[];
+  /**
+   * The effect can add or remove frames. With its Timing set to "Keep length" (the default), the
+   * engine fits the result back into the effect's range so the timeline stays in sync.
+   */
+  retimes?: boolean;
+  /** seconds a new instance covers when added at the playhead (omit: the whole timeline) */
+  span?: number;
 }
 
 export interface PixelEffectDef {
   kind: 'pixel';
+  span?: number;
   type: string;
   name: string;
   icon: string;

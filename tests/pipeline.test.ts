@@ -132,8 +132,10 @@ d('native ffmpeg pipeline', () => {
     });
     const prep = concatPrepared(parts);
     expect(prep.frames.map((f) => f.src)).toEqual([...Array(100).keys()]);
-    const frames = applyBitstream(prep, { ...project, effects: [effect('kill', {}, 50, 51)] }, [50]);
+    const frames = applyBitstream(prep, { ...project, effects: [effect('kill', { replace: 'drop' }, 50, 51)] }, [50]);
     expect(frames.length).toBe(99);
+    // filling the gap (the default) keeps the length
+    expect(applyBitstream(prep, { ...project, effects: [effect('kill', {}, 50, 51)] }, [50]).length).toBe(100);
     fs.writeFileSync(path.join(dir, 'segm.avi'), writeMoshed(prep, frames));
     ff(dir, decodeToMjpegArgs(project.decoder, 'segm.avi', 'segm.mjpeg'));
     expect(splitJpegs(new Uint8Array(fs.readFileSync(path.join(dir, 'segm.mjpeg')))).length).toBe(99);
@@ -162,7 +164,8 @@ d('native ffmpeg pipeline', () => {
       const prep = framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'prep.avi'))), 'mpeg4');
       const frames = applyBitstream(prep, p, [50]);
       expect(frames.filter((f) => f.type === 'I').length).toBeLessThan(prep.frames.filter((f) => f.type === 'I').length);
-      if (type === 'bloom') expect(frames.length).toBeGreaterThan(prep.frames.length);
+      // transitions keep the timeline's length, so the playhead and sound stay in sync
+      expect(frames.length).toBe(prep.frames.length);
     }
   });
 

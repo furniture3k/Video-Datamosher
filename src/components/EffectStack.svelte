@@ -8,7 +8,7 @@
 <div class="stack">
   <div class="head">
     <span class="label">Stack</span>
-    <button class="ghost" onclick={() => (store.ui.dialog = 'addEffect')} title="Add effect  A"><Icon name="plus" size={13} />Add</button>
+    <button class="ghost" onclick={() => (store.ui.dialog = 'addEffect')} title="Add effect  Shift A"><Icon name="plus" size={13} />Add</button>
   </div>
   {#if !store.project.effects.length}
     <div class="empty small muted">
@@ -68,7 +68,7 @@
         >
         <button class="icon ghost" title="Move up" aria-label="Move up" disabled={i === 0} onclick={(e) => (e.stopPropagation(), store.moveEffect(fx.id, -1))}><Icon name="up" size={13} /></button>
         <button class="icon ghost" title="Move down" aria-label="Move down" disabled={i === store.project.effects.length - 1} onclick={(e) => (e.stopPropagation(), store.moveEffect(fx.id, 1))}><Icon name="down" size={13} /></button>
-        <button class="icon ghost" title="Duplicate  D" aria-label="Duplicate" onclick={(e) => (e.stopPropagation(), store.duplicateEffect(fx.id))}><Icon name="copy" size={13} /></button>
+        <button class="icon ghost" title="Duplicate" aria-label="Duplicate" onclick={(e) => (e.stopPropagation(), store.duplicateEffect(fx.id))}><Icon name="copy" size={13} /></button>
         <button class="icon ghost" title="Delete  Del" aria-label="Delete" onclick={(e) => (e.stopPropagation(), store.removeEffect(fx.id))}><Icon name="trash" size={13} /></button>
       </div>
     </div>

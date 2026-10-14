@@ -6,7 +6,7 @@ import { makeRng } from './rng';
 export const SAMPLE_RATE = 44100;
 
 /** pcm: interleaved stereo Int16 */
-export function buildAudio(pcm: Int16Array, frames: Pick<Frame, 'src' | 'tag'>[], fps: number, s: AudioSettings, seed = 1): Int16Array {
+export function buildAudio(pcm: Int16Array, frames: Pick<Frame, 'src' | 'tag' | 'at'>[], fps: number, s: AudioSettings, seed = 1): Int16Array {
   const spf = SAMPLE_RATE / fps;
   const outLen = Math.round(frames.length * spf);
   const out = new Int16Array(outLen * 2);
@@ -19,7 +19,8 @@ export function buildAudio(pcm: Int16Array, frames: Pick<Frame, 'src' | 'tag'>[]
     frames.forEach((f, i) => {
       const o0 = Math.round(i * spf);
       const o1 = Math.round((i + 1) * spf);
-      const s0 = Math.round(f.src * spf);
+      // borrowed motion (Motion Transfer) keeps the sound of the place it is shown at
+      const s0 = Math.round((f.tag === 'spliced' ? (f.at ?? f.src) : f.src) * spf);
       const rev = s.reverseChunks > 0 && f.tag !== 'orig' && rng.chance(s.reverseChunks);
       const n = o1 - o0;
       for (let k = 0; k < n; k++) {

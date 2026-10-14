@@ -1,15 +1,18 @@
 import type { EffectInstance, Frame } from '../types';
 import { paramAt } from '../automation';
 
-export const inRange = (f: Frame, e: EffectInstance) => f.src >= e.start && f.src < e.end;
-export const tOf = (f: Frame, e: EffectInstance) => (f.src - e.start) / Math.max(1, e.end - e.start - 1);
+/** Timeline frame a frame is shown at (copies keep their content's `src` for the sound). */
+export const posOf = (f: Pick<Frame, 'src' | 'at'>) => f.at ?? f.src;
+export const inRange = (f: Frame, e: Pick<EffectInstance, 'start' | 'end'>) => posOf(f) >= e.start && posOf(f) < e.end;
+export const tOf = (f: Frame, e: EffectInstance) => (posOf(f) - e.start) / Math.max(1, e.end - e.start - 1);
 export const isMotion = (f: Frame) => f.type === 'P' || f.type === 'S';
 /** Payload size, also for disk-backed frames whose `data` is only the header bytes. */
 export const frameSize = (f: Frame) => f.size ?? f.data.length;
 export const num = (e: EffectInstance, key: string, t: number) => Number(paramAt(e, key, t));
 export const bool = (e: EffectInstance, key: string, t: number) => Boolean(paramAt(e, key, t));
 export const str = (e: EffectInstance, key: string) => String(e.params[key]);
-export const copy = (f: Frame, tag: Frame['tag'], src = f.src): Frame => ({ ...f, tag, src });
+/** A copy of a frame's data shown at timeline position `at`. */
+export const copy = (f: Frame, tag: Frame['tag'], at = posOf(f)): Frame => ({ ...f, tag, at });
 
 /** Return maximal runs of consecutive in-range frames: [startIdx, endIdx) */
 export function rangeRuns(frames: Frame[], e: EffectInstance): [number, number][] {

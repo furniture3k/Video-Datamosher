@@ -10,6 +10,7 @@
   import { audioCtx } from '../lib/audioctx';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
+  import { tc, parseTimecode } from '../lib/timecode';
 
   let canvas: HTMLCanvasElement;
   let editCanvas: HTMLCanvasElement;
@@ -65,7 +66,8 @@
     const main = bitmap(r.jpegs, i, 'm');
     if (!main) return;
     const mode = store.ui.compare;
-    const src = r.frames[i]?.src ?? i;
+    const fr = r.frames[i];
+    const src = fr ? (fr.at ?? fr.src) : i;
     const orig = mode !== 'off' && originals ? bitmap(originals, Math.min(src, originals.length - 1), 'o') : null;
     let a: ImageBitmap, b: ImageBitmap | null;
     try {
@@ -213,7 +215,7 @@
     const r = store.render;
     const buf = abuf;
     const mute = muted;
-    const speed = store.ui.speed;
+    const speed = store.ui.speed * store.ui.shuttle;
     const showMosh = mosh;
     if (!playing || (showMosh && !r)) {
       cancelAnimationFrame(raf);
@@ -225,14 +227,27 @@
     return untrack(() => (showMosh && r ? playMosh(r, buf, mute, speed) : playEdit(mute, speed)));
   });
 
+  /** The loop range in timeline seconds: In–Out when looping with marks, else the whole timeline. */
+  function timeRange(): [number, number] {
+    const a = store.ui.inPoint;
+    const b = store.ui.outPoint;
+    if (store.ui.loopOn && (a !== null || b !== null)) return [a ?? 0, Math.min(store.duration, b ?? store.duration)];
+    return [0, store.duration];
+  }
+
   function playMosh(r: RenderResult, buf: AudioBuffer | null, mute: boolean, speed: number) {
     const n = r.frames.length;
     // pick up where the edit preview was
     const cur = r.frames[store.ui.playhead];
-    if (!cur || Math.abs(cur.src / r.fps - store.ui.time) > 1.5 / r.fps) store.ui.playhead = Math.min(n - 1, store.frameAtTime(store.ui.time));
-    const range = (): [number, number] => (store.ui.loop && store.ui.loopOn ? store.ui.loop : [0, n]);
+    if (!cur || Math.abs((cur.at ?? cur.src) / r.fps - store.ui.time) > 1.5 / r.fps) store.ui.playhead = Math.min(n - 1, store.frameAtTime(store.ui.time));
+    const range = (): [number, number] => {
+      const [a, b] = timeRange();
+      return b >= store.duration - 1e-6 && a <= 0 ? [0, n] : [store.frameAtTime(a), Math.max(store.frameAtTime(a) + 1, store.frameAtTime(b))];
+    };
+    const back = speed < 0;
     const [a0, b0] = range();
-    if (store.ui.playhead >= b0 - 1 || store.ui.playhead < a0) store.seekFrame(a0);
+    if (!back && (store.ui.playhead >= b0 - 1 || store.ui.playhead < a0)) store.seekFrame(a0);
+    if (back && (store.ui.playhead <= a0 || store.ui.playhead >= b0)) store.seekFrame(b0 - 1);
     const startAudio = () => {
       stopAudio();
       if (!buf || mute || !actx || speed !== 1) return;
@@ -254,17 +269,17 @@
         t0 = now;
         startAudio();
       }
-      let f = f0 + Math.floor(((now - t0) / 1000) * r.fps * speed);
-      if (f >= b) {
+      let f = f0 + Math.trunc(((now - t0) / 1000) * r.fps * speed);
+      if (f >= b || f < a) {
         if (store.ui.loopOn) {
-          f0 = a;
+          f0 = f >= b ? a : b - 1;
           t0 = now;
-          f = a;
-          store.seekFrame(a);
-          expected = a;
+          f = f0;
+          store.seekFrame(f0);
+          expected = f0;
           startAudio();
         } else {
-          store.seekFrame(n - 1);
+          store.seekFrame(f >= b ? n - 1 : 0);
           store.ui.playing = false;
           return;
         }
@@ -281,14 +296,19 @@
   }
 
   function playEdit(mute: boolean, speed: number) {
-    const end = store.duration;
-    if (end <= 0) {
+    if (store.duration <= 0) {
       store.ui.playing = false;
       return;
     }
-    if (store.ui.time >= end - 0.05) store.seek(0);
+    const back = speed < 0;
+    {
+      const [a, b] = timeRange();
+      if (!back && (store.ui.time >= b - 0.05 || store.ui.time < a)) store.seek(a);
+      if (back && (store.ui.time <= a + 0.05 || store.ui.time > b)) store.seek(b);
+    }
     let t0 = store.ui.time;
     let n0 = performance.now();
+    // sound only plays forwards at normal speed
     const startAudio = () => editAudio.start($state.snapshot(store.project) as Project, store.ui.time, mute || speed !== 1);
     startAudio();
     let expected = t0;
@@ -307,23 +327,25 @@
         n0 = now;
         startAudio();
       }
+      const [a, b] = timeRange();
       let t = t0 + ((now - n0) / 1000) * speed;
-      if (t >= store.duration) {
+      if (t >= b || t < a) {
         if (store.ui.loopOn) {
-          t = 0;
-          t0 = 0;
+          t = t >= b ? a : b;
+          t0 = t;
           n0 = now;
-          store.seek(0);
+          store.seek(t);
           startAudio();
         } else {
-          store.seek(store.duration);
+          store.seek(t >= b ? b : a);
           store.ui.playing = false;
           return;
         }
       }
       store.seek(t);
       expected = store.ui.time;
-      preview?.draw(store.project, t, true, speed);
+      // backwards: videos can't play in reverse, so each frame is a seek
+      preview?.draw(store.project, t, !back, Math.abs(speed));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -337,13 +359,18 @@
   const n = $derived(store.render?.frames.length ?? 0);
   const cur = $derived(mosh ? store.render?.frames[store.ui.playhead] : undefined);
   const p2 = (x: number) => String(x).padStart(2, '0');
-  // SMPTE-style timecode: MM:SS:FF (timeline time in the edit view, output frames in the mosh view)
-  const timecode = $derived.by(() => {
-    const fps = store.render?.fps ?? store.project.encoder.fps;
-    const f = mosh ? store.ui.playhead : Math.round(store.ui.time * fps);
-    const secs = Math.floor(f / fps);
-    return `${p2(Math.floor(secs / 60))}:${p2(secs % 60)}:${p2(f % fps)}`;
-  });
+  // SMPTE-style timecode HH:MM:SS:FF of the playhead (the mosh keeps the timeline's timing)
+  const timecode = $derived(tc(store.ui.time, store.project.encoder.fps));
+  let tcEdit = $state<string | null>(null);
+  /** Jump to a typed time: HH:MM:SS:FF, MM:SS, plain seconds, or +/- a relative amount ("+1:00", "-12" frames with an f). */
+  function goTimecode(v: string) {
+    tcEdit = null;
+    const t = parseTimecode(v.trim(), store.project.encoder.fps, store.ui.time);
+    if (t !== null) {
+      store.ui.playing = false;
+      store.seek(t);
+    }
+  }
 
   function step(d: number) {
     store.ui.playing = false;
@@ -444,7 +471,23 @@
   </div>
 
   <div class="transport">
-    <div class="tc mono" title="minutes:seconds:frames">{timecode}</div>
+    {#if tcEdit !== null}
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        class="tc mono tcin"
+        autofocus
+        value={tcEdit}
+        aria-label="Go to time"
+        onkeydown={(e) => {
+          if (e.key === 'Enter') goTimecode((e.target as HTMLInputElement).value);
+          if (e.key === 'Escape') tcEdit = null;
+          e.stopPropagation();
+        }}
+        onblur={() => (tcEdit = null)}
+      />
+    {:else}
+      <button class="tc mono" title="Playhead (hours:minutes:seconds:frames). Click to type a time: 1:30, 00:01:12:05, +2 (seconds later) or -10f (frames back)." onclick={() => (tcEdit = timecode)}>{timecode}</button>
+    {/if}
     <div class="frameinfo mono small">
       {#if mosh}<span class="faint">{n ? store.ui.playhead + 1 : 0}/{n}</span>{/if}
       {#if cur}
@@ -464,7 +507,7 @@
     </div>
 
     <div class="right">
-      <button class="icon ghost" class:on={store.ui.loopOn} title="Loop  L  (set a region with I / O)" aria-label="Loop" onclick={() => (store.ui.loopOn = !store.ui.loopOn)}><Icon name="loop" /></button>
+      <button class="icon ghost" class:on={store.ui.loopOn} title="Loop  /  (plays the In–Out range when one is marked with I and O)" aria-label="Loop" onclick={() => (store.ui.loopOn = !store.ui.loopOn)}><Icon name="loop" /></button>
       <select bind:value={store.ui.speed} title="Playback speed (sound plays at 1× only)" aria-label="Playback speed">
         {#each [0.25, 0.5, 1, 1.5, 2] as s}<option value={s}>{s}×</option>{/each}
       </select>
@@ -595,12 +638,25 @@
     grid-column: 1;
     grid-row: 1;
     justify-self: start;
+    background: none;
+    border: none;
+    padding: 0 2px;
+    height: auto;
+    cursor: text;
+  }
+  .tc:hover {
+    color: var(--accent);
+  }
+  .tcin {
+    width: 150px;
+    border: 1px solid var(--accent);
+    background: var(--bg);
   }
   .frameinfo {
     grid-column: 1;
     grid-row: 1;
     justify-self: start;
-    margin-left: 112px;
+    margin-left: 158px;
     display: flex;
     gap: 8px;
     align-items: center;

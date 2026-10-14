@@ -57,7 +57,7 @@ const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffl
 for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
-    await page.keyboard.press('a');
+    await page.keyboard.press('Shift+A');
     await page.locator('.modal .item').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort' })[t], t) }).first().click();
     await settle();
     const n = await S(() => window.__moshpit.store.render.frames.length);
@@ -68,7 +68,7 @@ for (const t of effectTypes)
 await step('advanced mode + every glitch mode via UI select', async () => {
   await page.getByRole('button', { name: 'Advanced', exact: true }).click();
   await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
-  await page.keyboard.press('a');
+  await page.keyboard.press('Shift+A');
   await page.locator('.modal .item').filter({ hasText: 'Byte Glitch' }).click();
   for (const mode of ['flip', 'shift', 'insert', 'delete', 'swap']) {
     await page.locator('.pc select').first().selectOption(mode);

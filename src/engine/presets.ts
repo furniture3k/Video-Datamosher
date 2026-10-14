@@ -50,19 +50,19 @@ export const PRESETS: Preset[] = [
   {
     id: 'bloom',
     name: 'Bloom Explosion',
-    description: 'The strongest motion frame repeats over and over, so pixels erupt outward.',
+    description: 'The strongest motion frame repeats until the end of the bar, so pixels erupt outward. Drag the bloom bar to set how long it lasts.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
-      { type: 'bloom', start: 0.3, end: 0.7, params: { target: 'strongest', repeats: 48 } },
+      { type: 'bloom', start: 0.3, end: 0.7, params: { target: 'strongest', length: 'fill' } },
     ],
   },
   {
     id: 'slowmelt',
     name: 'Slow Melt',
-    description: 'Every motion frame plays twice, so movement is amplified into a syrupy drift.',
+    description: 'Every motion frame plays twice, so movement is amplified into a syrupy, slow-motion drift (the video gets twice as long).',
     effects: [
       { type: 'kill', start: 0, end: 1 },
-      { type: 'bloom', start: 0, end: 1, params: { target: 'every', interval: 1, repeats: 1 } },
+      { type: 'bloom', start: 0, end: 1, params: { target: 'every', interval: 1, length: 'count', repeats: 1, timing: 'stretch' } },
     ],
   },
   {
@@ -71,7 +71,7 @@ export const PRESETS: Preset[] = [
     description: 'Rhythmic ping-pong loops that build up smear in beats.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
-      { type: 'stutter', start: 0, end: 1, params: { group: 4, loops: 4, every: 24, pingpong: true } },
+      { type: 'stutter', start: 0, end: 1, params: { mode: 'every', group: 4, loops: 4, every: 24, pingpong: true } },
     ],
   },
   {
@@ -109,7 +109,7 @@ export const PRESETS: Preset[] = [
     description: 'The first half of the video moves with the motion of the second half.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
-      { type: 'splice', start: 0.05, end: 0.5, params: { from: -0.5, length: 120, mode: 'replace' } },
+      { type: 'splice', start: 0.05, end: 0.5, params: { from: -0.5, length: 0, mode: 'replace' } },
     ],
   },
   {
@@ -126,7 +126,7 @@ export const PRESETS: Preset[] = [
     encoder: { quality: 22, motionEst: 'xone', mbd: 'simple' },
     effects: [
       { type: 'kill', start: 0, end: 1 },
-      { type: 'bloom', start: 0, end: 1, params: { target: 'random', probability: 0.08, repeats: 12, jitter: 0.6 } },
+      { type: 'bloom', start: 0, end: 1, params: { target: 'random', probability: 0.08, length: 'count', repeats: 12, jitter: 0.6 } },
     ],
   },
   {
@@ -138,6 +138,33 @@ export const PRESETS: Preset[] = [
       { type: 'kill', start: 0, end: 1, params: { mode: 'probability', probability: 0.5 } },
       { type: 'glitch', start: 0, end: 1, params: { mode: 'nudge', amount: 2, probability: 0.3 } },
       { type: 'chroma', start: 0, end: 1, params: { offset: 5, wobble: 0.5, scanTear: 6 } },
+    ],
+  },
+  {
+    id: 'stepmelt',
+    name: 'Step Melt',
+    description: 'Every fourth motion frame is held for four frames, so movement melts forward in steps. Stays in sync with the sound.',
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'bloom', start: 0, end: 1, params: { target: 'every', interval: 4, length: 'fill' } },
+    ],
+  },
+  {
+    id: 'rocker',
+    name: 'Rocker',
+    description: 'Short ping-pong loops all the way through: the picture rocks back and forth and smears wider with every swing.',
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'stutter', start: 0, end: 1, params: { mode: 'repeat', group: 5, loops: 3, pingpong: true } },
+    ],
+  },
+  {
+    id: 'unmelt',
+    name: 'Un-melt',
+    description: 'Motion reversed in one-second chunks over a melt: shapes fold back into the picture they came from.',
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'reverse', start: 0, end: 1, params: { window: 24 } },
     ],
   },
   {
@@ -167,7 +194,7 @@ export const PRESETS: Preset[] = [
     description: 'A mosh with pixel-sorted streaks on top.',
     effects: [
       { type: 'kill', start: 0, end: 1 },
-      { type: 'bloom', start: 0.4, end: 0.6, params: { target: 'strongest', repeats: 20 } },
+      { type: 'bloom', start: 0.4, end: 0.6, params: { target: 'strongest', length: 'count', repeats: 20 } },
       { type: 'pixelSort', start: 0, end: 1, params: { low: 0.3, high: 0.9 } },
     ],
   },
@@ -229,7 +256,8 @@ export function randomParam(d: ParamDef, rng: Rng, total: number): ParamValue {
 export function randomizeEffect(e: EffectInstance, rng: Rng, total: number): EffectInstance {
   const def = EFFECTS[e.type];
   const params = { ...e.params };
-  for (const d of def.params) if (!e.locks.includes(d.key)) params[d.key] = randomParam(d, rng, total);
+  // timing is a choice about sync, not about the look: leave it alone
+  for (const d of def.params) if (!e.locks.includes(d.key) && d.key !== 'timing') params[d.key] = randomParam(d, rng, total);
   return { ...e, params, seed: e.locks.includes('__seed') ? e.seed : rng.int(0, 1e9) };
 }
 
@@ -271,7 +299,7 @@ export function chaos(project: Project, total: number, seed = randomSeed(), inte
     let e = makeEffect(type, start, start + len, {}, rng.int(0, 1e9));
     e = randomizeEffect(e, rng, total);
     if (type === 'glitch') e.params.amount = Math.round(rng.range(0.5, 2 + intensity * 8) * 10) / 10;
-    if (type === 'bloom' && rng.chance(0.3)) e.auto.repeats = { kind: 'lfo', shape: rng.pick(['sine', 'random', 'triangle'] as const), rate: rng.int(1, 6), min: 1, max: Math.round(10 + 50 * intensity), phase: rng() };
+    if (type === 'bloom' && e.params.length === 'count' && rng.chance(0.3)) e.auto.repeats = { kind: 'lfo', shape: rng.pick(['sine', 'random', 'triangle'] as const), rate: rng.int(1, 6), min: 1, max: Math.round(10 + 50 * intensity), phase: rng() };
     effects.push(e);
   }
   return { ...project, effects };
@@ -285,7 +313,7 @@ export function mutate(project: Project, total: number, amount = 0.2, seed = ran
     if (!def || e.locks.includes('__keep')) return e;
     const params = { ...e.params };
     for (const d of def.params) {
-      if (e.locks.includes(d.key)) continue;
+      if (e.locks.includes(d.key) || d.key === 'timing') continue;
       const v = params[d.key];
       if (d.type === 'number' || d.type === 'int') {
         const span = (d.max - d.min) * amount;

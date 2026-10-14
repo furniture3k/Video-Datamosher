@@ -1,7 +1,20 @@
 // Bitstream effects: each one rewrites the list of compressed frames.
-import type { BitstreamEffect } from './types';
+import type { BitstreamEffect, ParamDef } from './types';
 import type { Frame } from '../types';
-import { bool, copy, inRange, isMotion, num, rangeRuns, str, tOf, frameSize } from './util';
+import { bool, copy, inRange, isMotion, num, posOf, rangeRuns, str, tOf, frameSize } from './util';
+
+/** Shared setting of the effects that repeat or insert frames. */
+export const TIMING: ParamDef = {
+  key: 'timing',
+  label: 'Timing',
+  type: 'select',
+  default: 'fit',
+  options: [
+    { value: 'fit', label: 'Keep length', hint: 'Repeated frames replace the frames after them, so the video stays exactly as long as the bar and in sync with the sound and the timeline.' },
+    { value: 'stretch', label: 'Stretch', hint: 'Repeated frames are inserted, so this part of the video gets longer and everything after it starts later. Gives slow-motion, syrupy melts.' },
+  ],
+  help: 'Whether repeated frames replace footage (stays in sync) or are inserted (the video gets longer).',
+};
 
 export const keyframeKiller: BitstreamEffect = {
   kind: 'bitstream',
@@ -9,7 +22,7 @@ export const keyframeKiller: BitstreamEffect = {
   name: 'Keyframe Killer',
   icon: 'KEY',
   color: '#d8664f',
-  description: 'Removes I-frames (full pictures). The motion after a missing keyframe lands on the previous image, so one shot melts into the next.',
+  description: 'Removes I-frames (full pictures). The motion after a missing keyframe lands on the previous image, so one shot melts into the next. This is the base of almost every mosh: put it under the other effects.',
   params: [
     {
       key: 'mode',
@@ -17,26 +30,26 @@ export const keyframeKiller: BitstreamEffect = {
       type: 'select',
       default: 'all',
       options: [
-        { value: 'all', label: 'All in range' },
-        { value: 'cuts', label: 'Only at clip cuts' },
-        { value: 'probability', label: 'Random chance' },
-        { value: 'every', label: 'Every Nth keyframe' },
+        { value: 'all', label: 'All in range', hint: 'Every keyframe under the bar is removed. Nothing resets until the bar ends.' },
+        { value: 'cuts', label: 'Only at clip cuts', hint: 'Only keyframes where one clip meets the next are removed, so each new shot melts out of the last one.' },
+        { value: 'probability', label: 'Random chance', hint: 'Each keyframe is removed by chance. Some resets survive, giving bursts of melt.' },
+        { value: 'every', label: 'Every Nth keyframe', hint: 'A regular pattern: remove one, keep the rest of each group of N.' },
       ],
       help: 'Choose which I-frames inside the range get removed.',
     },
-    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Chance that each keyframe is removed (Random mode).' },
-    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 1, max: 20, default: 2, help: 'Remove every Nth keyframe (Every Nth mode).' },
+    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Chance that each keyframe is removed. 1 = all of them, 0 = none.' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 1, max: 20, default: 2, help: 'Remove every Nth keyframe. 1 removes all, 2 every other one, and so on.' },
     {
       key: 'replace',
       label: 'Fill gap with',
       type: 'select',
-      default: 'drop',
+      default: 'prev',
       options: [
-        { value: 'drop', label: 'Nothing (cut it out)' },
-        { value: 'prev', label: 'Previous motion frame' },
-        { value: 'next', label: 'Next motion frame' },
+        { value: 'prev', label: 'Previous motion', hint: 'The removed keyframe is replaced by the motion frame before it, so timing stays the same and the smear gets a tiny push.' },
+        { value: 'next', label: 'Next motion', hint: 'The removed keyframe is replaced by the motion frame after it.' },
+        { value: 'drop', label: 'Nothing', hint: 'The keyframe is cut out: the video gets one frame shorter for each one removed.' },
       ],
-      help: 'Removing a frame shortens the video by one frame. Filling the gap keeps the timing and adds a tiny extra smear.',
+      help: 'What goes where a removed keyframe was. Filling keeps the video in sync with the timeline.',
       advanced: true,
     },
     { show: (p) => p.mode === 'cuts', key: 'cutWindow', label: 'Cut tolerance', type: 'int', min: 0, max: 12, default: 2, unit: 'frames', help: 'How close to a clip cut a keyframe must be to count as "at the cut".', advanced: true },
@@ -45,24 +58,28 @@ export const keyframeKiller: BitstreamEffect = {
     const out: Frame[] = [];
     let iCount = 0;
     const mode = str(e, 'mode');
+    let lastMotion: Frame | undefined;
+    const push = (f: Frame) => {
+      out.push(f);
+      if (isMotion(f)) lastMotion = f;
+    };
     frames.forEach((f, i) => {
-      if (f.type !== 'I' || out.length === 0 || !inRange(f, e)) return void out.push(f);
+      if (f.type !== 'I' || out.length === 0 || !inRange(f, e)) return void push(f);
       const t = tOf(f, e);
       let kill = false;
       if (mode === 'all') kill = true;
       else if (mode === 'cuts') {
         const w = num(e, 'cutWindow', t);
-        kill = ctx.cuts.some((c) => Math.abs(f.src - c) <= w);
+        kill = ctx.cuts.some((c) => Math.abs(posOf(f) - c) <= w);
       } else if (mode === 'probability') kill = ctx.rng.chance(num(e, 'probability', t));
       else if (mode === 'every') kill = iCount++ % Math.max(1, Math.round(num(e, 'every', t))) === 0;
-      if (!kill) return void out.push(f);
+      if (!kill) return void push(f);
       const replace = str(e, 'replace');
       if (replace === 'prev') {
-        const prev = [...out].reverse().find(isMotion);
-        if (prev) out.push(copy(prev, 'replaced', f.src));
+        if (lastMotion) out.push(copy(lastMotion, 'replaced', posOf(f)));
       } else if (replace === 'next') {
         const next = frames.slice(i + 1).find(isMotion);
-        if (next) out.push(copy(next, 'replaced', f.src));
+        if (next) out.push(copy(next, 'replaced', posOf(f)));
       }
     });
     return out;
@@ -75,47 +92,69 @@ export const bloom: BitstreamEffect = {
   name: 'Bloom',
   icon: 'BLM',
   color: '#e0a046',
-  description: 'Repeats a P-frame. The same motion is applied over and over and the pixels smear outward.',
+  description: 'Repeats a motion frame. The same movement is applied over and over, so pixels smear and bloom outward. Make the bar longer for a longer bloom.',
+  retimes: true,
+  span: 1.5,
   params: [
-    { key: 'repeats', label: 'Repeats', type: 'int', min: 1, max: 240, default: 24, help: 'How many times the chosen frame is repeated. More repeats give a longer, wilder smear.', chaos: [4, 60] },
     {
       key: 'target',
       label: 'Which frame',
       type: 'select',
       default: 'first',
       options: [
-        { value: 'first', label: 'First motion frame in range' },
-        { value: 'strongest', label: 'Strongest motion in range' },
-        { value: 'every', label: 'Every Nth frame' },
-        { value: 'random', label: 'Random frames' },
+        { value: 'first', label: 'First motion frame', hint: 'The first movement under the bar is repeated.' },
+        { value: 'strongest', label: 'Strongest motion', hint: 'The frame with the most motion data under the bar. Usually the most dramatic bloom.' },
+        { value: 'every', label: 'Every Nth frame', hint: 'A bloom every N motion frames, for rhythmic or slow-motion melts.' },
+        { value: 'random', label: 'Random frames', hint: 'Motion frames bloom by chance. Unpredictable bursts.' },
       ],
-      help: '"Strongest" picks the frame with the most motion data, which usually gives the most dramatic bloom.',
+      help: 'Which motion frame (or frames) gets repeated.',
     },
-    { show: (p) => p.target === 'every', key: 'interval', label: 'Every Nth', type: 'int', min: 1, max: 300, default: 12, help: 'For "Every Nth": bloom every N motion frames. Set to 1 for a slow-motion melt.' },
-    { show: (p) => p.target === 'random', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, help: 'For "Random": chance that each motion frame blooms.' },
-    { key: 'jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01, default: 0, help: 'Randomly varies the repeat count for each bloom.', advanced: true },
+    { show: (p) => p.target === 'every', key: 'interval', label: 'Every Nth', type: 'int', min: 1, max: 300, default: 12, help: 'Bloom every N motion frames. With "Fill" each bloom lasts until the next one, so 2–4 gives a slow, stepped melt.' },
+    { show: (p) => p.target === 'random', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, help: 'Chance that each motion frame blooms.' },
+    {
+      key: 'length',
+      label: 'Bloom length',
+      type: 'select',
+      default: 'fill',
+      options: [
+        { value: 'fill', label: 'Fill the bar', hint: 'Each bloom lasts until the next one, or until the end of the bar. Drag the bar longer or shorter to set how long it blooms.' },
+        { value: 'count', label: 'Fixed repeats', hint: 'Each bloom repeats its frame a set number of times, whatever the length of the bar.' },
+      ],
+      help: 'How long each bloom lasts.',
+    },
+    { show: (p) => p.length === 'count', key: 'repeats', label: 'Repeats', type: 'int', min: 1, max: 600, default: 24, help: 'How many times the chosen frame is repeated. More repeats give a longer, wilder smear.', chaos: [4, 60] },
+    { show: (p) => p.length === 'count', key: 'jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01, default: 0, help: 'Randomly varies the repeat count of each bloom (0 = exact, 1 = anywhere from none to double).', advanced: true },
+    TIMING,
   ],
   apply(frames, e, ctx) {
     const target = str(e, 'target');
-    let chosen: Frame | null = null;
-    if (target === 'first') chosen = frames.find((f) => inRange(f, e) && isMotion(f)) ?? null;
-    if (target === 'strongest')
-      chosen = frames.filter((f) => inRange(f, e) && isMotion(f)).reduce<Frame | null>((a, f) => (!a || frameSize(f) > frameSize(a) ? f : a), null);
+    const fill = str(e, 'length') !== 'count';
+    const ranged = frames.filter((f) => inRange(f, e));
+    const motion = ranged.filter(isMotion);
+    let hits: Frame[] = [];
+    if (target === 'first') hits = motion.slice(0, 1);
+    else if (target === 'strongest') hits = motion.length ? [motion.reduce((a, f) => (frameSize(f) > frameSize(a) ? f : a))] : [];
+    else if (target === 'every') hits = motion.filter((f, k) => k % Math.max(1, Math.round(num(e, 'interval', tOf(f, e)))) === 0);
+    else hits = motion.filter((f) => ctx.rng.chance(num(e, 'probability', tOf(f, e))));
+    const hit = new Set(hits);
     const out: Frame[] = [];
-    let motionCount = 0;
+    let k = -1;
     for (const f of frames) {
       out.push(f);
-      if (!inRange(f, e) || !isMotion(f)) continue;
-      const t = tOf(f, e);
-      let hit = false;
-      if (target === 'first' || target === 'strongest') hit = f === chosen;
-      else if (target === 'every') hit = motionCount % Math.max(1, Math.round(num(e, 'interval', t))) === 0;
-      else hit = ctx.rng.chance(num(e, 'probability', t));
-      motionCount++;
-      if (!hit) continue;
-      const jitter = num(e, 'jitter', t);
-      const n = Math.max(0, Math.round(num(e, 'repeats', t) * (1 + jitter * (ctx.rng() * 2 - 1))));
-      for (let k = 0; k < n; k++) out.push(copy(f, 'dup'));
+      if (!inRange(f, e)) continue;
+      k++;
+      if (!hit.has(f)) continue;
+      let n: number;
+      if (fill) {
+        let j = k + 1;
+        while (j < ranged.length && !hit.has(ranged[j])) j++;
+        n = j - k - 1;
+      } else {
+        const t = tOf(f, e);
+        const jitter = num(e, 'jitter', t);
+        n = Math.max(0, Math.round(num(e, 'repeats', t) * (1 + jitter * (ctx.rng() * 2 - 1))));
+      }
+      for (let r = 0; r < n; r++) out.push(copy(f, 'dup'));
     }
     return out;
   },
@@ -127,12 +166,27 @@ export const stutter: BitstreamEffect = {
   name: 'Stutter Loop',
   icon: 'STU',
   color: '#a98bd4',
-  description: 'Loops a short run of motion frames. Movement rocks back and forth and builds up in pulses.',
+  description: 'Loops short runs of motion frames. Movement rocks back and forth and builds up in pulses.',
+  retimes: true,
+  span: 2,
   params: [
-    { key: 'group', label: 'Group size', type: 'int', min: 2, max: 60, default: 6, unit: 'frames', help: 'How many frames are in each loop.' },
-    { key: 'loops', label: 'Loops', type: 'int', min: 1, max: 30, default: 3, help: 'How many times each group plays.' },
-    { key: 'every', label: 'Repeat every', type: 'int', min: 0, max: 300, default: 0, unit: 'frames', help: '0 = loop once at the start of the range; otherwise start a new loop every N frames.' },
-    { key: 'pingpong', label: 'Ping-pong', type: 'bool', default: false, help: 'Every other loop plays backwards.' },
+    {
+      key: 'mode',
+      label: 'Loop when',
+      type: 'select',
+      default: 'repeat',
+      options: [
+        { value: 'repeat', label: 'All the way', hint: 'Loops one after another for the whole length of the bar.' },
+        { value: 'once', label: 'Once', hint: 'A single loop at the start of the bar.' },
+        { value: 'every', label: 'Every N frames', hint: 'A new loop starts every N frames (rhythmic pulses).' },
+      ],
+      help: 'When loops are triggered inside the bar.',
+    },
+    { key: 'group', label: 'Group size', type: 'int', min: 2, max: 60, default: 6, unit: 'frames', help: 'How many frames are in each loop. Small groups jitter, big groups rock slowly.' },
+    { key: 'loops', label: 'Loops', type: 'int', min: 1, max: 30, default: 3, help: 'How many times each group plays (1 = no repeat).' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Repeat every', type: 'int', min: 1, max: 300, default: 24, unit: 'frames', help: 'Start a new loop every N frames. 24 at 24 fps = one pulse per second.' },
+    { key: 'pingpong', label: 'Ping-pong', type: 'bool', default: false, help: 'Every other loop plays backwards, so motion rocks to and fro instead of jumping.' },
+    TIMING,
   ],
   apply(frames, e) {
     const out: Frame[] = [];
@@ -147,8 +201,9 @@ export const stutter: BitstreamEffect = {
         continue;
       }
       const t = tOf(f, e);
-      const every = Math.round(num(e, 'every', t));
-      const trigger = sinceTrigger === Infinity || (every > 0 && sinceTrigger >= every);
+      const mode = str(e, 'mode');
+      const every = Math.max(1, Math.round(num(e, 'every', t)));
+      const trigger = sinceTrigger === Infinity || mode === 'repeat' || (mode === 'every' && sinceTrigger >= every);
       if (!trigger) {
         out.push(f);
         sinceTrigger++;
@@ -184,7 +239,7 @@ function permuteRuns(frames: Frame[], e: Parameters<BitstreamEffect['apply']>[1]
       const idx: number[] = [];
       for (let k = a; k < b; k++) if (!keepKeys || isMotion(frames[k])) idx.push(k);
       const p = perm(idx, t);
-      if (p) idx.forEach((dst, n) => (out[dst] = p[n] === dst ? frames[dst] : copy(frames[p[n]], 'moved')));
+      if (p) idx.forEach((dst, n) => (out[dst] = p[n] === dst ? frames[dst] : copy(frames[p[n]], 'moved', posOf(frames[dst]))));
       a = b;
     }
   }
@@ -197,10 +252,10 @@ export const shuffle: BitstreamEffect = {
   name: 'Shuffle',
   icon: 'SHF',
   color: '#5fa8c8',
-  description: 'Reorders motion frames inside small windows. Movement jerks and jitters.',
+  description: 'Reorders motion frames inside small windows. Movement jerks and jitters, and the smear gets scrambled.',
   params: [
-    { key: 'window', label: 'Window', type: 'int', min: 2, max: 120, default: 8, unit: 'frames', help: 'Frames are only shuffled within windows of this size.' },
-    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 1, help: 'Chance that each window gets shuffled.' },
+    { key: 'window', label: 'Window', type: 'int', min: 2, max: 120, default: 8, unit: 'frames', help: 'Frames only swap places with others in the same window. Small = jitter, large = chaos.' },
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 1, help: 'Chance that each window gets shuffled (1 = every window).' },
     { key: 'keepKeys', label: 'Keep keyframes in place', type: 'bool', default: true, help: 'Only move motion frames and leave I-frames where they are.', advanced: true },
   ],
   apply(frames, e, ctx) {
@@ -228,9 +283,9 @@ export const reverse: BitstreamEffect = {
   name: 'Reverse Motion',
   icon: 'REV',
   color: '#6cc0a0',
-  description: 'Plays motion frames backwards. The vectors no longer match the picture, so things un-melt oddly.',
+  description: 'Plays motion frames backwards. The vectors no longer match the picture, so things un-melt and fold back on themselves.',
   params: [
-    { key: 'window', label: 'Window', type: 'int', min: 0, max: 300, default: 0, unit: 'frames', help: '0 = reverse the whole range; otherwise reverse it in chunks of this size.' },
+    { key: 'window', label: 'Window', type: 'int', min: 0, max: 300, default: 0, unit: 'frames', help: '0 = reverse the whole bar in one go; otherwise reverse it in chunks of this many frames.' },
     { key: 'keepKeys', label: 'Keep keyframes in place', type: 'bool', default: true, help: 'Leave I-frames where they are.', advanced: true },
   ],
   apply(frames, e) {
@@ -244,7 +299,7 @@ export const drop: BitstreamEffect = {
   name: 'Frame Drop',
   icon: 'DRP',
   color: '#8d8a84',
-  description: 'Deletes frames. Later frames then apply to the wrong picture, which reads as skips and stutter.',
+  description: 'Throws frames away. Later frames then move the wrong picture, which reads as skips, judder and stutter.',
   params: [
     {
       key: 'mode',
@@ -252,35 +307,51 @@ export const drop: BitstreamEffect = {
       type: 'select',
       default: 'every',
       options: [
-        { value: 'every', label: 'Every Nth' },
-        { value: 'probability', label: 'Random chance' },
+        { value: 'every', label: 'Every Nth', hint: 'A regular pattern of drops.' },
+        { value: 'probability', label: 'Random chance', hint: 'Frames are dropped by chance.' },
       ],
-      help: 'How frames are picked for deletion.',
+      help: 'How frames are picked for dropping.',
     },
-    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 2, max: 30, default: 3, help: 'Delete every Nth frame.' },
-    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, help: 'Chance each frame is deleted.' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 2, max: 30, default: 3, help: 'Drop every Nth frame. 2 drops every other frame.' },
+    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, help: 'Chance each frame is dropped.' },
     {
       key: 'types',
       label: 'Frame types',
       type: 'select',
       default: 'motion',
       options: [
-        { value: 'motion', label: 'Motion frames only' },
-        { value: 'all', label: 'Any frame' },
+        { value: 'motion', label: 'Motion frames only', hint: 'Keyframes are never dropped.' },
+        { value: 'all', label: 'Any frame', hint: 'Keyframes can be dropped too, which also stops the picture resetting.' },
       ],
       help: 'Which kinds of frames can be dropped.',
       advanced: true,
     },
+    {
+      ...TIMING,
+      options: [
+        { value: 'fit', label: 'Keep length', hint: 'A dropped frame is replaced by the motion before it, so the video stays in sync with the timeline.' },
+        { value: 'stretch', label: 'Shorten', hint: 'Dropped frames are cut out, so the video gets shorter and everything after starts earlier.' },
+      ],
+      help: 'Whether dropped frames are filled (stays in sync) or cut out (the video gets shorter).',
+    },
   ],
   apply(frames, e, ctx) {
     let n = 0;
-    return frames.filter((f, i) => {
-      if (i === 0 || !inRange(f, e)) return true;
-      if (str(e, 'types') === 'motion' && !isMotion(f)) return true;
+    const fit = str(e, 'timing') !== 'stretch';
+    const out: Frame[] = [];
+    let lastMotion: Frame | undefined;
+    const push = (f: Frame) => {
+      out.push(f);
+      if (isMotion(f)) lastMotion = f;
+    };
+    frames.forEach((f, i) => {
+      if (i === 0 || !inRange(f, e) || (str(e, 'types') === 'motion' && !isMotion(f))) return void push(f);
       const t = tOf(f, e);
       const del = str(e, 'mode') === 'every' ? ++n % Math.max(2, Math.round(num(e, 'every', t))) === 0 : ctx.rng.chance(num(e, 'probability', t));
-      return !del;
+      if (!del) return void push(f);
+      if (fit && lastMotion) out.push(copy(lastMotion, 'dup', posOf(f)));
     });
+    return out;
   },
 };
 
@@ -290,11 +361,13 @@ export const echo: BitstreamEffect = {
   name: 'Echo',
   icon: 'ECH',
   color: '#c97fae',
-  description: 'Re-inserts motion from a few frames back, so past movement doubles up with the present.',
+  description: 'Re-plays motion from a few frames back, so past movement doubles up with the present like a ghost.',
+  retimes: true,
   params: [
     { key: 'delay', label: 'Delay', type: 'int', min: 1, max: 120, default: 6, unit: 'frames', help: 'How far back the echoed motion comes from.' },
     { key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.6, help: 'Chance that each frame echoes.' },
-    { key: 'taps', label: 'Taps', type: 'int', min: 1, max: 8, default: 1, help: 'Number of echoes (each one a further Delay back).' },
+    { key: 'taps', label: 'Taps', type: 'int', min: 1, max: 8, default: 1, help: 'Number of echoes per frame, each one a further Delay back.' },
+    TIMING,
   ],
   apply(frames, e, ctx) {
     const out: Frame[] = [];
@@ -307,7 +380,7 @@ export const echo: BitstreamEffect = {
       const taps = Math.round(num(e, 'taps', t));
       for (let k = 1; k <= taps; k++) {
         const g = frames[i - k * d];
-        if (g && isMotion(g)) out.push(copy(g, 'dup', f.src));
+        if (g && isMotion(g)) out.push(copy(g, 'dup', posOf(f)));
       }
     });
     return out;
@@ -320,27 +393,30 @@ export const splice: BitstreamEffect = {
   name: 'Motion Transfer',
   icon: 'XFR',
   color: '#86c766',
-  description: 'Takes the motion from another part of the timeline and applies it here, e.g. a still face moving with a dancer.',
+  description: 'Takes the motion from another part of the timeline and applies it here, e.g. a still face moving with a dancer. Put a Keyframe Killer under it so the picture doesn\'t reset.',
+  retimes: true,
+  span: 3,
   params: [
-    { key: 'from', label: 'Motion source frame', type: 'frame', default: 0, help: 'First frame of the motion to borrow. Use the timeline to pick it.' },
-    { key: 'length', label: 'Source length', type: 'int', min: 1, max: 900, default: 48, unit: 'frames', help: 'How many frames of motion to borrow.' },
+    { key: 'from', label: 'Motion source frame', type: 'frame', default: 0, help: 'First frame of the motion to borrow. Move the playhead there and press the arrow button.' },
+    { key: 'length', label: 'Source length', type: 'int', min: 0, max: 3600, default: 0, unit: 'frames', help: 'How many frames of motion to borrow. 0 = as long as this bar.' },
     {
       key: 'mode',
       label: 'Mode',
       type: 'select',
       default: 'replace',
       options: [
-        { value: 'replace', label: 'Replace frames in range' },
-        { value: 'insert', label: 'Insert at range start' },
+        { value: 'replace', label: 'Replace frames in range', hint: 'Every frame under the bar is replaced by borrowed motion (looping if the source is shorter).' },
+        { value: 'insert', label: 'Insert at range start', hint: 'The borrowed motion plays at the start of the bar, then the footage continues.' },
       ],
-      help: 'Replace: the range is filled (looping) with the borrowed motion. Insert: the borrowed motion is added at the start of the range.',
+      help: 'How the borrowed motion is placed.',
     },
-    { show: (p) => p.mode === 'insert', key: 'loops', label: 'Loops', type: 'int', min: 1, max: 20, default: 1, help: 'For Insert: how many times the borrowed motion is inserted.' },
+    { show: (p) => p.mode === 'insert', key: 'loops', label: 'Loops', type: 'int', min: 1, max: 20, default: 1, help: 'For Insert: how many times the borrowed motion plays.' },
     { key: 'speed', label: 'Speed', type: 'number', min: 0.25, max: 4, step: 0.05, default: 1, help: 'Playback speed of the borrowed motion (frames are skipped or repeated).', advanced: true },
+    { ...TIMING, show: (p) => p.mode === 'insert' },
   ],
   apply(frames, e, ctx) {
     const from = Math.round(Number(e.params.from));
-    const len = Math.round(Number(e.params.length));
+    const len = Math.round(Number(e.params.length)) || Math.max(1, e.end - e.start);
     const speed = Math.max(0.05, Number(e.params.speed ?? 1));
     const pool = ctx.source.filter((f) => f.src >= from && f.src < from + len && isMotion(f));
     if (pool.length === 0) return frames;
@@ -353,7 +429,7 @@ export const splice: BitstreamEffect = {
           done = true;
           out.push(f);
           const n = Math.round((pool.length / speed) * Math.round(num(e, 'loops', 0)));
-          for (let k = 0; k < n; k++) out.push(copy(at(k), 'spliced', f.src));
+          for (let k = 0; k < n; k++) out.push(copy(at(k), 'spliced', posOf(f)));
           continue;
         }
         out.push(f);
@@ -362,7 +438,7 @@ export const splice: BitstreamEffect = {
     }
     let k = 0;
     frames.forEach((f, i) => {
-      if (inRange(f, e) && i > 0) out.push(copy(at(k++), 'spliced', f.src));
+      if (inRange(f, e) && i > 0) out.push(copy(at(k++), 'spliced', posOf(f)));
       else out.push(f);
     });
     return out;
@@ -370,17 +446,17 @@ export const splice: BitstreamEffect = {
 };
 
 const GLITCH_MODES = [
-  { value: 'flip', label: 'Bit flip' },
-  { value: 'replace', label: 'Random byte' },
-  { value: 'nudge', label: 'Nudge bytes ±' },
-  { value: 'zero', label: 'Zero out' },
-  { value: 'max', label: 'Max out (0xFF)' },
-  { value: 'run', label: 'Random run' },
-  { value: 'repeat', label: 'Copy run' },
-  { value: 'swap', label: 'Swap runs' },
-  { value: 'shift', label: 'Bit-shift tail' },
-  { value: 'insert', label: 'Insert bytes' },
-  { value: 'delete', label: 'Delete bytes' },
+  { value: 'flip', label: 'Bit flip', hint: 'Flips single bits. Subtle: small colour shifts and the odd misplaced block.' },
+  { value: 'replace', label: 'Random byte', hint: 'Overwrites bytes with random values. Blocks jump and smear: the classic macroblock rain.' },
+  { value: 'nudge', label: 'Nudge bytes ±', hint: 'Changes bytes by a tiny amount. Gentle colour and texture drift, rarely breaks the frame.' },
+  { value: 'zero', label: 'Zero out', hint: 'Blanks runs of bytes. Areas freeze or go flat.' },
+  { value: 'max', label: 'Max out (0xFF)', hint: 'Fills runs with 0xFF. Harsh streaks and bright blocks.' },
+  { value: 'run', label: 'Random run', hint: 'Fills runs with noise. Heavy tearing from that point down.' },
+  { value: 'repeat', label: 'Copy run', hint: 'Copies one run of data over another. Repeated texture patches.' },
+  { value: 'swap', label: 'Swap runs', hint: 'Swaps two runs of data. Pieces of the picture trade places.' },
+  { value: 'shift', label: 'Bit-shift tail', hint: 'Shifts all bits after a point. Everything below it turns to garbage: very destructive.' },
+  { value: 'insert', label: 'Insert bytes', hint: 'Inserts noise, pushing the rest of the frame along. Slanted, shifted tears.' },
+  { value: 'delete', label: 'Delete bytes', hint: 'Removes bytes, pulling the rest of the frame back. Tears the other way.' },
 ];
 
 export const byteGlitch: BitstreamEffect = {
@@ -389,10 +465,11 @@ export const byteGlitch: BitstreamEffect = {
   name: 'Byte Glitch',
   icon: 'GLT',
   color: '#d8cf4a',
-  description: 'Damages the compressed data. On keyframes it shifts colour and texture; on motion frames it throws blocks around.',
+  description: 'Damages the compressed data. On keyframes it shifts colour and texture; on motion frames it throws blocks around. Start with a low Amount: a little goes a long way.',
+  span: 2,
   params: [
     { key: 'mode', label: 'Corruption', type: 'select', default: 'flip', options: GLITCH_MODES, help: 'How the bytes are damaged.' },
-    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 100, step: 0.5, default: 3, help: 'Corruption operations per frame.', chaos: [1, 12], log: true },
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 100, step: 0.5, default: 3, help: 'Corruption operations per frame. 1–5 is usually plenty; high values can break frames completely.', chaos: [1, 12], log: true },
     { key: 'probability', label: 'Frame chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Chance each frame gets glitched.' },
     {
       key: 'target',
@@ -400,9 +477,9 @@ export const byteGlitch: BitstreamEffect = {
       type: 'select',
       default: 'all',
       options: [
-        { value: 'all', label: 'All frames' },
-        { value: 'motion', label: 'Motion frames (P)' },
-        { value: 'keys', label: 'Keyframes (I)' },
+        { value: 'all', label: 'All frames', hint: 'Keyframes and motion frames.' },
+        { value: 'motion', label: 'Motion frames (P)', hint: 'Damaged motion makes blocks fly around and the damage spreads into later frames.' },
+        { value: 'keys', label: 'Keyframes (I)', hint: 'Damaged full pictures: colour shifts and texture tears that the motion then carries along.' },
       ],
       help: 'Which frame types to corrupt.',
     },

@@ -20,6 +20,7 @@
         {label}{#if id === 'effects' && store.project.effects.length}<span class="count mono">{store.project.effects.length}</span>{/if}
       </button>
     {/each}
+    <button class="tipbtn" class:on={store.ui.tips} title={store.ui.tips ? 'Hide the description under each setting' : 'Show a description under each setting'} aria-label="Show descriptions" aria-pressed={store.ui.tips} onclick={() => store.setPref('tips', !store.ui.tips)}>?</button>
   </div>
   <div class="body">
     {#if store.ui.tab === 'effects'}
@@ -49,6 +50,14 @@
     height: 32px;
     border-bottom: 1px solid var(--line);
     flex: none;
+  }
+  .tabs .tipbtn {
+    flex: none;
+    width: 32px;
+    font: 600 12px var(--mono);
+  }
+  .tabs .tipbtn.on {
+    color: var(--accent);
   }
   .tabs button {
     flex: 1;

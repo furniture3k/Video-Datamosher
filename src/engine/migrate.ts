@@ -1,5 +1,5 @@
 // Bring saved projects (autosave, project files) up to the current format.
-import { CLIP_AUDIO, VIDEO_TRACK, defaultTracks, newProject, type Clip, type MediaItem, type Project } from './types';
+import { CLIP_AUDIO, VIDEO_TRACK, defaultTracks, newProject, type Clip, type EffectInstance, type MediaItem, type Project } from './types';
 
 interface V1Clip {
   id: string;
@@ -78,6 +78,23 @@ export function migrate(raw: unknown): Project {
     encoder: { ...base.encoder, ...v2.encoder },
     decoder: { ...base.decoder, ...v2.decoder },
     audio,
-    effects: (v2.effects ?? []).filter((e) => !e.transition),
+    effects: (v2.effects ?? []).filter((e) => !e.transition).map(upgradeEffect),
   };
+}
+
+/**
+ * Effects saved before effects kept their length (and Bloom could fill its bar) keep the look
+ * they were made with: inserted repeats, fixed repeat counts, one-shot stutters.
+ */
+function upgradeEffect(e: EffectInstance): EffectInstance {
+  const p = { ...e.params };
+  if (['bloom', 'stutter', 'echo', 'splice', 'drop'].includes(e.type) && p.timing === undefined) p.timing = 'stretch';
+  if (e.type === 'bloom' && p.length === undefined) p.length = 'count';
+  if (e.type === 'kill' && p.replace === undefined) p.replace = 'drop';
+  if (e.type === 'stutter' && p.mode === undefined) {
+    p.mode = Number(p.every) > 0 ? 'every' : 'once';
+    if (!(Number(p.every) > 0)) p.every = 24;
+  }
+  if (e.type === 'splice' && p.length === undefined) p.length = 48;
+  return { ...e, params: p };
 }

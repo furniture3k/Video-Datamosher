@@ -3,6 +3,8 @@
   import Field from '../components/Field.svelte';
   import { store } from '../lib/store.svelte';
   import { exportVideo, Cancelled } from '../lib/renderer';
+  import { markedRange } from '../lib/edit';
+  import { tc } from '../lib/timecode';
   import { ffmpeg } from '../lib/ffmpeg';
   import { download, localGet, localSet } from '../lib/storage';
   import { isDesktop } from '../lib/platform';
@@ -11,6 +13,8 @@
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
 
+  const marked = markedRange();
+  let onlyRange = $state(!!marked);
   let o = $state<ExportOptions>({ ...defaultExport(), ...localGet<Partial<ExportOptions>>('exportOpts', {}) });
   let running = $state(false);
   let stage = $state('');
@@ -44,7 +48,7 @@
     result = null;
     signal = { cancelled: false };
     try {
-      const r = await exportVideo($state.snapshot(store.project) as Project, $state.snapshot(o), (s, p) => ((stage = s), (progress = p)), signal);
+      const r = await exportVideo($state.snapshot(store.project) as Project, { ...$state.snapshot(o), range: onlyRange ? marked : null }, (s, p) => ((stage = s), (progress = p)), signal);
       if (isDesktop) {
         result = { file: r.file ?? (await blobToDisk(r.blob!, r.name)), name: r.name, size: r.size, type: r.type };
         running = false;
@@ -154,6 +158,9 @@
         onchange={(v: string) => (o.gifDither = v as never)}
       />
       <Field type="bool" label="Loop forever" value={o.loop} help="Play the GIF on repeat." onchange={(v: boolean) => (o.loop = v)} />
+    {/if}
+    {#if marked && o.format !== 'avi'}
+      <Field type="bool" label="Only the In–Out range" value={onlyRange} help="Export just the part marked with I and O ({tc(marked[0], store.fps)} → {tc(marked[1], store.fps)}). The mosh is still worked out from the start, so it looks exactly as it does in the full video." onchange={(v: boolean) => (onlyRange = v)} />
     {/if}
     {#if o.format !== 'gif' && o.format !== 'png' && hasAudio}
       <Field type="bool" label="Include audio" value={o.audio} help="Uses the settings from the Audio tab." onchange={(v: boolean) => (o.audio = v)} />

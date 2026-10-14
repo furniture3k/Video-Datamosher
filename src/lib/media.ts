@@ -5,7 +5,7 @@ import { putFile, getFile, kvGet, kvSet } from './storage';
 import { probeFile, renderGenerator, makeProxy, extractPcm, proxyKey } from './renderer';
 import { mediaState, rt, PEAKS_PER_SEC } from './mediastate.svelte';
 import { GENERATORS, even } from '../engine/args';
-import { uid, makeClip, insertVideo, nearestCut, audioClips, clipLen, videoEnd } from '../engine/timeline';
+import { uid, makeClip, insertVideo, nearestCut, freeClips, clipLen, videoEnd, isOverlayTrack, isVideoTrack } from '../engine/timeline';
 import { VIDEO_TRACK, type MediaItem, type Project } from '../engine/types';
 
 const blobToDataUrl = (url: string) =>
@@ -82,6 +82,8 @@ export function addToTimeline(m: MediaItem, place: Place = 'auto') {
   let target = place;
   if (target === 'auto' || target === 'none') target = m.hasVideo ? { track: VIDEO_TRACK, index: Infinity } : { track: firstMusicTrack(), start: endOfTrack(store.project, firstMusicTrack()) };
   if (target.track === VIDEO_TRACK && !m.hasVideo) target = { track: firstMusicTrack(), start: 'index' in target ? videoTimeAtIndex(target.index) : 0 };
+  // sound files can't go on a video track above the main one
+  if ('start' in target && isOverlayTrack(target.track) && !m.hasVideo) target = { track: firstMusicTrack(), start: target.start };
   const tgt = target;
   const c = makeClip(m, tgt.track);
   if (m.source.kind === 'file' && m.source.isImage) c.out = 3;
@@ -89,7 +91,7 @@ export function addToTimeline(m: MediaItem, place: Place = 'auto') {
     if ('index' in tgt) insertVideo(p, c, tgt.index);
     else {
       c.start = Math.max(0, tgt.start);
-      if (!p.tracks.some((t) => t.id === c.track)) p.tracks.push({ id: c.track, kind: 'audio', name: 'Audio', muted: false, solo: false, volume: 1, mosh: false });
+      if (!p.tracks.some((t) => t.id === c.track)) p.tracks.push({ id: c.track, kind: isVideoTrack(c.track) ? 'video' : 'audio', name: isVideoTrack(c.track) ? 'Video' : 'Audio', muted: false, solo: false, volume: 1, mosh: false });
       p.clips.push(c);
     }
   });
@@ -109,7 +111,7 @@ function videoTimeAtIndex(index: number): number {
 }
 
 export function endOfTrack(p: Project, track: string): number {
-  return audioClips(p)
+  return freeClips(p)
     .filter((c) => c.track === track)
     .reduce((e, c) => Math.max(e, c.start + clipLen(c)), 0);
 }

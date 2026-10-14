@@ -2,8 +2,9 @@
 import { store } from './store.svelte';
 import { ask } from './ask';
 import { forgetMedia } from './media';
-import { splitClip, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS } from '../engine/timeline';
-import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type TextClip, type TransitionType } from '../engine/types';
+import { splitClip, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips } from '../engine/timeline';
+import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TextClip, type TransitionType } from '../engine/types';
+import { addToTimeline } from './media';
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 
@@ -24,11 +25,20 @@ export function splitAtPlayhead() {
   if (created.length) store.ui.selectedClips = created;
 }
 
-export function deleteSelected() {
-  const ids = store.ui.selectedClips;
+/** Clips on locked tracks can't be edited. */
+export const lockedTrack = (track: string) => !!store.project.tracks.find((t) => t.id === track)?.locked;
+const editable = (ids: string[]) => ids.filter((id) => {
+  const c = store.project.clips.find((x) => x.id === id);
+  return !c || !lockedTrack(c.track);
+});
+
+/** Delete the selection. `ripple`: also close the gaps it leaves on the upper and audio tracks. */
+export function deleteSelected(ripple = false) {
+  const ids = editable(store.ui.selectedClips);
   if (ids.length) {
     store.editTimeline((p) => {
-      deleteClips(p, ids);
+      if (ripple) rippleDelete(p, ids);
+      else deleteClips(p, ids);
       p.texts = p.texts.filter((t) => !ids.includes(t.id));
     });
     store.ui.selectedClips = [];
@@ -41,6 +51,196 @@ export function deleteSelected() {
   }
   return false;
 }
+
+/** Turn the selected clips off (they keep their place but aren't seen or heard), or back on. */
+export function toggleEnabled() {
+  const ids = editable(store.ui.selectedClips);
+  const clips = store.project.clips.filter((c) => ids.includes(c.id));
+  if (!clips.length) return false;
+  const on = clips.some((c) => c.enabled === false);
+  store.edit(() => clips.forEach((c) => (c.enabled = on ? undefined : false)));
+  return true;
+}
+
+/** Colour label for the selected clips (null clears it). */
+export function setLabel(color: string | null) {
+  const ids = store.ui.selectedClips;
+  store.edit((p) => p.clips.filter((c) => ids.includes(c.id)).forEach((c) => (c.label = color ?? undefined)));
+}
+
+/** Insert a freeze frame (hold) at the playhead into the selected clip, or the video clip under it. */
+export function freezeAtPlayhead(dur = 2) {
+  const t = store.ui.time;
+  const under = clipsAt(store.project, t).filter((c) => isVideoTrack(c.track) && !lockedTrack(c.track));
+  const c = under.find((x) => store.ui.selectedClips.includes(x.id)) ?? under.find((x) => x.track === VIDEO_TRACK) ?? under[0];
+  if (!c) return store.toast('Move the playhead over a video clip to freeze a frame.');
+  let id = '';
+  store.editTimeline((p) => (id = insertFreeze(p, c.id, t, dur)?.id ?? ''));
+  if (id) store.ui.selectedClips = [id];
+}
+
+/** Move the selected clips by `frames` frames (upper and audio tracks; texts). */
+export function nudgeSelected(frames: number) {
+  const ids = editable(store.ui.selectedClips);
+  const d = frames / store.fps;
+  const free = store.project.clips.filter((c) => ids.includes(c.id) && c.track !== VIDEO_TRACK);
+  const texts = store.project.texts.filter((t) => ids.includes(t.id));
+  if (!free.length && !texts.length) return false;
+  store.editTimeline(() => {
+    for (const c of free) c.start = Math.max(0, c.start + d);
+    for (const t of texts) t.start = Math.max(0, t.start + d);
+  }, 'nudge');
+  return true;
+}
+
+// ---------------------------------------------------------------- source edits (media panel → timeline)
+
+/** Insert (F9): the clip goes in at the playhead; the main track splits there and moves along. */
+export function insertEdit(m: MediaItem) {
+  if (!m.hasVideo) return void addToTimeline(m, { track: musicTrack(), start: store.ui.time });
+  const t = store.ui.time;
+  const c = makeClip(m, VIDEO_TRACK);
+  if (m.source.kind === 'file' && m.source.isImage) c.out = 3;
+  store.editTimeline((p) => {
+    const under = layoutVideo(p).find((pl) => t > pl.start + 0.05 && t < pl.end - 0.05);
+    if (under) splitClip(p, under.clip.id, t);
+    insertVideo(p, c, nearestCut(p, t));
+  });
+  store.selectClip(c.id);
+}
+
+/** Overwrite (F10): the clip replaces whatever is on the main track from the playhead on. */
+export function overwriteEdit(m: MediaItem) {
+  if (!m.hasVideo) return void addToTimeline(m, { track: musicTrack(), start: store.ui.time });
+  const t = store.ui.time;
+  const c = makeClip(m, VIDEO_TRACK);
+  if (m.source.kind === 'file' && m.source.isImage) c.out = 3;
+  const len = clipLen(c);
+  store.editTimeline((p) => {
+    for (const at of [t, t + len]) {
+      const under = layoutVideo(p).find((pl) => at > pl.start + 0.05 && at < pl.end - 0.05);
+      if (under) splitClip(p, under.clip.id, at);
+    }
+    const gone = layoutVideo(p)
+      .filter((pl) => pl.start >= t - 0.05 && pl.end <= t + len + 0.05)
+      .map((pl) => pl.clip.id);
+    deleteClips(p, gone);
+    insertVideo(p, c, nearestCut(p, t));
+  });
+  store.selectClip(c.id);
+}
+
+/** Place on top (F12): on the lowest upper video track that is free at the playhead (a new one if needed). */
+export function placeOnTop(m: MediaItem) {
+  if (!m.hasVideo) return void addToTimeline(m, { track: musicTrack(), start: store.ui.time });
+  const t = store.ui.time;
+  const c = makeClip(m, 'v2');
+  if (m.source.kind === 'file' && m.source.isImage) c.out = 3;
+  const len = clipLen(c);
+  const free = (p: Project, id: string) => !p.clips.some((x) => x.track === id && x.start < t + len - 1e-3 && clipEnd(x) > t + 1e-3);
+  store.editTimeline((p) => {
+    let track = videoTracks(p).find((id) => free(p, id));
+    if (!track) track = addVideoTrackTo(p);
+    c.track = track;
+    c.start = t;
+    p.clips.push(c);
+  });
+  store.selectClip(c.id);
+}
+
+/** Append (Shift+F12): at the end of the main track. */
+export function appendEdit(m: MediaItem) {
+  addToTimeline(m, m.hasVideo ? { track: VIDEO_TRACK, index: Infinity } : 'auto');
+}
+
+const musicTrack = () => store.project.tracks.find((t) => t.kind === 'audio' && t.id !== CLIP_AUDIO)?.id ?? 'a1';
+
+/** Upper video track ids, bottom first. */
+export const videoTracks = (p: Project = store.project) =>
+  p.tracks
+    .filter((t) => isOverlayTrack(t.id))
+    .map((t) => t.id)
+    .sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
+
+function addVideoTrackTo(p: Project): string {
+  let n = 2;
+  while (p.tracks.some((t) => t.id === 'v' + n)) n++;
+  const id = 'v' + n;
+  p.tracks.push({ id, kind: 'video', name: `Video ${n}`, muted: false, solo: false, volume: 1, mosh: true });
+  return id;
+}
+
+export function addVideoTrack(): string {
+  let id = '';
+  store.edit((p) => (id = addVideoTrackTo(p)));
+  return id;
+}
+
+// ---------------------------------------------------------------- markers and in / out
+
+const MARKER_COLORS = ['#4fa3e0', '#5cc46b', '#d95b8f', '#e0c341', '#9b7be0', '#3fc1c9'];
+
+/** Add a marker at the playhead (or remove the one that is already there). */
+export function toggleMarker() {
+  const t = store.ui.time;
+  const ms = store.project.markers ?? [];
+  const near = ms.find((m) => Math.abs(m.t - t) < 0.5 / store.fps);
+  store.edit((p) => {
+    p.markers ??= [];
+    if (near) p.markers = p.markers.filter((m) => m.id !== near.id);
+    else p.markers.push({ id: uid(), t, color: MARKER_COLORS[p.markers.length % MARKER_COLORS.length], name: '' });
+  });
+}
+
+export function jumpMarker(dir: 1 | -1) {
+  const t = store.ui.time;
+  const ts = (store.project.markers ?? []).map((m) => m.t).sort((a, b) => a - b);
+  const to = dir > 0 ? ts.find((x) => x > t + 1e-3) : ts.reverse().find((x) => x < t - 1e-3);
+  if (to !== undefined) store.seek(to);
+}
+
+/** Every edit point (clip starts and ends on all tracks), for Up / Down. */
+export function editPoints(p: Project = store.project): number[] {
+  const t = new Set<number>([0]);
+  for (const pl of layoutVideo(p)) (t.add(pl.start), t.add(pl.end));
+  for (const c of p.clips) if (c.track !== VIDEO_TRACK) (t.add(c.start), t.add(clipEnd(c)));
+  for (const x of p.texts) (t.add(x.start), t.add(x.start + x.duration));
+  return [...t].map((x) => Math.round(x * 1000) / 1000).sort((a, b) => a - b);
+}
+
+export function jumpEdit(dir: 1 | -1) {
+  const t = store.ui.time;
+  const pts = editPoints();
+  const to = dir > 0 ? pts.find((x) => x > t + 1e-3) : pts.reverse().find((x) => x < t - 1e-3);
+  if (to !== undefined) store.seek(to);
+}
+
+export function markIn(t: number | null = store.ui.time) {
+  store.ui.inPoint = t;
+  if (t !== null && store.ui.outPoint !== null && store.ui.outPoint <= t) store.ui.outPoint = null;
+}
+export function markOut(t: number | null = store.ui.time) {
+  store.ui.outPoint = t;
+  if (t !== null && store.ui.inPoint !== null && store.ui.inPoint >= t) store.ui.inPoint = null;
+}
+/** Mark the clip under the playhead (X). */
+export function markClip() {
+  const t = store.ui.time;
+  const sel = store.selectedClip;
+  const pl = layoutVideo(store.project).find((x) => t >= x.start && t < x.end);
+  const [a, b] = sel && sel.track !== VIDEO_TRACK ? [sel.start, clipEnd(sel)] : pl ? [pl.start, pl.end] : [null, null];
+  if (a === null || b === null) return;
+  store.ui.inPoint = a;
+  store.ui.outPoint = b;
+}
+/** The marked range (in / out, either may be open), or null when nothing is marked. */
+export function markedRange(): [number, number] | null {
+  const { inPoint: a, outPoint: b } = store.ui;
+  if (a === null && b === null) return null;
+  return [a ?? 0, b ?? store.duration];
+}
+
+export { videoClips };
 
 export function duplicateSelected() {
   const ids = store.ui.selectedClips;
@@ -136,10 +336,10 @@ export async function removeTrack(id: string) {
   });
 }
 
-export const DEFAULT_DURATION: Record<string, number> = { melt: 1, bloom: 1.5, glitch: 1, stutter: 1, liquid: 1.5 };
+export const DEFAULT_DURATION: Record<string, number> = { melt: 1.5, bloom: 1.5, glitch: 1, stutter: 1.5, liquid: 1.5, ghost: 1.5, rewind: 1.5 };
 
 /** Set (or clear with null) the transition into a video clip. */
-export function setTransition(clipId: string, type: TransitionType | null, patch: { duration?: number; intensity?: number } = {}) {
+export function setTransition(clipId: string, type: TransitionType | null, patch: { duration?: number; intensity?: number; resolve?: boolean } = {}) {
   store.editTimeline((p) => {
     const vids = p.clips.filter((c) => c.track === VIDEO_TRACK);
     const c = vids.find((x) => x.id === clipId);
@@ -152,6 +352,7 @@ export function setTransition(clipId: string, type: TransitionType | null, patch
         type,
         duration: patch.duration ?? (keepDur ? prev!.duration : (DEFAULT_DURATION[type] ?? 0.75)),
         intensity: patch.intensity ?? prev?.intensity ?? 0.5,
+        ...((patch.resolve ?? prev?.resolve) === false ? { resolve: false } : {}),
       };
     }
   }, 'tr' + clipId);

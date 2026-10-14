@@ -1,5 +1,5 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
-import type { Clip, DecoderSettings, EncoderSettings, MediaItem, Project, TextClip } from './types';
+import { clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
 import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
@@ -44,83 +44,217 @@ export function clipInputArgs(c: Clip, m: MediaItem, fps: number, path: PathFn =
     return ['-f', 'lavfi', '-t', String(r3(c.out)), '-i', g.spec(even(m.width), even(m.height), fps)];
   }
   if (m.source.isImage) return ['-loop', '1', '-framerate', String(fps), '-t', String(dur), '-i', path(m)];
-  return ['-ss', String(r3(c.in)), '-t', String(dur), '-i', path(m)];
+  // a freeze frame only needs its first frame
+  return ['-ss', String(r3(c.in)), '-t', String(c.freeze ? 0.5 : dur), '-i', path(m)];
 }
 
-function scaleChain(c: Clip, w: number, h: number): string {
+/** The clip scaled into a w×h frame (letterbox bars are transparent on layers). */
+function scaleChain(c: Clip, w: number, h: number, layer: boolean): string {
   if (c.fit === 'stretch') return `scale=${w}:${h}:flags=bicubic`;
   if (c.fit === 'fill') return `scale=${w}:${h}:force_original_aspect_ratio=increase:flags=bicubic,crop=${w}:${h}`;
-  return `scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`;
-}
-
-/** Filter chain for one clip's picture (input already trimmed), padded/cut to its exact length. */
-function clipVideoChain(c: Clip, m: MediaItem, fps: number, w: number, h: number): string {
-  const len = r3(clipLen(c));
-  const f: string[] = [];
-  if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(c.out)}`);
-  f.push('setpts=PTS-STARTPTS');
-  if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
-  f.push(`fps=${fps}`, scaleChain(c, w, h), 'setsar=1', 'format=yuv420p');
-  // reverse buffers the whole clip in memory, so do it after scaling down
-  if (c.reverse) f.push('reverse', 'setpts=PTS-STARTPTS');
-  f.push(`tpad=stop_mode=clone:stop_duration=${len}`, `trim=duration=${len}`);
-  return f.join(',');
+  return `scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2${layer ? ':color=black@0' : ''}`;
 }
 
 /**
+ * Colour correction as a 1D curve (gamma, contrast, brightness) and a 3×3 RGB matrix
+ * (saturation, hue). The live preview applies exactly the same maths.
+ */
+export function gradeMatrix(g: Grade): number[] {
+  const lr = 0.2126;
+  const lg = 0.7152;
+  const lb = 0.0722;
+  const s = g.saturation;
+  const S = [lr * (1 - s) + s, lg * (1 - s), lb * (1 - s), lr * (1 - s), lg * (1 - s) + s, lb * (1 - s), lr * (1 - s), lg * (1 - s), lb * (1 - s) + s];
+  const a = (g.hue * Math.PI) / 180;
+  const c = Math.cos(a);
+  const n = Math.sin(a);
+  // the hue rotation used by CSS / SVG filters
+  const H = [
+    0.213 + c * 0.787 - n * 0.213, 0.715 - c * 0.715 - n * 0.715, 0.072 - c * 0.072 + n * 0.928,
+    0.213 - c * 0.213 + n * 0.143, 0.715 + c * 0.285 + n * 0.14, 0.072 - c * 0.072 - n * 0.283,
+    0.213 - c * 0.213 - n * 0.787, 0.715 - c * 0.715 + n * 0.715, 0.072 + c * 0.928 + n * 0.072,
+  ];
+  const M: number[] = [];
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) M.push(H[i * 3] * S[j] + H[i * 3 + 1] * S[3 + j] + H[i * 3 + 2] * S[6 + j]);
+  return M;
+}
+
+/** Brightness / contrast / gamma curve for an input level 0..1. */
+export const gradeCurve = (g: Grade, v: number) => Math.max(0, Math.min(1, (Math.pow(v, 1 / g.gamma) - 0.5) * g.contrast + 0.5 + g.brightness));
+
+function gradeFilters(g: Grade): string[] {
+  if (isIdentityGrade(g)) return [];
+  const f: string[] = [];
+  if (g.brightness || g.contrast !== 1 || g.gamma !== 1) {
+    const e = `clip(255*((pow(val/255\\,${r3(1 / g.gamma)})-0.5)*${r3(g.contrast)}+0.5+${r3(g.brightness)})\\,0\\,255)`;
+    f.push(`lutrgb=r=${e}:g=${e}:b=${e}`);
+  }
+  if (g.saturation !== 1 || g.hue) {
+    const m = gradeMatrix(g).map((x) => Math.round(x * 10000) / 10000);
+    const k = ['rr', 'rg', 'rb', 'gr', 'gg', 'gb', 'br', 'bg', 'bb'];
+    f.push('colorchannelmixer=' + k.map((n, i) => `${n}=${m[i]}`).join(':'));
+  }
+  return f;
+}
+
+/** A clip cut down to part of itself: local seconds a..b of it. */
+export function windowClip(c: Clip, a: number, b: number): Clip {
+  if (c.freeze) return { ...c, out: c.in + (b - a) };
+  if (c.reverse) return { ...c, in: c.out - b * c.speed, out: c.out - a * c.speed };
+  return { ...c, in: c.in + a * c.speed, out: c.in + b * c.speed };
+}
+
+/**
+ * Filter statements for one clip's picture: reads input `src` (null for a disabled clip) and
+ * writes a w×h stream `out` exactly as long as the clip. Layers (upper tracks) are RGBA with
+ * transparent surroundings; main-track clips are opaque. `offset`: the clip's own local time at
+ * the start of this piece (layers are cut where main-track segments meet), for its fades.
+ */
+export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: number, src: string | null, out: string, tag: string, layer = false, offset = 0, fullLen = clipLen(c)): string[] {
+  const len = r3(clipLen(c));
+  if (!src) return [`color=c=black${layer ? '@0' : ''}:s=${w}x${h}:r=${fps}:d=${r3(len + 0.5)},format=${layer ? 'rgba' : 'yuv420p'},setsar=1,trim=duration=${len}[${out}]`];
+  const T = transformOf(c);
+  const G = gradeOf(c);
+  const op = Math.max(0, Math.min(1, c.opacity ?? 1));
+  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G);
+  const bg = layer ? 'black@0' : 'black';
+  const f: string[] = [];
+  if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(Math.max(c.in + 0.04, c.out))}`);
+  f.push('setpts=PTS-STARTPTS');
+  if (c.freeze) f.push('trim=end_frame=1', 'loop=loop=-1:size=1', `setpts=N/${fps}/TB`);
+  else if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
+  f.push(`fps=${fps}`);
+  if (rgba) f.push('format=rgba');
+  // grade the picture itself (not the letterbox bars added next)
+  f.push(...gradeFilters(G));
+  f.push(scaleChain(c, w, h, layer), 'setsar=1');
+  if (!rgba) f.push('format=yuv420p');
+  // reverse buffers the whole clip in memory, so do it after scaling down
+  if (c.reverse && !c.freeze) f.push('reverse', 'setpts=PTS-STARTPTS');
+  f.push(`tpad=stop_mode=clone:stop_duration=${len}`, `trim=duration=${len}`);
+  if (T.cropL || T.cropR || T.cropT || T.cropB) {
+    const cx = Math.round(w * Math.min(0.99, T.cropL));
+    const cy = Math.round(h * Math.min(0.99, T.cropT));
+    const cw = Math.max(2, w - cx - Math.round(w * T.cropR));
+    const ch = Math.max(2, h - cy - Math.round(h * T.cropB));
+    f.push(`crop=${cw}:${ch}:${cx}:${cy}`, `pad=${w}:${h}:${cx}:${cy}:color=${bg}`);
+  }
+  if (T.flipH) f.push('hflip');
+  if (T.flipV) f.push('vflip');
+  const stmts: string[] = [];
+  let cur = `${tag}p`;
+  if (T.zoom !== 1 || T.x || T.y || T.rotate) {
+    f.push(`scale=${even(w * T.zoom)}:${even(h * T.zoom)}:flags=bicubic`);
+    if (T.rotate) {
+      const a = r3((T.rotate * Math.PI) / 180);
+      f.push(`rotate=${a}:ow=rotw(${a}):oh=roth(${a}):c=${bg}`);
+    }
+    stmts.push(`[${src}]${f.join(',')}[${tag}fg]`);
+    stmts.push(`color=c=${bg}:s=${w}x${h}:r=${fps},format=rgba[${tag}bg]`);
+    stmts.push(`[${tag}bg][${tag}fg]overlay=x=(W-w)/2+${r3(T.x * w)}:y=(H-h)/2+${r3(T.y * h)}:shortest=1:format=auto,setsar=1[${cur}]`);
+  } else stmts.push(`[${src}]${f.join(',')}[${cur}]`);
+  const g: string[] = [];
+  if (op < 1) g.push(layer ? `colorchannelmixer=aa=${r3(op)}` : `colorchannelmixer=rr=${r3(op)}:gg=${r3(op)}:bb=${r3(op)}`);
+  const alpha = layer ? ':alpha=1' : '';
+  const fi = Math.min(c.vfadeIn ?? 0, fullLen / 2);
+  const fo = Math.min(c.vfadeOut ?? 0, fullLen / 2);
+  if (fi > 0.01 && offset < fi) g.push(`fade=t=in:st=0:d=${r3(fi - offset)}${alpha}`);
+  const foSt = fullLen - fo - offset;
+  if (fo > 0.01 && foSt < len) g.push(`fade=t=out:st=${r3(Math.max(0, foSt))}:d=${r3(Math.min(fo, len - Math.max(0, foSt)))}${alpha}`);
+  if (rgba && !layer) g.push('format=yuv420p');
+  stmts.push(`[${cur}]${g.length ? g.join(',') : 'null'}[${out}]`);
+  return stmts;
+}
+
+/** Blend modes for upper-track clips: ffmpeg blend mode and the colour that leaves the picture below unchanged. */
+const BLEND: Record<string, { mode: string; neutral: string }> = {
+  screen: { mode: 'screen', neutral: 'black' },
+  add: { mode: 'addition', neutral: 'black' },
+  multiply: { mode: 'multiply', neutral: 'white' },
+  difference: { mode: 'difference', neutral: 'black' },
+};
+
+/**
  * Filter graph for one segment. Clips inside a segment are joined by blend transitions (xfade)
- * or plain concatenation. Returns the inputs it needs and its output label.
+ * or plain concatenation, then clips on upper video tracks are composited on top. Returns the
+ * inputs it needs and its output label.
  */
 function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn, overlays: TextOverlay[] = []): { inputs: string[]; filter: string[]; label: string; count: number } {
   const n = seg.f1 - seg.f0;
   const label = `seg${tag}`;
   const t0 = seg.f0 / fps;
   const t1 = seg.f1 / fps;
+  const dur = r3(n / fps);
   const texts = overlays.filter((o) => o.tx.start < t1 && o.tx.start + o.tx.duration > t0);
-  const out = texts.length ? `${tag}pre` : label;
   const inputs: string[] = [];
   const filter: string[] = [];
   let count = 0;
-  const addTexts = () => {
-    let acc = out;
-    texts.forEach((o, k) => {
-      const idx = first + count++;
-      const a = r3(Math.max(0, o.tx.start - t0));
-      const b = r3(Math.min(t1, o.tx.start + o.tx.duration) - t0);
-      const f = Math.min(o.tx.fade, o.tx.duration / 2);
-      inputs.push('-loop', '1', '-framerate', String(fps), '-t', String(r3(t1 - t0 + 1)), '-i', o.path);
-      // fades that started in an earlier segment can't be expressed (negative start): skip them
-      const fi = r3(o.tx.start - t0);
-      const fo = r3(o.tx.start + o.tx.duration - f - t0);
-      const fades = f > 0.01 ? (fi >= 0 ? `,fade=t=in:st=${fi}:d=${r3(f)}:alpha=1` : '') + (fo >= 0 ? `,fade=t=out:st=${fo}:d=${r3(f)}:alpha=1` : '') : '';
-      filter.push(`[${idx}:v]format=rgba,scale=${w}:${h}${fades}[${tag}t${k}]`);
-      const next = k === texts.length - 1 ? label : `${tag}o${k}`;
-      filter.push(`[${acc}][${tag}t${k}]overlay=0:0:enable='between(t,${a},${b})':format=auto:shortest=1,format=yuv420p[${next}]`);
-      acc = next;
-    });
+  const input = (args: string[]) => {
+    inputs.push(...args);
+    return `${first + count++}:v`;
   };
-  if (!seg.clips.length) {
-    filter.push(`color=c=black:s=${w}x${h}:r=${fps}:d=${r3(n / fps + 1)},format=yuv420p,setsar=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${out}]`);
-    addTexts();
-    return { inputs, filter, label, count };
+  // ---- the main track
+  let acc = `${tag}base`;
+  const vis = seg.hideBase ? [] : seg.clips;
+  if (!vis.length) {
+    filter.push(`color=c=black:s=${w}x${h}:r=${fps}:d=${r3(n / fps + 1)},format=yuv420p,setsar=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${acc}]`);
+  } else {
+    vis.forEach((pl, k) => {
+      const on = clipOn(pl.clip);
+      const src = on ? input(clipInputArgs(pl.clip, pl.media, fps, path)) : null;
+      filter.push(...clipGraph(pl.clip, pl.media, fps, w, h, src, `${tag}c${k}`, `${tag}m${k}`));
+    });
+    let cur = `${tag}c0`;
+    vis.slice(1).forEach((pl, i) => {
+      const k = i + 1;
+      const o = `${tag}x${k}`;
+      if (pl.overlap > 0) {
+        const tr = BLEND_TRANSITIONS[pl.clip.transition!.type]?.xfade ?? 'fade';
+        filter.push(`[${cur}][${tag}c${k}]xfade=transition=${tr}:duration=${r3(pl.overlap)}:offset=${r3(pl.start - seg.start)}[${o}]`);
+      } else filter.push(`[${cur}][${tag}c${k}]concat=n=2:v=1:a=0[${o}]`);
+      cur = o;
+    });
+    filter.push(`[${cur}]tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${acc}]`);
   }
-  seg.clips.forEach((pl, k) => {
-    inputs.push(...clipInputArgs(pl.clip, pl.media, fps, path));
-    filter.push(`[${first + k}:v]${clipVideoChain(pl.clip, pl.media, fps, w, h)}[${tag}c${k}]`);
+  // ---- upper video tracks
+  seg.layers.forEach((l, k) => {
+    const a = Math.max(l.start, t0);
+    const b = Math.min(l.end, t1);
+    if (b - a < 0.5 / fps) return;
+    const sub = windowClip(l.clip, a - l.start, b - l.start);
+    const src = input(clipInputArgs(sub, l.media, fps, path));
+    const lay = `${tag}l${k}`;
+    filter.push(...clipGraph(sub, l.media, fps, w, h, src, `${lay}r`, `${tag}L${k}`, true, a - l.start, clipLen(l.clip)));
+    const at = r3(a - t0);
+    filter.push(`[${lay}r]setpts=PTS+${at}/TB[${lay}]`);
+    const next = `${tag}y${k}`;
+    const bm = BLEND[l.clip.blend ?? 'normal'];
+    if (!bm) filter.push(`[${acc}][${lay}]overlay=0:0:eof_action=pass:format=auto,format=yuv420p[${next}]`);
+    else {
+      filter.push(`color=c=${bm.neutral}:s=${w}x${h}:r=${fps}:d=${dur},format=rgba[${lay}n]`);
+      filter.push(`[${lay}n][${lay}]overlay=0:0:eof_action=pass:format=auto,format=gbrp[${lay}f]`);
+      filter.push(`[${acc}]format=gbrp[${lay}b]`);
+      filter.push(`[${lay}b][${lay}f]blend=all_mode=${bm.mode}:shortest=1,format=yuv420p[${next}]`);
+    }
+    acc = next;
   });
-  count = seg.clips.length;
-  let acc = `${tag}c0`;
-  seg.clips.slice(1).forEach((pl, i) => {
-    const k = i + 1;
-    const out = `${tag}x${k}`;
-    if (pl.overlap > 0) {
-      const tr = BLEND_TRANSITIONS[pl.clip.transition!.type]?.xfade ?? 'fade';
-      filter.push(`[${acc}][${tag}c${k}]xfade=transition=${tr}:duration=${r3(pl.overlap)}:offset=${r3(pl.start - seg.start)}[${out}]`);
-    } else filter.push(`[${acc}][${tag}c${k}]concat=n=2:v=1:a=0[${out}]`);
-    acc = out;
+  // ---- titles that melt
+  texts.forEach((o, k) => {
+    const idx = first + count++;
+    const a = r3(Math.max(0, o.tx.start - t0));
+    const b = r3(Math.min(t1, o.tx.start + o.tx.duration) - t0);
+    const f = Math.min(o.tx.fade, o.tx.duration / 2);
+    inputs.push('-loop', '1', '-framerate', String(fps), '-t', String(r3(t1 - t0 + 1)), '-i', o.path);
+    // fades that started in an earlier segment can't be expressed (negative start): skip them
+    const fi = r3(o.tx.start - t0);
+    const fo = r3(o.tx.start + o.tx.duration - f - t0);
+    const fades = f > 0.01 ? (fi >= 0 ? `,fade=t=in:st=${fi}:d=${r3(f)}:alpha=1` : '') + (fo >= 0 ? `,fade=t=out:st=${fo}:d=${r3(f)}:alpha=1` : '') : '';
+    filter.push(`[${idx}:v]format=rgba,scale=${w}:${h}${fades}[${tag}t${k}]`);
+    const next = `${tag}o${k}`;
+    filter.push(`[${acc}][${tag}t${k}]overlay=0:0:enable='between(t,${a},${b})':format=auto:shortest=1,format=yuv420p[${next}]`);
+    acc = next;
   });
-  filter.push(`[${acc}]tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${out}]`);
-  addTexts();
+  filter.push(`[${acc}]trim=end_frame=${n},setpts=PTS-STARTPTS[${label}]`);
   return { inputs, filter, label, count };
 }
 
@@ -144,7 +278,9 @@ export function encoderArgs(enc: EncoderSettings, keyTimes: number[]): string[] 
   if (enc.trellis) a.push('-trellis', '1');
   a.push('-sc_threshold', enc.sceneCut ? '0' : '1000000000');
   const kt = keyTimes.filter((t) => t > 0.001);
-  if (kt.length) a.push('-force_key_frames', kt.map((t) => r3(t)).join(','));
+  // half a frame early: ffmpeg keys the first frame at or after each time, and rounding to
+  // milliseconds could otherwise push the key to the next frame
+  if (kt.length) a.push('-force_key_frames', kt.map((t) => r3(Math.max(0.001, t - 0.5 / enc.fps))).join(','));
   return a;
 }
 
@@ -203,8 +339,15 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
     n: seg.f1 - seg.f0,
     keys: keyTimes(project).filter((t) => t > t0 + 0.001 && t < t1 - 0.001).map((t) => r3(t - t0)),
     texts: (project.texts ?? []).filter((t) => t.moshed && t.start < t1 && t.start + t.duration > t0),
-    clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '' })),
+    clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '', ...clipLook(pl.clip) })),
+    layers: seg.layers.map((l) => ({ m: path(l.media) || JSON.stringify(l.media.source), w: l.media.width, h: l.media.height, i: l.clip.in, o: l.clip.out, s: l.clip.speed, r: l.clip.reverse, f: l.clip.fit, st: r3(l.start - t0), tr: l.track, ...clipLook(l.clip) })),
+    hb: seg.hideBase,
   });
+}
+
+/** Everything about a clip's picture besides its timing. */
+function clipLook(c: Clip) {
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0 };
 }
 
 /**
@@ -304,6 +447,8 @@ export interface ExportOptions {
   gifFps: number;
   loop: boolean;
   audio: boolean;
+  /** only this part of the timeline (seconds), e.g. the In–Out range */
+  range?: [number, number] | null;
 }
 
 export const defaultExport = (): ExportOptions => ({

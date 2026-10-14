@@ -87,7 +87,7 @@ try {
     await page.keyboard.press('Escape');
   });
   await step('add vector warp (pixel effect) and render', async () => {
-    await page.keyboard.press('a');
+    await page.keyboard.press('Shift+A');
     await page.getByRole('button', { name: /Vector Warp/ }).click();
     await page.waitForTimeout(500);
     await waitRender();
@@ -148,7 +148,8 @@ try {
       await page.getByText('Bit depth').waitFor();
       await page.keyboard.press('e');
       await page.getByRole('button', { name: /^WebM/ }).click();
-      const dl = page.waitForEvent('download', { timeout: 300000 });
+      // the vector warp from earlier is still on: slow under software GL
+      const dl = page.waitForEvent('download', { timeout: 600000 });
       await page.getByRole('button', { name: /Export WEBM/ }).click();
       const d = await dl;
       const p = path.join(shots, d.suggestedFilename());

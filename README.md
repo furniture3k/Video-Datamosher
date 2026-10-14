@@ -65,13 +65,13 @@ Bitstream effects change the compressed video itself. The decoder then reconstru
 | Code | Effect | What it does |
 |---|---|---|
 | `KEY` | Keyframe Killer | Removes I-frames, so motion after a cut lands on the previous image. All, at cuts only, random, or every Nth. |
-| `BLM` | Bloom | Repeats a P-frame so the same motion piles up. First, strongest, every Nth or random frame. |
+| `BLM` | Bloom | Repeats a P-frame so the same motion piles up. First, strongest, every Nth or random frame; each bloom fills its bar (drag the bar to set the length) or repeats a fixed number of times. |
 | `XFR` | Motion Transfer | Takes motion from elsewhere on the timeline and applies it here. |
 | `STU` | Stutter Loop | Loops short groups of motion frames, optionally ping-pong. |
 | `SHF` | Shuffle | Reorders motion frames inside small windows. |
 | `REV` | Reverse Motion | Plays motion frames backwards. |
 | `ECH` | Echo | Re-inserts motion from a few frames back. |
-| `DRP` | Frame Drop | Deletes every Nth or random frames. |
+| `DRP` | Frame Drop | Drops every Nth or random frames. |
 | `GLT` | Byte Glitch | Corrupts frame data: 11 modes including bit flips, runs, swaps, bit-shifts, inserts and deletes. |
 
 Picture effects run on the decoded frames:
@@ -82,13 +82,19 @@ Picture effects run on the decoded frames:
 | `CHR` | Chroma Drift | Offsets the colour channels, with jitter and line tearing. |
 | `SRT` | Pixel Sort | Sorts runs of pixels by brightness. |
 
-There are 16 presets to start from, and you can save your own.
+Effects that repeat or insert frames (Bloom, Stutter, Echo, Motion Transfer's insert mode, Frame Drop) have a **Timing** setting. **Keep length** (the default) makes the repeats replace the frames after them, so the effect lasts exactly as long as its bar and the picture, the sound and the playhead stay in sync. **Stretch** inserts them instead, so the video gets longer (slow, syrupy melts). Every setting has a description underneath it; the **?** button in the Inspector hides them.
+
+There are 19 presets to start from, and you can save your own.
 
 ## Editing
 
 - **Media library.** Video, images, GIFs and sound files (mp3, wav, m4a, flac, ogg). The same media can be used any number of times.
-- **Magnetic video track.** Clips butt up against each other, so deleting or trimming one closes the gap. Drag to reorder, drag edges to trim (ripple), split, duplicate, copy and paste. Speed, reverse and fit per clip.
-- **Transitions.** Mosh transitions (Melt, Bloom melt, Glitch cut, Stutter melt, Liquid melt) and classic ones (cross dissolve, dip to black or white, wipes, slides, circle, pixelize). Drag a transition's band to change its length.
+- **Magnetic main track.** Clips butt up against each other, so deleting or trimming one closes the gap. Drag to reorder, drag edges to trim (ripple), split, duplicate, copy and paste. Speed (0.05–16×), reverse, freeze frames and fit per clip.
+- **Video tracks on top.** Add Video 2, 3… above the main track for picture-in-picture, overlays and titles made from footage. Clips there are placed freely and composited with opacity and blend modes (screen, add, multiply, difference). Drag a clip between the main track and the tracks above.
+- **Transform, colour and fades.** Zoom, position, rotation, flips and crop; brightness, contrast, saturation, gamma and hue; picture fades (drag the dots on a clip's top corners). All of it happens before moshing, so it melts with everything else.
+- **Editing tools like an NLE.** Select (<kbd>A</kbd>), Trim (<kbd>T</kbd>: roll a cut, slip a clip's footage) and Blade (<kbd>B</kbd>: click to cut). Box-select with the mouse, ripple delete, turn clips off without removing them, colour labels, locked and hidden tracks, markers, In / Out marks, and Insert / Overwrite / Place on top / Append from the media panel (<kbd>F9</kbd> <kbd>F10</kbd> <kbd>F12</kbd>).
+- **Playback like an NLE.** <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> shuttle (backwards too, up to 16×), loop the In–Out range, jump between edit points and markers, and type a timecode to go straight there. The playhead and the picture always match: the mosh keeps the timeline's timing.
+- **Transitions.** Mosh transitions (Melt, Bloom melt, Glitch cut, Stutter melt, Liquid melt, Ghost melt, Rewind melt) and classic ones (cross dissolve, dip to black or white, wipes, slides, circle, pixelize). Drag a transition's band to change its length. Mosh transitions last exactly that long, then a fresh keyframe brings the next shot back clean (turn **Resolve at the end** off to let the melt run on).
 - **Audio tracks.** As many as you like, with waveforms, volume, fades, mute and solo. Each track either **follows the mosh** (stutters, skips and scrambles with the picture) or stays clean. Video clips' own sound can be muted or detached to a track.
 - **Titles.** Text with font, colour, position, shadow, box and fades. Titles sit clean on top or **melt with the video**.
 - **Instant preview.** The player shows your cut immediately, straight from the source files, and switches to the rendered mosh when it's ready (or pick **Edit** / **Mosh** yourself). Only the clips you change are re-prepared.
@@ -152,16 +158,18 @@ flowchart LR
 
 | Key | | Key | |
 |---|---|---|---|
-| <kbd>Space</kbd> | Play / pause | <kbd>R</kbd> | Randomize |
-| <kbd>S</kbd> / <kbd>Ctrl</kbd> <kbd>K</kbd> | Split at playhead | <kbd>T</kbd> | Melt at nearest cut |
-| <kbd>Del</kbd> | Delete clip / transition / effect | <kbd>D</kbd> | Duplicate |
-| <kbd>Ctrl</kbd> <kbd>C</kbd> <kbd>V</kbd> <kbd>X</kbd> | Copy / paste / cut clips | <kbd>N</kbd> | Snapping |
-| <kbd>↑</kbd> <kbd>↓</kbd> | Previous / next cut | <kbd>+</kbd> <kbd>−</kbd> <kbd>\</kbd> | Zoom / fit |
-| <kbd>←</kbd> <kbd>→</kbd> | Step one frame (<kbd>Shift</kbd>: 10) | <kbd>M</kbd> | Nudge |
-| <kbd>Home</kbd> <kbd>End</kbd> | Start / end | <kbd>V</kbd> | Variations |
-| <kbd>I</kbd> <kbd>O</kbd> | Loop in / out | <kbd>P</kbd> | Presets |
-| <kbd>L</kbd> <kbd>X</kbd> | Toggle / clear loop | <kbd>A</kbd> | Add effect |
-| <kbd>K</kbd> | Force a keyframe | <kbd>Esc</kbd> | Deselect |
+| <kbd>Space</kbd> | Play / pause | <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> | Backwards / stop / forwards (again: faster) |
+| <kbd>←</kbd> <kbd>→</kbd> | Step a frame (<kbd>Shift</kbd>: a second) | <kbd>↑</kbd> <kbd>↓</kbd> | Previous / next edit (<kbd>Shift</kbd>: marker) |
+| <kbd>A</kbd> <kbd>T</kbd> <kbd>B</kbd> | Select / Trim / Blade tool | <kbd>S</kbd> / <kbd>Ctrl</kbd> <kbd>B</kbd> | Split at playhead |
+| <kbd>Del</kbd> | Delete (<kbd>Shift</kbd>: ripple delete) | <kbd>D</kbd> | Turn clips off / on |
+| <kbd>Ctrl</kbd> <kbd>C</kbd> <kbd>V</kbd> <kbd>X</kbd> <kbd>D</kbd> | Copy / paste / cut / duplicate | <kbd>,</kbd> <kbd>.</kbd> | Nudge clips a frame |
+| <kbd>I</kbd> <kbd>O</kbd> <kbd>X</kbd> | Mark In / Out / clip | <kbd>Alt</kbd> <kbd>X</kbd> | Clear In and Out |
+| <kbd>/</kbd> | Loop on / off | <kbd>M</kbd> | Marker |
+| <kbd>F9</kbd> <kbd>F10</kbd> | Insert / overwrite picked media | <kbd>F12</kbd> (<kbd>Shift</kbd>) | Place on top (append) |
+| <kbd>Shift</kbd> <kbd>R</kbd> | Freeze frame | <kbd>Ctrl</kbd> <kbd>T</kbd> / <kbd>Alt</kbd> <kbd>T</kbd> | Melt / dissolve at nearest cut |
+| <kbd>N</kbd> | Snapping | <kbd>+</kbd> <kbd>−</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> | Zoom / fit |
+| <kbd>Shift</kbd> <kbd>K</kbd> | Force a keyframe | <kbd>Shift</kbd> <kbd>A</kbd> | Add effect |
+| <kbd>R</kbd> / <kbd>U</kbd> | Randomize / nudge settings | <kbd>V</kbd> / <kbd>P</kbd> | Variations / presets |
 | <kbd>C</kbd> | Compare with source | <kbd>E</kbd> | Export |
 | <kbd>Ctrl</kbd> <kbd>Z</kbd> | Undo (<kbd>Shift</kbd>: redo) | <kbd>?</kbd> | Help |
 

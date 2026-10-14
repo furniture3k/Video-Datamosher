@@ -2,6 +2,7 @@
 import { parseAvi, writeAvi, writeAviParts, type AviInfo } from './avi';
 import { analyzeFrame, type MoshCodec } from './bitstream';
 import { EFFECTS } from './effects';
+import { inRange, isMotion, posOf, copy } from './effects/util';
 import { hashSeed, makeRng } from './rng';
 import type { EffectInstance, Frame, Project } from './types';
 import { transitionEffects } from './timeline';
@@ -54,7 +55,72 @@ function applyOne(frames: Frame[], e: EffectInstance, prep: Prepared, project: P
   const rng = makeRng(hashSeed(project.globalSeed, e.seed, e.id));
   const def = EFFECTS[e.type];
   if (def.kind !== 'bitstream') return frames;
-  return def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames });
+  const out = def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames });
+  return def.retimes && e.params.timing !== 'stretch' ? fitRange(frames, out, e) : out;
+}
+
+/**
+ * Fit an effect's output back into its range ("Keep length"): every frame it added replaces the
+ * next frame after it (keyframes are kept: they still reset the picture), anything
+ * left over is trimmed from the end of the range, and a range that lost frames is padded by
+ * repeating its last motion. The frames in the range then take the range's timeline positions,
+ * so output frame N is timeline frame N again.
+ */
+export function fitRange(input: Frame[], out: Frame[], e: Pick<EffectInstance, 'start' | 'end'>): Frame[] {
+  const slots = input.filter((f) => inRange(f, e)).map(posOf);
+  const n = slots.length;
+  if (!n) return out;
+  const orig = new Set(input);
+  let res: Frame[] = out;
+  const count = () => res.reduce((c, f) => c + (inRange(f, e) ? 1 : 0), 0);
+  if (count() > n) {
+    res = [];
+    let debt = 0;
+    // B-frames right after a dropped frame refer to it, so they go too
+    let dropB = false;
+    for (const f of out) {
+      if (dropB && f.type === 'B' && orig.has(f)) {
+        if (inRange(f, e)) debt = Math.max(0, debt - 1);
+        continue;
+      }
+      if (inRange(f, e)) {
+        if (!orig.has(f)) debt++;
+        else if (debt > 0 && f.type !== 'I' && res.length > 0) {
+          debt--;
+          dropB = true;
+          continue;
+        }
+      }
+      dropB = false;
+      res.push(f);
+    }
+    // still too long: trim from the end of the range
+    for (let i = res.length - 1, extra = count() - n; i > 0 && extra > 0; i--)
+      if (inRange(res[i], e)) {
+        res.splice(i, 1);
+        extra--;
+      }
+  }
+  let have = count();
+  if (have < n) {
+    let last = -1;
+    res.forEach((f, i) => inRange(f, e) && (last = i));
+    const src = [...res.slice(0, last + 1)].reverse().find(isMotion) ?? res[Math.max(0, last)];
+    if (src) {
+      const pad: Frame[] = [];
+      for (; have < n; have++) pad.push(copy(src, 'dup'));
+      res = res === out ? res.slice() : res;
+      res.splice(last + 1, 0, ...pad);
+    }
+  }
+  // the range's frames take its timeline positions, in order
+  const sorted = slots.slice().sort((a, b) => a - b);
+  let k = 0;
+  return res.map((f) => {
+    if (!inRange(f, e) || k >= n) return f;
+    const at = sorted[k++];
+    return posOf(f) === at ? f : { ...f, at };
+  });
 }
 
 function finishFrames(frames: Frame[], prep: Prepared): Frame[] {
@@ -81,7 +147,7 @@ export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts:
   let frames = prep.frames.slice();
   for (const e of bitstreamEffects(project)) {
     if (EDITS_BYTES.has(e.type)) {
-      const touched = [...new Set(frames.filter((f) => f.size !== undefined && f.src >= e.start && f.src < e.end))];
+      const touched = [...new Set(frames.filter((f) => f.size !== undefined && posOf(f) >= e.start && posOf(f) < e.end))];
       if (touched.length) {
         // loaded frames are ordinary in-memory frames: swap them in
         const loaded = await load(touched);

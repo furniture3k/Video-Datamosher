@@ -2,31 +2,43 @@
   import Modal from '../components/Modal.svelte';
   const keys: [string, string][] = [
     ['Space', 'Play / pause'],
-    ['← / →', 'Step one frame (Shift = 10)'],
-    ['↑ / ↓', 'Previous / next cut'],
+    ['J / K / L', 'Play backwards / stop / play forwards (press again for 2×, 4×…)'],
+    ['← / →', 'Step one frame (Shift = one second)'],
+    ['↑ / ↓', 'Previous / next edit point (Shift = previous / next marker)'],
     ['Home / End', 'Jump to start / end'],
-    ['S  or  Ctrl K', 'Split at playhead'],
-    ['Del', 'Delete selected clip, transition or effect'],
-    ['D', 'Duplicate selected clip (or effect)'],
+    ['Click the timecode', 'Type a time to jump to: 1:30, 00:01:12:05, +2, -10f'],
+    ['A / T / B', 'Select tool / Trim tool (roll edits, slip clips) / Blade tool (click to cut)'],
+    ['Alt + drag', 'Select tool: roll a cut (on an edge) or slip a clip (on its body)'],
+    ['S  or  Ctrl B', 'Split at playhead'],
+    ['Del / Shift Del', 'Delete / ripple delete (closes the gap on upper and audio tracks)'],
+    ['D', 'Turn the selected clips off / on'],
+    ['Ctrl D', 'Duplicate selected clip'],
     ['Ctrl C / Ctrl V / Ctrl X', 'Copy / paste at playhead / cut clips'],
-    ['T', 'Melt transition at the nearest cut'],
+    ['Ctrl A', 'Select all clips'],
+    [', / .', 'Nudge selected clips one frame (Shift = 10)'],
+    ['Shift R', 'Freeze frame (2 s hold) at the playhead'],
+    ['Ctrl T / Alt T', 'Melt / cross dissolve at the nearest cut'],
+    ['I / O / X', 'Mark In / Out / the clip under the playhead (loop and export range)'],
+    ['Alt X', 'Clear In and Out'],
+    ['/', 'Loop on / off'],
+    ['M', 'Add / remove a marker'],
+    ['F9 / F10', 'Insert / overwrite the picked media clip at the playhead'],
+    ['F12 / Shift F12', 'Place the picked media on top / append it at the end'],
     ['N', 'Snapping on / off (Shift while dragging = no snap)'],
-    ['+ / − / \\', 'Zoom timeline in / out / fit'],
-    ['Esc', 'Deselect'],
-    ['I / O', 'Set loop in / out at playhead'],
-    ['L / X', 'Toggle loop / clear loop'],
+    ['+ / − / Shift Z', 'Zoom timeline in / out / fit'],
+    ['Esc', 'Back to the Select tool / deselect'],
     ['Enter', 'Render now'],
-    ['A', 'Add effect'],
+    ['Shift A', 'Add effect'],
     ['P', 'Presets'],
     ['R', 'Randomize the stack'],
-    ['M', 'Nudge settings'],
+    ['U', 'Nudge (mutate) effect settings'],
     ['V', 'Variations grid'],
-    ['K', 'Force a keyframe at playhead'],
+    ['Shift K', 'Force a keyframe at playhead'],
     ['C', 'Compare with original'],
     ['E', 'Export'],
     ['Ctrl Z / Ctrl Shift Z', 'Undo / redo'],
     ['Ctrl S', 'Save project file'],
-    ['Ctrl + wheel', 'Zoom timeline'],
+    ['Ctrl + wheel / Alt + wheel', 'Zoom timeline'],
     ['?', 'This help'],
   ];
 </script>
@@ -46,7 +58,7 @@
       <h4>Quick start</h4>
       <ol>
         <li><b>Import</b> video, photos and music (or <b>Generate</b> clips). Drag them from the Media panel onto the timeline.</li>
-        <li>Cut it like any editor: drag clips to reorder, drag their edges to trim, <span class="kbd">S</span> to split, right-click for more. Music goes on an audio track; drag the dots on an audio clip to fade it.</li>
+        <li>Cut it like any editor: drag clips to reorder, drag their edges to trim, <span class="kbd">S</span> to split, right-click for more. Stack clips on Video 2, 3… above the main track for picture-in-picture, overlays and blend modes. Music goes on an audio track; drag the dots on an audio clip to fade it.</li>
         <li>Click the <b>+</b> on a cut (or drag from the <b>Transitions</b> tab) for a dissolve, wipe, or a <b>Melt</b>: a datamosh transition.</li>
         <li>The player shows your cut instantly (<b>edit</b>) and switches to the rendered <b>mosh</b> when it's ready.</li>
         <li>Open <b>Presets</b> and try <b>Cut Transitions</b> or <b>Bloom Explosion</b>, or add effects and drag their bars on the Mosh FX lanes. Effects stay on their footage when you re-edit.</li>

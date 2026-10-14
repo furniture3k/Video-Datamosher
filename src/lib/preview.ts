@@ -5,11 +5,24 @@ import { mediaState } from './mediastate.svelte';
 import { getPcm } from './media';
 import { proxyKey } from './renderer';
 import { drawTexts } from './text';
-import { layoutVideo, sourceTime, audioSources, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
+import { layoutVideo, sourceTime, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
+import { gradeCurve, gradeMatrix } from '../engine/args';
 import { outputSize } from '../engine/args';
 import { SAMPLE_RATE } from '../engine/audio';
 import { audioCtx } from './audioctx';
-import type { MediaItem, Project } from '../engine/types';
+import { clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type MediaItem, type Project } from '../engine/types';
+
+const COMPOSITE: Record<string, GlobalCompositeOperation> = { normal: 'source-over', screen: 'screen', add: 'lighter', multiply: 'multiply', difference: 'difference' };
+
+/** Opacity of a clip's picture at local time `local` (its opacity and video fades). */
+export function clipAlpha(c: Clip, local: number, len: number): number {
+  let a = Math.max(0, Math.min(1, c.opacity ?? 1));
+  const fi = Math.min(c.vfadeIn ?? 0, len / 2);
+  const fo = Math.min(c.vfadeOut ?? 0, len / 2);
+  if (fi > 0.01) a *= Math.max(0, Math.min(1, local / fi));
+  if (fo > 0.01) a *= Math.max(0, Math.min(1, (len - local) / fo));
+  return a;
+}
 
 type Src = { url: string; proxy: boolean };
 
@@ -22,13 +35,15 @@ export class EditPreview {
   /** called when something finished loading/seeking and the frame should be redrawn */
   onDirty: () => void = () => {};
   private scratch = document.createElement('canvas');
+  private graded = document.createElement('canvas');
 
   constructor(private canvas: HTMLCanvasElement) {}
 
   /** The best playable URL for a media item (original if the browser can play it, else its proxy). */
   private source(m: MediaItem): Src | null {
     const st = mediaState[m.id];
-    const wantProxy = !(st?.playable ?? true) && st?.proxy === 'ready';
+    // the preview copy seeks much faster (a keyframe every 12 frames), so scrubbing keeps up
+    const wantProxy = st?.proxy === 'ready';
     const key = m.id + (wantProxy ? ':p' : '');
     if (this.resolved.has(key)) return this.resolved.get(key)!;
     if (!this.urls.has(key)) {
@@ -47,7 +62,7 @@ export class EditPreview {
     return null;
   }
 
-  private video(m: MediaItem, slot: number): HTMLVideoElement | null {
+  private video(m: MediaItem, slot: number | string): HTMLVideoElement | null {
     const src = this.source(m);
     if (!src) return null;
     const key = `${m.id}#${slot}#${src.proxy ? 'p' : 'o'}`;
@@ -111,15 +126,15 @@ export class EditPreview {
     // at the very end of the video show its last frame, not black
     const vEnd = placed.at(-1)?.end ?? 0;
     const tv = t >= vEnd - 1e-3 && t <= vEnd + 1e-3 ? Math.max(0, vEnd - 0.5 / fps) : t;
-    const visible = placed.filter((pl) => tv >= pl.start - 1e-6 && tv < pl.end);
+    const visible = baseHidden(p) ? [] : placed.filter((pl) => tv >= pl.start - 1e-6 && tv < pl.end && clipOn(pl.clip));
     const used = new Set<HTMLVideoElement>();
     let waiting = false;
     let unavailable = false;
 
-    const layer = (pl: Placed): CanvasImageSource | null => {
-      const m = pl.media;
+    /** The picture of a clip at timeline time tt (a playing / seeking video, an image or a thumbnail). */
+    const source = (c: Clip, m: MediaItem, start: number, slot: number | string, tt: number): CanvasImageSource | null => {
       if (m.source.kind === 'file' && m.source.isImage) return this.image(m) ?? this.thumb(m);
-      const v = this.video(m, pl.index % 2);
+      const v = this.video(m, slot);
       if (!v || v.readyState < 2) {
         const st = mediaState[m.id];
         // old projects' generated clips have no file; neither do files the browser can't play without a preview copy
@@ -129,9 +144,9 @@ export class EditPreview {
         return this.thumb(m);
       }
       used.add(v);
-      const target = sourceTime(pl.clip, tv - pl.start);
-      const rate = pl.clip.speed * speed;
-      if (playing && !pl.clip.reverse && rate >= 0.0625 && rate <= 16) {
+      const target = sourceTime(c, tt - start);
+      const rate = c.speed * speed;
+      if (playing && !c.reverse && !c.freeze && rate >= 0.0625 && rate <= 16) {
         if (Math.abs(v.playbackRate - rate) > 1e-3) v.playbackRate = rate;
         if (v.paused) {
           v.currentTime = target;
@@ -143,6 +158,7 @@ export class EditPreview {
       }
       return v;
     };
+    const layer = (pl: Placed) => source(pl.clip, pl.media, pl.start, pl.index % 2, tv);
 
     if (visible.length) {
       const a = visible[0];
@@ -151,8 +167,15 @@ export class EditPreview {
       if (b && b.overlap > 0) {
         const imgB = layer(b);
         const prog = Math.max(0, Math.min(1, (tv - b.start) / b.overlap));
-        this.blend(ctx, w, h, a, imgA, b, imgB, prog);
-      } else if (imgA) this.fit(ctx, imgA, a, w, h);
+        this.blend(ctx, w, h, a, imgA, b, imgB, prog, tv);
+      } else if (imgA) this.paint(ctx, imgA, a.clip, w, h, clipAlpha(a.clip, tv - a.start, a.end - a.start));
+    }
+
+    // clips on the upper video tracks, bottom track first
+    for (const l of layers(p)) {
+      if (t < l.start - 1e-6 || t >= l.end) continue;
+      const img = source(l.clip, l.media, l.start, 'L' + l.clip.id, t);
+      if (img) this.paint(ctx, img, l.clip, w, h, clipAlpha(l.clip, t - l.start, l.end - l.start), COMPOSITE[l.clip.blend ?? 'normal']);
     }
 
     // get the next clip ready so cuts don't stall
@@ -190,20 +213,91 @@ export class EditPreview {
     return [(w - dw) / 2, (h - dh) / 2, dw, dh];
   }
 
-  private fit(ctx: CanvasRenderingContext2D, img: CanvasImageSource, pl: Placed, w: number, h: number, dx = 0) {
-    const [x, y, dw, dh] = this.rect(img, pl.clip.fit, w, h);
+  /**
+   * Draw a clip's picture: fitted to the frame, then cropped, flipped, zoomed, rotated and moved
+   * (its Transform), colour corrected (its Grade), at opacity `alpha`. Same order as the render.
+   */
+  private paint(ctx: CanvasRenderingContext2D, img: CanvasImageSource, c: Clip, w: number, h: number, alpha = 1, op: GlobalCompositeOperation = 'source-over', dx = 0) {
+    if (alpha <= 0) return;
+    const T = transformOf(c);
+    const G = gradeOf(c);
+    const graded = !isIdentityGrade(G);
+    let target = ctx;
+    if (graded) {
+      if (this.graded.width !== w || this.graded.height !== h) {
+        this.graded.width = w;
+        this.graded.height = h;
+      }
+      target = this.graded.getContext('2d', { willReadFrequently: true })!;
+      target.clearRect(0, 0, w, h);
+    } else {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.globalCompositeOperation = op;
+    }
+    const [x, y, dw, dh] = this.rect(img, c.fit, w, h);
+    target.save();
+    if (dx) target.translate(dx, 0);
+    if (!isIdentityTransform(T)) {
+      target.translate(w / 2 + T.x * w, h / 2 + T.y * h);
+      target.rotate((T.rotate * Math.PI) / 180);
+      target.scale(T.zoom * (T.flipH ? -1 : 1), T.zoom * (T.flipV ? -1 : 1));
+      target.translate(-w / 2, -h / 2);
+      if (T.cropL || T.cropR || T.cropT || T.cropB) {
+        target.beginPath();
+        target.rect(w * T.cropL, h * T.cropT, w * Math.max(0, 1 - T.cropL - T.cropR), h * Math.max(0, 1 - T.cropT - T.cropB));
+        target.clip();
+      }
+    }
     try {
-      ctx.drawImage(img, x + dx, y, dw, dh);
+      target.drawImage(img, x, y, dw, dh);
     } catch {
       /* not ready */
     }
+    target.restore();
+    if (!graded) return ctx.restore();
+    // colour correction on the pixels: a curve, then a colour matrix (as the render does)
+    let px: ImageData;
+    try {
+      px = target.getImageData(0, 0, w, h);
+    } catch {
+      return;
+    }
+    const lut = new Uint8ClampedArray(256);
+    for (let i = 0; i < 256; i++) lut[i] = Math.round(gradeCurve(G, i / 255) * 255);
+    const m = gradeMatrix(G);
+    const ident = G.saturation === 1 && !G.hue;
+    const d = px.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (!d[i + 3]) continue;
+      const r = lut[d[i]];
+      const g = lut[d[i + 1]];
+      const b = lut[d[i + 2]];
+      if (ident) {
+        d[i] = r;
+        d[i + 1] = g;
+        d[i + 2] = b;
+      } else {
+        d[i] = m[0] * r + m[1] * g + m[2] * b;
+        d[i + 1] = m[3] * r + m[4] * g + m[5] * b;
+        d[i + 2] = m[6] * r + m[7] * g + m[8] * b;
+      }
+    }
+    target.putImageData(px, 0, 0);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.globalCompositeOperation = op;
+    ctx.drawImage(this.graded, 0, 0);
+    ctx.restore();
   }
 
-  private blend(ctx: CanvasRenderingContext2D, w: number, h: number, a: Placed, imgA: CanvasImageSource | null, b: Placed, imgB: CanvasImageSource | null, p: number) {
+  private blend(ctx: CanvasRenderingContext2D, w: number, h: number, a: Placed, imgA: CanvasImageSource | null, b: Placed, imgB: CanvasImageSource | null, p: number, tv: number) {
     const type = b.clip.transition?.type ?? 'dissolve';
     const xf = BLEND_TRANSITIONS[type]?.xfade ?? 'fade';
-    const drawA = (dx = 0) => imgA && this.fit(ctx, imgA, a, w, h, dx);
-    const drawB = (dx = 0) => imgB && this.fit(ctx, imgB, b, w, h, dx);
+    const alA = clipAlpha(a.clip, tv - a.start, a.end - a.start);
+    const alB = clipAlpha(b.clip, tv - b.start, b.end - b.start);
+    const drawA = (dx = 0) => imgA && this.paint(ctx, imgA, a.clip, w, h, alA * ctx.globalAlpha, 'source-over', dx);
+    const drawB = (dx = 0) => imgB && this.paint(ctx, imgB, b.clip, w, h, alB * ctx.globalAlpha, 'source-over', dx);
     const clipped = (r: () => void, fn: () => void) => {
       ctx.save();
       ctx.beginPath();

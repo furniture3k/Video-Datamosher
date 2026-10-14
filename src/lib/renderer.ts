@@ -204,7 +204,7 @@ export function cutsOf(project: Project): number[] {
 }
 
 /** Identity of everything that changes the moshed picture. */
-export const renderKey = (p: Project) => JSON.stringify({ c: p.clips, m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed });
+export const renderKey = (p: Project) => JSON.stringify({ c: p.clips.map(({ label: _l, ...c }) => c), v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed });
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
@@ -285,22 +285,24 @@ export async function timelineAudio(project: Project): Promise<Buses> {
 }
 
 /** Final sound for a list of output frames, as WAV bytes (or null when silent). */
-export async function moshedAudioWav(project: Project, frames: Pick<Frame, 'src' | 'tag'>[]): Promise<Uint8Array | null> {
+export async function moshedAudioWav(project: Project, frames: Pick<Frame, 'src' | 'tag' | 'at'>[]): Promise<Uint8Array | null> {
   const pcm = await moshedAudio(project, frames);
   return pcm && wav(pcm);
 }
 
 /** The finished soundtrack (interleaved stereo at SAMPLE_RATE) for these output frames. */
-export async function moshedAudio(project: Project, frames: Pick<Frame, 'src' | 'tag'>[]): Promise<Int16Array | null> {
+export async function moshedAudio(project: Project, frames: Pick<Frame, 'src' | 'tag' | 'at'>[], offset = 0): Promise<Int16Array | null> {
   const { mosh, clean } = await timelineAudio(project);
   if (!mosh && !clean) return null;
   const fps = project.encoder.fps;
   const len = Math.round(frames.length * (SAMPLE_RATE / fps)) * 2;
+  // first sample of the clean / original sound (exports of a range start part-way in)
+  const o0 = Math.round(offset * (SAMPLE_RATE / fps)) * 2;
   // buildAudio only reads the bus (and writes a new buffer), so the cached bus isn't copied
-  const out = mosh ? buildAudio(mosh, frames, fps, project.audio, project.globalSeed) : new Int16Array(len);
+  const out = mosh ? buildAudio(project.audio.mode === 'original' ? mosh.subarray(Math.min(mosh.length, o0)) : mosh, frames, fps, project.audio, project.globalSeed) : new Int16Array(len);
   if (clean) {
     const v = project.audio.volume;
-    for (let i = 0; i < out.length && i < clean.length; i++) out[i] = Math.max(-32768, Math.min(32767, out[i] + clean[i] * v));
+    for (let i = 0; i < out.length && o0 + i < clean.length; i++) out[i] = Math.max(-32768, Math.min(32767, out[i] + clean[o0 + i] * v));
   }
   return out;
 }
@@ -434,8 +436,20 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     const aviMounts: Record<string, Blob> = disk ? {} : { 'mosh.avi': avi! };
     const base = (project.name || 'mosh').replace(/[^\w-]+/g, '_');
     const fps = project.encoder.fps;
+    // only part of the timeline (In–Out): output frames whose timeline position is inside it
+    let lo = 0;
+    let hi = frames.length;
+    const range = o.range && o.format !== 'avi' ? o.range : null;
+    if (range) {
+      const pos = (f: Frame) => f.at ?? f.src;
+      const a = Math.round(range[0] * fps);
+      const b = Math.round(range[1] * fps);
+      lo = Math.max(0, frames.findIndex((f) => pos(f) >= a));
+      const end = frames.findIndex((f) => pos(f) >= b);
+      hi = Math.max(lo + 1, end < 0 ? frames.length : end);
+    }
     progress('Mixing audio', 0);
-    const pcm = o.audio && o.format !== 'gif' && o.format !== 'png' ? await moshedAudio(project, frames) : null;
+    const pcm = o.audio && o.format !== 'gif' && o.format !== 'png' ? await moshedAudio(project, frames.slice(lo, hi), lo) : null;
     const audio = !!pcm;
     // the soundtrack as a.wav: written straight to disk on desktop, an engine input in the browser
     if (pcm && disk) await writeEngineFile(ffmpeg.file!('a.wav'), wavParts(pcm));
@@ -457,10 +471,10 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
     const runner = new PostRunner(project, 0.95, true);
     const post = runner.active;
-    const n = frames.length;
+    const n = hi - lo;
 
-    // No pixel effects: encode straight from the moshed file in one pass.
-    if (!post && o.format !== 'png') {
+    // No pixel effects (and the whole timeline): encode straight from the moshed file in one pass.
+    if (!post && o.format !== 'png' && !range) {
       const out = `out.${o.format}`;
       const done = await finish(exportArgs(o, project.decoder, fps, { file: aviIn, mjpeg: false }, audio ? 'a.wav' : null, out), {
         mounts: aviMounts,
@@ -474,6 +488,7 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     // Pixel effects (or PNGs): decode, process and encode in chunks to keep memory bounded.
     const { w, h } = outputSize(project, width);
     const per = o.format === 'gif' ? n : Math.min(exportTuning.maxChunk, chunkFrames(w, h));
+    const whole = !range && per >= n;
     // encoded pieces: in memory, or (desktop) left on disk under these names
     const pieces: Uint8Array[] = [];
     const pieceNames: string[] = [];
@@ -481,11 +496,11 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     const gifJpegs: Uint8Array[] = [];
     const canvas = document.createElement('canvas');
     try {
-      for (let a = 0, k = 0; a < n; a += per, k++) {
-        const b = Math.min(n, a + per);
-        const span = (x: number) => (a + x * (b - a)) / n;
+      for (let a = lo, k = 0; a < hi; a += per, k++) {
+        const b = Math.min(hi, a + per);
+        const span = (x: number) => (a - lo + x * (b - a)) / n;
         const src = avi ?? 'mosh.avi';
-        const chunk = per >= n ? await decode(project, src, 2, n, 'Decoding', (s, p) => progress(s, p)) : await decode(project, src, 2, b, 'Decoding', (s, p) => progress(`${s} ${a + 1}–${b} of ${n}`, span(p)), { from: a, to: b });
+        const chunk = whole ? await decode(project, src, 2, n, 'Decoding', (s, p) => progress(s, p)) : await decode(project, src, 2, b, 'Decoding', (s, p) => progress(`${s} ${a - lo + 1}–${b - lo} of ${n}`, span(p)), { from: a, to: b });
         check(signal);
         const done = await runner.run(chunk, frames, a, (p) => progress(`Pixel effects ${a + 1}–${b} of ${n}`, span(p)), signal);
         check(signal);
@@ -501,8 +516,8 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
             ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
             bmp.close();
             const pb = await new Promise<Blob>((res) => canvas.toBlob((x) => res(x!), 'image/png'));
-            pngs.push({ name: `frame_${String(a + i + 1).padStart(5, '0')}.png`, data: new Uint8Array(await pb.arrayBuffer()) });
-            progress('Writing PNGs', (a + i) / n);
+            pngs.push({ name: `frame_${String(a - lo + i + 1).padStart(5, '0')}.png`, data: new Uint8Array(await pb.arrayBuffer()) });
+            progress('Writing PNGs', (a - lo + i) / n);
           }
         } else if (o.format === 'gif') gifJpegs.push(...done);
         else {

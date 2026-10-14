@@ -54,38 +54,66 @@
     store.set(mutate($state.snapshot(store.project) as never, store.totalFrames, 0.25));
   }
 
+  /** J / K / L shuttle: each press of L (or J) doubles the speed in that direction, K stops. */
+  function shuttle(dir: 1 | -1) {
+    const s = store.ui.shuttle;
+    store.ui.shuttle = store.ui.playing && Math.sign(s) === dir ? Math.max(-16, Math.min(16, s * 2)) : dir;
+    store.ui.playing = true;
+  }
+
+  const media = () => store.project.media.find((m) => m.id === store.ui.selectedMedia) ?? null;
+  function sourceEdit(fn: (m: NonNullable<ReturnType<typeof media>>) => void) {
+    const m = media();
+    if (!m) return store.toast('Pick a clip in the Media panel first (click it).');
+    fn(m);
+  }
+
   function onKey(e: KeyboardEvent) {
     const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === 'z') {
+    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    if (mod && k === 'z') {
       e.preventDefault();
       if (e.shiftKey) store.redo();
       else store.undo();
       return;
     }
-    if (mod && e.key.toLowerCase() === 'y') {
+    if (mod && k === 'y') {
       e.preventDefault();
       store.redo();
       return;
     }
-    if (mod && e.key.toLowerCase() === 's') {
+    if (mod && k === 's') {
       e.preventDefault();
       saveProjectFile();
       return;
     }
     if (inField(e)) return;
+    if (store.ui.dialog === 'live') return;
     if (mod && !store.ui.dialog) {
-      const k = e.key.toLowerCase();
       if (k === 'c' && edit.copySelected()) e.preventDefault();
       else if (k === 'v' && edit.paste()) e.preventDefault();
       else if (k === 'x' && edit.copySelected()) (e.preventDefault(), edit.deleteSelected());
-      else if (k === 'k') (e.preventDefault(), edit.splitAtPlayhead());
+      else if (k === 'k' || k === 'b' || k === '\\') (e.preventDefault(), edit.splitAtPlayhead());
       else if (k === 'd' && edit.duplicateSelected()) e.preventDefault();
+      else if (k === 't') (e.preventDefault(), edit.transitionAtPlayhead('melt'));
+      else if (k === 'a') (e.preventDefault(), (store.ui.selectedClips = [...store.project.clips.filter((c) => !edit.lockedTrack(c.track)).map((c) => c.id), ...store.project.texts.map((t) => t.id)]));
+      else if (k === '=' || k === '+') (e.preventDefault(), edit.zoom(1.5));
+      else if (k === '-') (e.preventDefault(), edit.zoom(1 / 1.5));
       return;
     }
-    if (mod || e.altKey) return;
-    if (store.ui.dialog === 'live') return;
+    if (e.altKey && !store.ui.dialog) {
+      // e.code: Alt changes e.key on macOS
+      const c = e.code;
+      if (c === 'KeyX') (e.preventDefault(), edit.markIn(null), edit.markOut(null));
+      else if (c === 'KeyI') (e.preventDefault(), edit.markIn(null));
+      else if (c === 'KeyO') (e.preventDefault(), edit.markOut(null));
+      else if (c === 'KeyT') (e.preventDefault(), edit.transitionAtPlayhead('dissolve'));
+      return;
+    }
+    if (mod) return;
     if (e.key === 'Escape') {
       if (store.ui.dialog) store.ui.dialog = null;
+      else if (store.ui.tool !== 'select') store.ui.tool = 'select';
       else if (store.ui.selectedClips.length || store.ui.selectedTransition) {
         store.ui.selectedClips = [];
         store.ui.selectedTransition = null;
@@ -96,50 +124,100 @@
       return;
     }
     if (store.ui.dialog || store.ui.welcome) return;
-    const n = store.render?.frames.length ?? 0;
-    const step = e.shiftKey ? 10 : 1;
-    const mosh = store.showingMosh;
-    const stepBy = (d: number) => {
+    const fps = store.project.encoder.fps;
+    const stepBy = (frames: number) => {
       store.ui.playing = false;
-      if (mosh) store.seekFrame(store.ui.playhead + d);
-      else store.seek(store.ui.time + d / store.project.encoder.fps);
+      store.seek(Math.round(store.ui.time * fps + frames) / fps);
     };
-    switch (e.key) {
+    const sh = e.shiftKey;
+    switch (k) {
       case ' ':
         e.preventDefault();
+        store.ui.shuttle = 1;
         store.ui.playing = !store.ui.playing;
+        break;
+      case 'l':
+        shuttle(1);
+        break;
+      case 'j':
+        shuttle(-1);
+        break;
+      case 'k':
+        if (sh) {
+          // force a clean keyframe here
+          const src = store.playFrame;
+          store.edit((p) => {
+            const m = p.encoder.keyMarkers;
+            const i = m.indexOf(src);
+            if (i >= 0) m.splice(i, 1);
+            else m.push(src);
+          });
+        } else {
+          store.ui.playing = false;
+          store.ui.shuttle = 1;
+        }
         break;
       case 'ArrowRight':
         e.preventDefault();
-        stepBy(step);
+        stepBy(sh ? fps : 1);
         break;
       case 'ArrowLeft':
         e.preventDefault();
-        stepBy(-step);
+        stepBy(sh ? -fps : -1);
         break;
       case 'ArrowUp':
-      case 'ArrowDown': {
-        // jump to the previous / next cut
+      case 'ArrowDown':
         e.preventDefault();
-        const edges = [0, ...store.cuts.map((c) => c / store.project.encoder.fps), store.duration];
-        const t = store.ui.time;
-        const to = e.key === 'ArrowDown' ? edges.find((x) => x > t + 1e-3) : [...edges].reverse().find((x) => x < t - 1e-3);
-        if (to !== undefined) store.seek(to);
+        store.ui.playing = false;
+        if (sh) edit.jumpMarker(k === 'ArrowDown' ? 1 : -1);
+        else edit.jumpEdit(k === 'ArrowDown' ? 1 : -1);
         break;
-      }
       case 'Home':
-        if (mosh) store.seekFrame(0);
-        else store.seek(0);
+        store.ui.playing = false;
+        store.seek(0);
         break;
       case 'End':
-        if (mosh) store.seekFrame(n - 1);
-        else store.seek(store.duration);
+        store.ui.playing = false;
+        store.seek(store.duration);
+        break;
+      case 'i':
+        edit.markIn();
+        break;
+      case 'o':
+        edit.markOut();
+        break;
+      case 'x':
+        edit.markClip();
+        break;
+      case '/':
+        store.ui.loopOn = !store.ui.loopOn;
+        break;
+      case 'a':
+        if (sh) store.ui.dialog = 'addEffect';
+        else store.ui.tool = 'select';
+        break;
+      case 'b':
+        store.ui.tool = 'blade';
+        break;
+      case 't':
+        store.ui.tool = 'trim';
         break;
       case 's':
         edit.splitAtPlayhead();
         break;
-      case 't':
-        edit.transitionAtPlayhead('melt');
+      case 'm':
+        edit.toggleMarker();
+        break;
+      case 'd':
+        if (!edit.toggleEnabled() && store.ui.selectedEffect) store.edit(() => (store.selected!.enabled = !store.selected!.enabled));
+        break;
+      case ',':
+      case '<':
+        edit.nudgeSelected(sh ? -10 : -1);
+        break;
+      case '.':
+      case '>':
+        edit.nudgeSelected(sh ? 10 : 1);
         break;
       case 'n':
         store.ui.snap = !store.ui.snap;
@@ -151,25 +229,17 @@
       case '-':
         edit.zoom(1 / 1.5);
         break;
+      case 'z':
+        if (sh) edit.zoomFit();
+        break;
       case '\\':
         edit.zoomFit();
         break;
-      case 'i':
-        store.ui.loop = [store.ui.playhead, Math.max(store.ui.playhead + 1, store.ui.loop?.[1] ?? n)];
-        break;
-      case 'o':
-        store.ui.loop = [Math.min(store.ui.loop?.[0] ?? 0, store.ui.playhead), store.ui.playhead + 1];
-        break;
-      case 'l':
-        store.ui.loopOn = !store.ui.loopOn;
-        break;
-      case 'x':
-        store.ui.loop = null;
-        break;
       case 'r':
-        runChaos();
+        if (sh) edit.freezeAtPlayhead();
+        else runChaos();
         break;
-      case 'm':
+      case 'u':
         runMutate();
         break;
       case 'c':
@@ -181,28 +251,24 @@
       case 'p':
         store.ui.dialog = 'presets';
         break;
-      case 'a':
-        store.ui.dialog = 'addEffect';
-        break;
       case 'v':
         if (store.project.clips.length) store.ui.dialog = 'variations';
         break;
-      case 'k': {
-        const src = store.playFrame;
-        store.edit((p) => {
-          const m = p.encoder.keyMarkers;
-          const i = m.indexOf(src);
-          if (i >= 0) m.splice(i, 1);
-          else m.push(src);
-        });
+      case 'F9':
+        e.preventDefault();
+        sourceEdit(edit.insertEdit);
         break;
-      }
-      case 'd':
-        if (!edit.duplicateSelected() && store.ui.selectedEffect) store.duplicateEffect(store.ui.selectedEffect);
+      case 'F10':
+        e.preventDefault();
+        sourceEdit(edit.overwriteEdit);
+        break;
+      case 'F12':
+        e.preventDefault();
+        sourceEdit(sh ? edit.appendEdit : edit.placeOnTop);
         break;
       case 'Delete':
       case 'Backspace':
-        if (!edit.deleteSelected() && store.ui.selectedEffect) store.removeEffect(store.ui.selectedEffect);
+        if (!edit.deleteSelected(sh) && store.ui.selectedEffect) store.removeEffect(store.ui.selectedEffect);
         break;
       case '?':
         store.ui.dialog = 'help';
@@ -212,7 +278,6 @@
         break;
     }
   }
-
   function resizeDown(e: PointerEvent) {
     const y0 = e.clientY;
     const h0 = store.ui.timelineHeight;

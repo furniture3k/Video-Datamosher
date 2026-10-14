@@ -1,6 +1,7 @@
 <script lang="ts">
   // Labelled control used by the clip / encoder / audio panels.
   import type { Snippet } from 'svelte';
+  import { store } from '../lib/store.svelte';
   let {
     label,
     help = '',
@@ -21,7 +22,7 @@
     min?: number;
     max?: number;
     step?: number;
-    options?: { value: string | number; label: string }[];
+    options?: { value: string | number; label: string; hint?: string }[];
     unit?: string;
     onchange: (v: never) => void;
     children?: Snippet;
@@ -49,10 +50,24 @@
       {#each options as o}<option value={o.value}>{o.label}</option>{/each}
     </select>
   {/if}
+  {#if store.ui.tips}
+    {@const hint = type === 'select' ? options.find((o) => o.value === value)?.hint : undefined}
+    {#if help}<p class="hint">{help}</p>{/if}
+    {#if hint}<p class="hint opt">{hint}</p>{/if}
+  {/if}
   {@render children?.()}
 </div>
 
 <style>
+  .hint {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--text-3);
+  }
+  .hint.opt {
+    color: var(--text-2);
+  }
   .field {
     display: flex;
     flex-direction: column;

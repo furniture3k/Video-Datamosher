@@ -2,12 +2,13 @@
   import { store } from '../lib/store.svelte';
   import { addFiles, addToTimeline } from '../lib/media';
   import { mediaState } from '../lib/mediastate.svelte';
-  import { removeMedia, setTransition, transitionAtPlayhead } from '../lib/edit';
+  import { removeMedia, setTransition, transitionAtPlayhead, insertEdit, overwriteEdit, placeOnTop, appendEdit } from '../lib/edit';
   import { BLEND_TRANSITIONS, MOSH_TRANSITIONS } from '../engine/timeline';
   import type { MediaItem, TransitionType } from '../engine/types';
   import Icon from './Icon.svelte';
   let fileInput = $state<HTMLInputElement>();
   let tab = $state<'media' | 'transitions'>('media');
+  const picked = $derived(store.project.media.find((m) => m.id === store.ui.selectedMedia));
 
   const tc = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
   const uses = $derived.by(() => {
@@ -64,8 +65,8 @@
       {#each store.project.media as m (m.id)}
         {@const st = mediaState[m.id]}
         {@const k = kind(m)}
-        <div class="item" draggable="true" ondragstart={(e) => dragMedia(e, m)} role="listitem" title="Drag onto the timeline, or double-click to add it at the end">
-          <button class="main" ondblclick={() => addToTimeline(m)} onclick={() => {}}>
+        <div class="item" class:picked={store.ui.selectedMedia === m.id} draggable="true" ondragstart={(e) => dragMedia(e, m)} role="listitem" title="Drag onto the timeline, double-click to add it at the end, or click to pick it for Insert / Overwrite (F9 / F10)">
+          <button class="main" ondblclick={() => addToTimeline(m)} onclick={() => (store.ui.selectedMedia = store.ui.selectedMedia === m.id ? null : m.id)}>
             <span class="thumb" class:audio={k === 'audio'}>
               {#if m.thumb}<img src={m.thumb} alt="" draggable="false" />{:else}<Icon name={k === 'audio' ? 'music' : 'film'} />{/if}
               {#if uses.get(m.id)}<span class="used mono" title="Clips using this media">{uses.get(m.id)}</span>{/if}
@@ -92,6 +93,17 @@
         </button>
       {/each}
     </div>
+    {#if picked}
+      <div class="srcedit" role="toolbar" aria-label="Edit the picked clip into the timeline">
+        <span class="small faint nm">{picked.source.name}</span>
+        <div class="row">
+          <button class="small" title="Insert at the playhead: the main track splits there and moves along  F9" onclick={() => insertEdit(picked)}>Insert</button>
+          <button class="small" title="Overwrite from the playhead: replaces what's on the main track for the clip's length  F10" onclick={() => overwriteEdit(picked)}>Overwrite</button>
+          <button class="small" title="Place on top: on a video track above, at the playhead (picture-in-picture, overlays)  F12" onclick={() => placeOnTop(picked)}>On top</button>
+          <button class="small" title="Append at the end of the main track  Shift F12" onclick={() => appendEdit(picked)}>Append</button>
+        </div>
+      </div>
+    {/if}
   {:else}
     <div class="list trans">
       <p class="small muted hint">Drag onto a cut in the video track, or click to apply to the selected cut (or the one nearest the playhead).</p>
@@ -106,7 +118,7 @@
       <div class="label sect">Classic</div>
       <div class="grid">
         {#each Object.entries(BLEND_TRANSITIONS) as [id, t]}
-          <button class="tr" draggable="true" ondragstart={(e) => dragTransition(e, id)} onclick={() => applyTransition(id as TransitionType)}>
+          <button class="tr" draggable="true" ondragstart={(e) => dragTransition(e, id)} onclick={() => applyTransition(id as TransitionType)} title={t.description}>
             <span class="sw {id}"></span>{t.name}
           </button>
         {/each}
@@ -345,5 +357,30 @@
     .ctl {
       opacity: 1;
     }
+  }
+  .item.picked {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
+  }
+  .srcedit {
+    border-top: 1px solid var(--line);
+    padding: 6px 8px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: none;
+  }
+  .srcedit .nm {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .srcedit .row {
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .srcedit button {
+    flex: 1;
+    padding: 0 6px;
   }
 </style>

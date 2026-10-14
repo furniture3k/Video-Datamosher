@@ -46,7 +46,7 @@
         aria-label="Randomize amount"
       />
     </div>
-    <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  M"><Icon name="nudge" /><span class="lbl">Nudge</span></button>
+    <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  U"><Icon name="nudge" /><span class="lbl">Nudge</span></button>
     <button class="ghost" onclick={() => (store.ui.dialog = 'variations')} disabled={!hasClips} title="Compare several variations side by side  V"><Icon name="grid" /><span class="lbl">Variations</span></button>
   </nav>
 

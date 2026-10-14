@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
-  import { layoutVideo, clipLen, nearestCut, mediaOf, transitionName, isBlend, isMoshTransition, remapToFootage, trimClip, moveVideo, type Placed } from '../engine/timeline';
-  import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type Project, type TextClip, type TransitionType } from '../engine/types';
+  import { layoutVideo, clipLen, nearestCut, mediaOf, transitionName, isBlend, isMoshTransition, remapToFootage, trimClip, moveVideo, rollEdit, slipClip, changeVideoTrack, isOverlayTrack, clipEnd, splitClip, type Placed } from '../engine/timeline';
+  import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project, type TextClip, type TransitionType } from '../engine/types';
+  import { tc } from '../lib/timecode';
   import { mediaState } from '../lib/mediastate.svelte';
   import { addFiles, addToTimeline } from '../lib/media';
   import * as edit from '../lib/edit';
@@ -29,6 +31,13 @@
   const duration = $derived(store.duration);
   const placed = $derived(layoutVideo(store.project));
   const audioTracks = $derived(store.project.tracks.filter((t) => t.kind === 'audio' && t.id !== CLIP_AUDIO));
+  /** upper video tracks, top one first (as drawn) */
+  const upperTracks = $derived(edit.videoTracks(store.project).reverse().map((id) => store.project.tracks.find((t) => t.id === id)!));
+  const mainTrack = $derived(store.project.tracks.find((t) => t.id === VIDEO_TRACK));
+  const markers = $derived(store.project.markers ?? []);
+  const locked = (track: string) => edit.lockedTrack(track);
+  /** drag kind of a clip: the magnetic main track, a freely placed clip, or a title */
+  const kindOf = (c: Clip): 'v' | 'a' => (c.track === VIDEO_TRACK ? 'v' : 'a');
   const clipAudioTrack = $derived(store.project.tracks.find((t) => t.id === CLIP_AUDIO));
   const fitPps = $derived(Math.max(2, (viewW - G - 30) / Math.max(5, duration)));
   const pps = $derived(store.ui.pxPerSec || fitPps);
@@ -66,6 +75,9 @@
     for (const pl of placed) if (pl.clip.id !== exclude) t.push(pl.start, pl.end);
     for (const c of store.project.clips) if (c.track !== VIDEO_TRACK && c.id !== exclude) t.push(c.start, c.start + clipLen(c));
     for (const tx of store.project.texts) if (tx.id !== exclude) t.push(tx.start, tx.start + tx.duration);
+    for (const m of markers) t.push(m.t);
+    if (store.ui.inPoint !== null) t.push(store.ui.inPoint);
+    if (store.ui.outPoint !== null) t.push(store.ui.outPoint);
     return t;
   }
   function snapT(t: number, ev: { shiftKey: boolean }, exclude: string | null, targets: number[] | null = null): number {
@@ -80,11 +92,16 @@
   // ---------------------------------------------------------------- dragging
   type Drag =
     | { k: 'scrub' }
-    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | TextClip; before: Project; grab: number; insert?: number; targets: number[] }
+    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | TextClip; before: Project; grab: number; insert?: number; targets: number[]; to?: string; toT?: number }
     | { k: 'trim'; id: string; kind: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextClip; before: Project; targets: number[] }
     | { k: 'fade'; id: string; edge: 'in' | 'out'; x0: number; orig: Clip }
     | { k: 'fx'; id: string; mode: 'move' | 'l' | 'r'; x0: number; s0: number; e0: number }
-    | { k: 'trans'; id: string; x0: number; d0: number; before: Project };
+    | { k: 'trans'; id: string; x0: number; d0: number; before: Project }
+    | { k: 'roll'; left: string; right: string; x0: number; origL: Clip; origR: Clip; before: Project; targets: number[]; cut: number }
+    | { k: 'slip'; id: string; x0: number; orig: Clip; before: Project }
+    | { k: 'vfade'; id: string; edge: 'in' | 'out'; x0: number; orig: Clip }
+    | { k: 'marquee'; x0: number; y0: number; x1: number; y1: number; add: boolean; base: string[]; moved: boolean; t: number }
+    | { k: 'marker'; id: string; x0: number; t0: number; moved: boolean };
   let drag = $state<Drag | null>(null);
 
   // Touch: a finger on a clip or effect bar scrolls the timeline unless it's held still for a
@@ -125,13 +142,20 @@
     if (a && a !== document.body && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(a.tagName)) a.blur();
   }
 
+  /** Empty track area: click moves the playhead (and deselects), drag draws a selection box. */
   function scrubDown(e: PointerEvent) {
     if (e.button !== 0) return;
     // on touch, lanes scroll; a tap seeks
     if (touchGate(e, () => {}, () => ((store.ui.playing = false), store.seek(laneT(e))))) return;
+    if (store.ui.tool === 'blade') return;
+    const add = e.shiftKey || e.metaKey || e.ctrlKey;
+    drag = { k: 'marquee', x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, add, base: add ? [...store.ui.selectedClips] : [], moved: false, t: snapT(laneT(e), e, null) };
+  }
+  function playheadDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
     store.ui.playing = false;
     drag = { k: 'scrub' };
-    store.seek(snapT(laneT(e), e, null));
   }
   function rulerDown(e: PointerEvent) {
     if (e.button !== 0) return;
@@ -144,6 +168,15 @@
     if (e.button !== 0) return;
     e.stopPropagation();
     menu = null;
+    const c = kind === 't' ? undefined : store.project.clips.find((x) => x.id === id);
+    if (c && locked(c.track)) return;
+    if (store.ui.tool === 'blade' && e.pointerType !== 'touch') return bladeAt(e, id, kind);
+    if (c && (store.ui.tool === 'trim' || e.altKey) && e.pointerType !== 'touch') {
+      // slip: same place and length, other footage
+      store.selectClip(id);
+      drag = { k: 'slip', id, x0: e.clientX, orig: clone(c), before: clone($state.snapshot(store.project)) as Project };
+      return;
+    }
     const ev = { clientX: e.clientX, clientY: e.clientY, shiftKey: false } as PointerEvent;
     const hold = () => {
       store.selectClip(id);
@@ -162,9 +195,38 @@
     drag = { k: 'move', id, kind, x0: e.clientX, dx: 0, moved: false, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, grab: laneT(e) - start, targets: snapTargets(id) };
   }
 
+  /** Blade tool: cut the clip where it was clicked. */
+  function bladeAt(e: PointerEvent, id: string, kind: 'v' | 'a' | 't') {
+    const t = snapT(laneT(e), e, id);
+    if (kind === 't') {
+      const tx = store.project.texts.find((x) => x.id === id);
+      if (!tx || t <= tx.start + 0.05 || t >= tx.start + tx.duration - 0.05) return;
+      store.edit((p) => {
+        const o = p.texts.find((x) => x.id === id)!;
+        p.texts.push({ ...clone($state.snapshot(o)) as TextClip, id: Math.random().toString(36).slice(2, 10), start: t, duration: o.start + o.duration - t });
+        o.duration = t - o.start;
+      });
+      return;
+    }
+    store.editTimeline((p) => void splitClip(p, id, t));
+  }
+
   function edgeDown(e: PointerEvent, id: string, kind: 'v' | 'a' | 't', edge: 'l' | 'r') {
     if (e.button !== 0) return;
     e.stopPropagation();
+    const c0 = kind === 't' ? undefined : store.project.clips.find((x) => x.id === id);
+    if (c0 && locked(c0.track)) return;
+    if (store.ui.tool === 'blade') return bladeAt(e, id, kind);
+    // roll: Trim tool or Alt on a cut between two main-track clips
+    if (kind === 'v' && (store.ui.tool === 'trim' || e.altKey)) {
+      const i = placed.findIndex((p) => p.clip.id === id);
+      const l = edge === 'r' ? placed[i] : placed[i - 1];
+      const r = edge === 'r' ? placed[i + 1] : placed[i];
+      if (l && r && r.overlap <= 0) {
+        drag = { k: 'roll', left: l.clip.id, right: r.clip.id, x0: e.clientX, origL: clone(l.clip), origR: clone(r.clip), before: clone($state.snapshot(store.project)) as Project, targets: snapTargets(null).filter((x) => Math.abs(x - r.start) > 1e-3), cut: r.start };
+        return;
+      }
+    }
     store.selectClip(id);
     const orig = kind === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     drag = { k: 'trim', id, kind, edge, x0: e.clientX, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, targets: snapTargets(id) };
@@ -172,8 +234,39 @@
 
   function fadeDown(e: PointerEvent, c: Clip, edge: 'in' | 'out') {
     e.stopPropagation();
+    if (locked(c.track)) return;
     store.selectClip(c.id);
     drag = { k: 'fade', id: c.id, edge, x0: e.clientX, orig: clone(c) };
+  }
+  function vfadeDown(e: PointerEvent, c: Clip, edge: 'in' | 'out') {
+    e.stopPropagation();
+    if (locked(c.track)) return;
+    store.selectClip(c.id);
+    drag = { k: 'vfade', id: c.id, edge, x0: e.clientX, orig: clone(c) };
+  }
+
+  // ---------------------------------------------------------------- markers
+  let editingMarker = $state<string | null>(null);
+  function markerDown(e: PointerEvent, id: string) {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const m = markers.find((x) => x.id === id);
+    if (m) drag = { k: 'marker', id, x0: e.clientX, t0: m.t, moved: false };
+  }
+  function markerMenu(e: MouseEvent, id: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    store.edit((p) => (p.markers = (p.markers ?? []).filter((m) => m.id !== id)));
+  }
+
+  // ---------------------------------------------------------------- auto-scroll while dragging
+  function edgeScroll(e: PointerEvent) {
+    if (!scroller || !drag || drag.k === 'marquee') return;
+    const r = scroller.getBoundingClientRect();
+    const left = r.left + G;
+    const zone = 36;
+    if (e.clientX < left + zone) scroller.scrollLeft -= Math.ceil((left + zone - e.clientX) / 3);
+    else if (e.clientX > r.right - zone) scroller.scrollLeft += Math.ceil((e.clientX - (r.right - zone)) / 3);
   }
 
   function fxDown(e: PointerEvent, id: string, mode: 'move' | 'l' | 'r') {
@@ -210,7 +303,53 @@
     }
     const d = drag;
     if (!d) return;
+    edgeScroll(e);
     if (d.k === 'scrub') return store.seek(snapT(laneT(e), e, null));
+    if (d.k === 'marquee') {
+      d.x1 = e.clientX;
+      d.y1 = e.clientY;
+      if (!d.moved && Math.hypot(d.x1 - d.x0, d.y1 - d.y0) < 5) return;
+      d.moved = true;
+      const x0 = Math.min(d.x0, d.x1);
+      const x1 = Math.max(d.x0, d.x1);
+      const y0 = Math.min(d.y0, d.y1);
+      const y1 = Math.max(d.y0, d.y1);
+      const hit: string[] = [];
+      scroller.querySelectorAll<HTMLElement>('[data-clip]').forEach((el) => {
+        const r = el.getBoundingClientRect();
+        if (r.right >= x0 && r.left <= x1 && r.bottom >= y0 && r.top <= y1) hit.push(el.dataset.clip!);
+      });
+      store.ui.selectedClips = [...new Set([...d.base, ...hit])];
+      store.ui.selectedTransition = null;
+      return;
+    }
+    if (d.k === 'marker') {
+      const m = store.project.markers?.find((x) => x.id === d.id);
+      if (!m) return;
+      if (!d.moved && Math.abs(e.clientX - d.x0) < 4) return;
+      d.moved = true;
+      m.t = Math.max(0, Math.min(duration, snapT(d.t0 + (e.clientX - d.x0) / pps, e, null, snapTargets(null).filter((x) => Math.abs(x - d.t0) > 1e-6))));
+      return;
+    }
+    if (d.k === 'roll') {
+      let dt = (e.clientX - d.x0) / pps;
+      dt = snapT(d.cut + dt, e, null, d.targets) - d.cut;
+      rollEdit(store.project, d.left, d.right, dt, d.origL, d.origR);
+      return;
+    }
+    if (d.k === 'slip') {
+      slipClip(store.project, d.id, (e.clientX - d.x0) / pps, d.orig);
+      return;
+    }
+    if (d.k === 'vfade') {
+      const c = store.project.clips.find((x) => x.id === d.id);
+      if (!c) return;
+      const dt = (e.clientX - d.x0) / pps;
+      const max = clipLen(c);
+      if (d.edge === 'in') c.vfadeIn = Math.round(Math.max(0, Math.min(max - (c.vfadeOut ?? 0), (d.orig.vfadeIn ?? 0) + dt)) * 100) / 100;
+      else c.vfadeOut = Math.round(Math.max(0, Math.min(max - (c.vfadeIn ?? 0), (d.orig.vfadeOut ?? 0) - dt)) * 100) / 100;
+      return;
+    }
     if (d.k === 'fx') {
       const df = Math.round(((e.clientX - d.x0) / pps) * fps);
       const fx = store.project.effects.find((f) => f.id === d.id);
@@ -265,7 +404,16 @@
       if (!d.moved && Math.abs(d.dx) < 4) return;
       d.moved = true;
       const t = laneT(e);
+      const lane = (document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-track]') as HTMLElement | null)?.dataset.track;
       if (d.kind === 'v') {
+        // onto an upper video track: it leaves the main track
+        if (lane && isOverlayTrack(lane) && !locked(lane)) {
+          d.to = lane;
+          d.toT = snapT(Math.max(0, t - d.grab), e, d.id, d.targets);
+          d.insert = undefined;
+          return;
+        }
+        d.to = undefined;
         d.insert = nearestCut(d.before, t);
         return;
       }
@@ -280,13 +428,20 @@
       }
       const c = store.project.clips.find((x) => x.id === d.id)!;
       const len = clipLen(c);
+      // an upper-track clip dropped on the main track goes in at the nearest cut
+      if (lane === VIDEO_TRACK && isOverlayTrack(c.track)) {
+        d.to = VIDEO_TRACK;
+        d.insert = nearestCut(d.before, t);
+        return;
+      }
+      d.to = undefined;
+      d.insert = undefined;
       let s = Math.max(0, t - d.grab);
       const s2 = snapT(s, e, d.id, d.targets);
       s = s2 !== s ? s2 : snapT(s + len, e, d.id, d.targets) - len;
       c.start = Math.max(0, s);
-      const lane = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-track]') as HTMLElement | null;
-      const tr = lane?.dataset.track;
-      if (tr && tr !== VIDEO_TRACK && tr !== CLIP_AUDIO) c.track = tr;
+      // clips change tracks only between tracks of their kind
+      if (lane && lane !== VIDEO_TRACK && lane !== CLIP_AUDIO && isOverlayTrack(lane) === isOverlayTrack(c.track) && !locked(lane)) c.track = lane;
     }
   }
 
@@ -308,13 +463,42 @@
     const d = drag;
     drag = null;
     if (!d || d.k === 'scrub') return;
+    if (d.k === 'marquee') {
+      if (!d.moved) {
+        // a click on empty space: move the playhead there and drop the selection
+        store.ui.playing = false;
+        store.seek(d.t);
+        if (!d.add) {
+          store.ui.selectedClips = [];
+          store.ui.selectedTransition = null;
+        }
+      }
+      return;
+    }
+    if (d.k === 'marker') {
+      if (d.moved) store.commit('marker' + d.id + Math.random());
+      else store.seek(d.t0);
+      return;
+    }
+    if (d.k === 'vfade') return store.commit('vfade' + d.id + Math.random());
+    if (d.k === 'roll' || d.k === 'slip') {
+      remapToFootage(d.before, store.project);
+      return store.commit(d.k + Math.random());
+    }
     if (d.k === 'fx') return store.commit('fx-' + d.id + Math.random());
     if (d.k === 'trans' || d.k === 'fade') {
       if (d.k === 'trans') remapToFootage(d.before, store.project);
       return store.commit(d.k + d.id + Math.random());
     }
     if (d.k === 'move' && d.kind === 'v') {
-      if (d.moved && d.insert !== undefined) store.editTimeline((p) => moveVideo(p, d.id, d.insert!));
+      if (d.moved && d.to) store.editTimeline((p) => changeVideoTrack(p, d.id, d.to!, d.toT ?? 0));
+      else if (d.moved && d.insert !== undefined) store.editTimeline((p) => moveVideo(p, d.id, d.insert!));
+      return;
+    }
+    if (d.k === 'move' && d.to === VIDEO_TRACK && d.insert !== undefined) {
+      // undo the live moves of the drag, then make it one edit
+      store.set(d.before, false);
+      store.editTimeline((p) => changeVideoTrack(p, d.id, VIDEO_TRACK, 0, d.insert));
       return;
     }
     if ((d.k === 'move' && d.moved) || d.k === 'trim') {
@@ -383,6 +567,24 @@
     await laneDrop(e, id);
   }
 
+  async function newVideoTrackDrop(e: DragEvent) {
+    const k = dragKind(e);
+    if (k !== 'media' && k !== 'files') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = edit.addVideoTrack();
+    hint = { track: id, start: snapT(laneT(e), e, null) };
+    await laneDrop(e, id);
+  }
+
+  /** Blade tool: a line follows the mouse where the cut would go. */
+  let bladeX = $state<number | null>(null);
+  function bladeHover(e: PointerEvent) {
+    if (store.ui.tool !== 'blade' || e.pointerType === 'touch') return;
+    const onLane = (e.target as HTMLElement).closest('.lane:not(.ruler)');
+    bladeX = onLane ? x(snapT(laneT(e), e, null)) : null;
+  }
+
   // ---------------------------------------------------------------- context menu
   let menu = $state<{ x: number; y: number; id: string; kind: 'v' | 'a' | 't' } | null>(null);
   function openMenu(e: MouseEvent, id: string, kind: 'v' | 'a' | 't') {
@@ -395,8 +597,9 @@
     if (!sel.has(id)) store.selectClip(id);
     // keep the menu on screen
     menuAt = performance.now();
-    menu = { x: Math.max(4, Math.min(x, window.innerWidth - 220)), y: Math.max(4, Math.min(y, window.innerHeight - 330)), id, kind };
+    menu = { x: Math.max(4, Math.min(x, window.innerWidth - 220)), y: Math.max(4, Math.min(y, window.innerHeight - 500)), id, kind };
   }
+  const CLIP_LABELS = ['#d9534f', '#e8833a', '#e0c341', '#5cc46b', '#4fa3e0', '#9b7be0', '#d95b8f'];
   const menuClip = $derived(menu && menu.kind !== 't' ? store.project.clips.find((c) => c.id === menu!.id) : undefined);
 
   // ---------------------------------------------------------------- canvases
@@ -483,7 +686,7 @@
   }
 
   function onWheel(e: WheelEvent) {
-    if (e.ctrlKey || e.metaKey) {
+    if (e.ctrlKey || e.metaKey || e.altKey) {
       e.preventDefault();
       const t = laneT(e);
       const before = (e.clientX - (rulerLane?.getBoundingClientRect().left ?? 0));
@@ -499,13 +702,13 @@
     if (scroller && scroller.scrollWidth <= scroller.clientWidth + 1) scroller.scrollLeft = 0;
   });
 
-  // keep the playhead in view while playing
+  // keep the playhead in view while playing or jumping around (not while dragging: that scrolls itself)
   $effect(() => {
-    if (!scroller || !store.ui.playing) return;
     const px = x(store.ui.time);
+    if (!scroller || untrack(() => drag)) return;
     const visL = scroller.scrollLeft;
     const visW = scroller.clientWidth - G;
-    if (px < visL || px > visL + visW - 30) scroller.scrollLeft = px - 40;
+    if (px < visL || px > visL + visW - 30) scroller.scrollLeft = Math.max(0, px - (store.ui.playing ? 40 : visW / 2));
   });
 
   const outX = $derived(nOut ? (store.ui.playhead / nOut) * outW : 0);
@@ -516,24 +719,39 @@
 
 <svelte:window onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp} onclick={closeMenu} />
 
+{#if drag?.k === 'marquee' && drag.moved}
+  <div class="marquee" style="left:{Math.min(drag.x0, drag.x1)}px;top:{Math.min(drag.y0, drag.y1)}px;width:{Math.abs(drag.x1 - drag.x0)}px;height:{Math.abs(drag.y1 - drag.y0)}px"></div>
+{/if}
+
 <div class="wrap">
   <div class="toolbar" class:narrow>
     <button class="ghost" title="Split at playhead  S" onclick={edit.splitAtPlayhead} disabled={!store.project.clips.length}><Icon name="blade" /><span class="tlbl">Split</span></button>
-    <button class="ghost" title="Delete selected  Del" onclick={edit.deleteSelected} disabled={!store.ui.selectedClips.length && !store.ui.selectedTransition}><Icon name="trash" /><span class="tlbl">Delete</span></button>
+    <button class="ghost" title="Delete selected  Del" onclick={() => edit.deleteSelected()} disabled={!store.ui.selectedClips.length && !store.ui.selectedTransition}><Icon name="trash" /><span class="tlbl">Delete</span></button>
     <button class="ghost" title="Duplicate selected  D" onclick={edit.duplicateSelected} disabled={!store.ui.selectedClips.length}><Icon name="copy" /><span class="tlbl">Duplicate</span></button>
-    <button class="ghost" title="Add a melt at the cut nearest the playhead  T" onclick={() => edit.transitionAtPlayhead('melt')} disabled={placed.length < 2}><Icon name="split" /><span class="tlbl">Transition</span></button>
+    <button class="ghost" title="Add a melt at the cut nearest the playhead  Ctrl T" onclick={() => edit.transitionAtPlayhead('melt')} disabled={placed.length < 2}><Icon name="split" /><span class="tlbl">Transition</span></button>
     <button class="ghost" title="Add a text title at the playhead" onclick={() => edit.addText()}><Icon name="text" /><span class="tlbl">Text</span></button>
+    <span class="tsep"></span>
+    <span class="tools" role="radiogroup" aria-label="Timeline tool">
+      <button class="icon ghost" class:on={store.ui.tool === 'select'} role="radio" aria-checked={store.ui.tool === 'select'} title="Select tool  A: drag clips to move, edges to trim (Alt: roll a cut, slip a clip)" aria-label="Select tool" onclick={() => (store.ui.tool = 'select')}><Icon name="pointer" /></button>
+      <button class="icon ghost" class:on={store.ui.tool === 'trim'} role="radio" aria-checked={store.ui.tool === 'trim'} title="Trim tool  T: drag a cut to roll it (one clip gets longer, the next shorter), drag a clip to slip its footage" aria-label="Trim tool" onclick={() => (store.ui.tool = 'trim')}><Icon name="trim" /></button>
+      <button class="icon ghost" class:on={store.ui.tool === 'blade'} role="radio" aria-checked={store.ui.tool === 'blade'} title="Blade tool  B: click a clip to cut it there" aria-label="Blade tool" onclick={() => (store.ui.tool = 'blade')}><Icon name="blade" /></button>
+    </span>
+    <button class="icon ghost" title="Add / remove a marker at the playhead  M" aria-label="Marker" onclick={edit.toggleMarker}><Icon name="marker" /></button>
+    <button class="icon ghost" title="Freeze frame: hold the picture at the playhead for 2 s  Shift R" aria-label="Freeze frame" onclick={() => edit.freezeAtPlayhead()} disabled={!store.project.clips.length}><Icon name="freeze" /></button>
     <span class="tsep"></span>
     <button class="icon ghost" class:on={store.ui.snap} title="Snapping  N (hold Shift while dragging to ignore)" aria-label="Snapping" onclick={() => (store.ui.snap = !store.ui.snap)}><Icon name="magnet" /></button>
     <span class="grow"></span>
-    <span class="mono small faint dur">{fmtDur(store.ui.time)} / {fmtDur(duration)}</span>
+    {#if store.ui.inPoint !== null || store.ui.outPoint !== null}
+      <button class="ghost small inout mono" title="In–Out range (loop and export). Click to clear  Alt X" onclick={() => (edit.markIn(null), edit.markOut(null))}>{tc(store.ui.inPoint ?? 0, fps)} → {tc(store.ui.outPoint ?? duration, fps)} ×</button>
+    {/if}
+    <span class="mono small faint dur">{tc(store.ui.time, fps)} / {tc(duration, fps)}</span>
     <button class="icon ghost" title="Zoom out  −" aria-label="Zoom out" onclick={() => edit.zoom(1 / 1.5)}><span class="zt">−</span></button>
     <button class="icon ghost" title="Zoom in  +  (Ctrl+wheel)" aria-label="Zoom in" onclick={() => edit.zoom(1.5)}><span class="zt">+</span></button>
     <button class="icon ghost" class:on={!store.ui.pxPerSec} title="Fit the whole timeline" aria-label="Zoom to fit" onclick={edit.zoomFit}><Icon name="fit" /></button>
   </div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="tl" bind:this={scroller} bind:clientWidth={viewW} onwheel={onWheel} onpointerdowncapture={releaseFocus}>
+  <div class="tl tool-{store.ui.tool}" bind:this={scroller} bind:clientWidth={viewW} onwheel={onWheel} onpointerdowncapture={releaseFocus} onpointermove={bladeHover} onpointerleave={() => (bladeX = null)}>
     <div class="inner" class:narrow style="width:{G + W}px;--g:{G}px">
       <!-- ruler -->
       <div class="trow ruler-row">
@@ -543,6 +761,26 @@
           {#each ticks.out as s}
             <div class="tick" style="left:{x(s)}px"><span class="mono">{fmtTick(s)}</span></div>
           {/each}
+          {#if store.ui.inPoint !== null || store.ui.outPoint !== null}
+            {@const a = store.ui.inPoint ?? 0}
+            {@const b = store.ui.outPoint ?? duration}
+            <div class="inoutr" class:off={!store.ui.loopOn} style="left:{x(a)}px;width:{Math.max(1, x(b) - x(a))}px" title="In–Out range"></div>
+          {/if}
+          {#each markers as m (m.id)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="marker" style="left:{x(m.t)}px;--mc:{m.color}" title="{m.name || 'Marker'} · {tc(m.t, fps)}. Click to jump, drag to move, double-click to name, right-click to delete." onpointerdown={(e) => markerDown(e, m.id)} ondblclick={(e) => (e.stopPropagation(), (editingMarker = m.id))} oncontextmenu={(e) => markerMenu(e, m.id)}>
+              {#if m.name}<span class="mname">{m.name}</span>{/if}
+            </div>
+            {#if editingMarker === m.id}
+              <!-- svelte-ignore a11y_autofocus -->
+              <input class="medit" style="left:{x(m.t) + 6}px" autofocus value={m.name} placeholder="Marker name" aria-label="Marker name"
+                onpointerdown={(e) => e.stopPropagation()}
+                onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur(); }}
+                onblur={(e) => { const v = (e.target as HTMLInputElement).value; editingMarker = null; store.edit(() => (m.name = v)); }} />
+            {/if}
+          {/each}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="phandle" style="left:{x(store.ui.time)}px" title="Playhead: drag to scrub" onpointerdown={playheadDown}></div>
         </div>
       </div>
 
@@ -597,7 +835,7 @@
 
       <!-- keyframes -->
       <div class="trow">
-        <div class="g g-keys" title="Blue ticks: keyframes in the prepared video. Red diamonds: keyframes you forced (double-click the lane or press K).">Keyframes</div>
+        <div class="g g-keys" title="Blue ticks: keyframes in the prepared video. Red diamonds: keyframes you forced (double-click the lane or press Shift K).">Keyframes</div>
         <canvas class="lane keys" bind:this={keyCanvas} style="width:{W}px" ondblclick={keysDbl} title="Double-click to add or remove a forced keyframe"></canvas>
       </div>
 
@@ -608,7 +846,7 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="lane text-lane" style="width:{W}px" onpointerdown={scrubDown}>
             {#each store.project.texts as tx (tx.id)}
-              <div class="clip text" class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
+              <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
                 <div class="edge l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}></div>
                 <span class="cname">{tx.text || 'Text'}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}
                 <div class="edge r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}></div>
@@ -618,33 +856,51 @@
         </div>
       {/if}
 
+      <!-- upper video tracks (drawn over the main track) -->
+      <div class="trow">
+        <button class="g add ghost" onclick={() => edit.addVideoTrack()} title="Add a video track above. Clips there are drawn over the main track: picture-in-picture, overlays, blend modes."><Icon name="plus" size={12} />Video track</button>
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div class="lane newtrack vnew" style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => { const k = dragKind(e); if (k === 'media' || k === 'files') { e.preventDefault(); e.stopPropagation(); } }} ondrop={newVideoTrackDrop}>
+          <span class="faint small">Drop video here for a new track on top</span>
+        </div>
+      </div>
+      {#each upperTracks as tr (tr.id)}
+        <div class="trow">
+          <div class="g g-track video">
+            <Icon name="film" size={12} /><span class="tname" title={tr.name}>{tr.name.replace('Video ', 'V')}</span>
+            {@render trackButtons(tr.id)}
+          </div>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="lane up-lane" class:muted={tr.muted} class:locked={tr.locked} data-track={tr.id} style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => laneOver(e, tr.id)} ondragleave={() => (hint = null)} ondrop={(e) => laneDrop(e, tr.id)}>
+            {#each store.project.clips.filter((c) => c.track === tr.id) as c (c.id)}
+              {@const m = mediaOf(store.project, c.mediaId)}
+              {@const w = Math.max(4, x(clipLen(c)))}
+              {@render vclip(c, m?.thumb, m?.source.name.replace(/\.[^.]+$/, '') ?? '', x(c.start), w, 'a')}
+            {/each}
+            {#if hint && hint.track === tr.id && hint.start !== undefined}
+              <div class="insert" style="left:{x(hint.start)}px"></div>
+            {/if}
+            {#if drag?.k === 'move' && drag.kind === 'v' && drag.moved && drag.to === tr.id}
+              {@const pl = placed.find((p) => drag?.k === 'move' && p.clip.id === drag.id)}
+              {#if pl}<div class="ghostclip" style="left:{x(drag.toT ?? 0)}px;width:{Math.max(4, x(pl.end) - x(pl.start))}px"></div>{/if}
+            {/if}
+          </div>
+        </div>
+      {/each}
+
       <!-- video -->
       <div class="trow">
-        <div class="g g-track video"><Icon name="film" size={12} /><span class="tname">Video</span></div>
+        <div class="g g-track video"><Icon name="film" size={12} /><span class="tname">{upperTracks.length ? 'V1' : 'Video'}</span>{#if mainTrack}{@render trackButtons(VIDEO_TRACK)}{/if}</div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="lane v-lane" data-track={VIDEO_TRACK} style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => laneOver(e, VIDEO_TRACK)} ondragleave={() => (hint = null)} ondrop={(e) => laneDrop(e, VIDEO_TRACK)}>
+        <div class="lane v-lane" class:muted={mainTrack?.muted} class:locked={mainTrack?.locked} data-track={VIDEO_TRACK} style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => laneOver(e, VIDEO_TRACK)} ondragleave={() => (hint = null)} ondrop={(e) => laneDrop(e, VIDEO_TRACK)}>
           {#if !placed.length}
             <div class="lane-empty">Drag clips here from the Media panel</div>
           {/if}
           {#each placed as pl (pl.clip.id)}
             {@const c = pl.clip}
             {@const moving = drag?.k === 'move' && drag.id === c.id && drag.moved}
-            <div
-              class="clip video"
-              class:sel={sel.has(c.id)}
-              class:moving
-              style="left:{x(pl.start)}px;width:{Math.max(4, x(pl.end) - x(pl.start))}px;{pl.media.thumb ? `--thumb:url(${pl.media.thumb})` : ''}"
-              onpointerdown={(e) => clipDown(e, c.id, 'v')}
-              oncontextmenu={(e) => openMenu(e, c.id, 'v')}
-              title="{pl.media.source.name} · {fmtDur(pl.end - pl.start)}"
-            >
-              <div class="edge l" onpointerdown={(e) => edgeDown(e, c.id, 'v', 'l')}></div>
-              <span class="cname">{vName(pl)}</span>
-              {#if c.speed !== 1}<span class="badge">{c.speed}×</span>{/if}
-              {#if c.reverse}<span class="badge">rev</span>{/if}
-              <div class="edge r" onpointerdown={(e) => edgeDown(e, c.id, 'v', 'r')}></div>
-            </div>
-            {#if moving && drag?.k === 'move'}
+            {@render vclip(c, pl.media.thumb, vName(pl), x(pl.start), Math.max(4, x(pl.end) - x(pl.start)), 'v', moving)}
+            {#if moving && drag?.k === 'move' && !drag.to}
               <div class="ghostclip" style="left:{x(pl.start) + drag.dx}px;width:{Math.max(4, x(pl.end) - x(pl.start))}px"></div>
             {/if}
           {/each}
@@ -697,7 +953,7 @@
               {#if pl.media.hasAudio}
                 {@const c = pl.clip}
                 {@const w = Math.max(4, x(pl.end) - x(pl.start))}
-                <div class="clip audio linked" class:sel={sel.has(c.id)} class:muted={c.muted} style="left:{x(pl.start)}px;width:{w}px" onpointerdown={(e) => clipDown(e, c.id, 'v')} oncontextmenu={(e) => openMenu(e, c.id, 'v')} title={c.muted ? 'Muted (or detached)' : 'Clip sound'}>
+                <div class="clip audio linked" class:sel={sel.has(c.id)} class:muted={c.muted} class:off={!clipOn(c)} style="left:{x(pl.start)}px;width:{w}px" onpointerdown={(e) => clipDown(e, c.id, 'v')} oncontextmenu={(e) => openMenu(e, c.id, 'v')} title={c.muted ? 'Muted (or detached)' : 'Clip sound'}>
                   <Waveform peaks={peaksOf(pl.media.id)} from={c.in} to={c.out} reverse={c.reverse} width={w} height={26} />
                 </div>
               {/if}
@@ -714,11 +970,11 @@
             {@render trackButtons(tr.id)}
           </div>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="lane a-lane" class:muted={tr.muted} data-track={tr.id} style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => laneOver(e, tr.id)} ondragleave={() => (hint = null)} ondrop={(e) => laneDrop(e, tr.id)}>
+          <div class="lane a-lane" class:muted={tr.muted} class:locked={tr.locked} data-track={tr.id} style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => laneOver(e, tr.id)} ondragleave={() => (hint = null)} ondrop={(e) => laneDrop(e, tr.id)}>
             {#each store.project.clips.filter((c) => c.track === tr.id) as c (c.id)}
               {@const m = mediaOf(store.project, c.mediaId)}
               {@const w = Math.max(4, x(clipLen(c)))}
-              <div class="clip audio" class:sel={sel.has(c.id)} class:muted={c.muted} style="left:{x(c.start)}px;width:{w}px" onpointerdown={(e) => clipDown(e, c.id, 'a')} oncontextmenu={(e) => openMenu(e, c.id, 'a')} title="{m?.source.name} · {fmtDur(clipLen(c))}">
+              <div class="clip audio" data-clip={c.id} class:sel={sel.has(c.id)} class:muted={c.muted} class:off={!clipOn(c)} class:labeled={!!c.label} style="left:{x(c.start)}px;width:{w}px;{c.label ? `--lab:${c.label}` : ''}" onpointerdown={(e) => clipDown(e, c.id, 'a')} oncontextmenu={(e) => openMenu(e, c.id, 'a')} title="{m?.source.name} · {fmtDur(clipLen(c))}">
                 <Waveform peaks={m ? peaksOf(m.id) : undefined} from={c.in} to={c.out} reverse={c.reverse} width={w} height={34} />
                 <span class="cname">{m?.source.name.replace(/\.[^.]+$/, '')}</span>
                 {#if c.fadeIn > 0}<div class="fadeshape in" style="width:{x(c.fadeIn)}px"></div>{/if}
@@ -753,8 +1009,8 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="outstrip" style="width:{outW}px" onpointerdown={outDown}>
             <canvas bind:this={resultCanvas} style="width:{Math.min(outW, 16000)}px;transform:scaleX({outW / Math.min(outW, 16000)})"></canvas>
-            {#if store.ui.loop && nOut}
-              <div class="loop" class:inactive={!store.ui.loopOn} style="left:{(store.ui.loop[0] / nOut) * outW}px;width:{((store.ui.loop[1] - store.ui.loop[0]) / nOut) * outW}px"></div>
+            {#if (store.ui.inPoint !== null || store.ui.outPoint !== null) && nOut}
+              <div class="loop" class:inactive={!store.ui.loopOn} style="left:{x(store.ui.inPoint ?? 0)}px;width:{x((store.ui.outPoint ?? duration) - (store.ui.inPoint ?? 0))}px"></div>
             {/if}
             {#if nOut}<div class="phead out-ph" style="left:{outX}px"></div>{/if}
           </div>
@@ -762,6 +1018,9 @@
       </div>
 
       <div class="phead main" style="left:{G + x(store.ui.time)}px"></div>
+      {#if store.ui.tool === 'blade' && bladeX !== null}
+        <div class="bladeline" style="left:{G + bladeX}px"></div>
+      {/if}
     </div>
   </div>
 </div>
@@ -770,22 +1029,61 @@
   {@const t = store.project.tracks.find((x) => x.id === id)}
   {#if t}
     <span class="tbtns">
-      <button class="tb" class:on={t.muted} title="Mute" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.muted = !t.muted))}>M</button>
-      <button class="tb" class:on={t.solo} title="Solo" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.solo = !t.solo))}>S</button>
-      <button class="tb mosh" class:on={t.mosh} title={t.mosh ? 'Sound follows the mosh (stutters with the picture). Click to keep it clean.' : 'Sound stays clean. Click to make it follow the mosh.'} onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.mosh = !t.mosh))}>~</button>
-      {#if id !== CLIP_AUDIO}<button class="tb rm" title="Remove track" onclick={() => edit.removeTrack(id)}>×</button>{/if}
+      {#if t.kind === 'video'}
+        <button class="tb" class:on={t.muted} title={t.muted ? 'Hidden: click to show this track' : 'Hide this track (it is left out of the picture)'} aria-label="Show / hide track" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.muted = !t.muted))}><Icon name={t.muted ? 'eyeoff' : 'eye'} size={11} /></button>
+      {:else}
+        <button class="tb" class:on={t.muted} title="Mute" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.muted = !t.muted))}>M</button>
+        <button class="tb" class:on={t.solo} title="Solo" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.solo = !t.solo))}>S</button>
+        <button class="tb mosh" class:on={t.mosh} title={t.mosh ? 'Sound follows the mosh (stutters with the picture). Click to keep it clean.' : 'Sound stays clean. Click to make it follow the mosh.'} onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.mosh = !t.mosh))}>~</button>
+      {/if}
+      <button class="tb" class:on={t.locked} title={t.locked ? 'Locked: click to unlock' : 'Lock the track so its clips can\'t be changed by accident'} aria-label="Lock track" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.locked = !t.locked || undefined))}><Icon name={t.locked ? 'lock' : 'unlock'} size={10} /></button>
+      {#if id !== CLIP_AUDIO && id !== VIDEO_TRACK}<button class="tb rm" title="Remove track" onclick={() => edit.removeTrack(id)}>×</button>{/if}
     </span>
   {/if}
+{/snippet}
+
+{#snippet vclip(c: Clip, thumb: string | undefined, name: string, left: number, w: number, kind: 'v' | 'a', moving = false)}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="clip video"
+    data-clip={c.id}
+    class:sel={sel.has(c.id)}
+    class:moving
+    class:off={!clipOn(c)}
+    class:labeled={!!c.label}
+    style="left:{left}px;width:{w}px;{thumb ? `--thumb:url(${thumb});` : ''}{c.label ? `--lab:${c.label};` : ''}"
+    onpointerdown={(e) => clipDown(e, c.id, kind)}
+    oncontextmenu={(e) => openMenu(e, c.id, kind)}
+    title="{name} · {fmtDur(clipLen(c))}{clipOn(c) ? '' : ' · off (D to turn on)'}"
+  >
+    <div class="edge l" onpointerdown={(e) => edgeDown(e, c.id, kind, 'l')}></div>
+    <span class="cname">{name}</span>
+    {#if c.freeze}<span class="badge">freeze</span>{:else if c.speed !== 1}<span class="badge">{c.speed}×</span>{/if}
+    {#if c.reverse && !c.freeze}<span class="badge">rev</span>{/if}
+    {#if c.blend && c.blend !== 'normal'}<span class="badge">{c.blend}</span>{/if}
+    {#if (c.opacity ?? 1) < 1}<span class="badge">{Math.round((c.opacity ?? 1) * 100)}%</span>{/if}
+    {#if (c.vfadeIn ?? 0) > 0}<div class="vfadeshape in" style="width:{x(c.vfadeIn ?? 0)}px"></div>{/if}
+    {#if (c.vfadeOut ?? 0) > 0}<div class="vfadeshape out" style="width:{x(c.vfadeOut ?? 0)}px"></div>{/if}
+    <div class="fade" style="left:{x(c.vfadeIn ?? 0)}px" onpointerdown={(e) => vfadeDown(e, c, 'in')} title="Drag to fade the picture in"></div>
+    <div class="fade out" style="right:{x(c.vfadeOut ?? 0)}px" onpointerdown={(e) => vfadeDown(e, c, 'out')} title="Drag to fade the picture out"></div>
+    <div class="edge r" onpointerdown={(e) => edgeDown(e, c.id, kind, 'r')}></div>
+  </div>
 {/snippet}
 
 {#if menu}
   <div class="menu" style="left:{menu.x}px;top:{menu.y}px" role="menu">
     <button class="ghost" onclick={edit.splitAtPlayhead}><Icon name="blade" />Split at playhead<span class="kbd">S</span></button>
-    <button class="ghost" onclick={edit.duplicateSelected}><Icon name="copy" />Duplicate<span class="kbd">D</span></button>
+    <button class="ghost" onclick={edit.duplicateSelected}><Icon name="copy" />Duplicate<span class="kbd">Ctrl D</span></button>
     <button class="ghost" onclick={edit.copySelected}><Icon name="copy" />Copy<span class="kbd">Ctrl C</span></button>
     {#if menuClip}
-      <button class="ghost" onclick={() => store.edit(() => (menuClip.reverse = !menuClip.reverse))}><Icon name="reset" />{menuClip.reverse ? 'Play forwards' : 'Reverse'}</button>
-      {#if menuClip.track === VIDEO_TRACK && mediaOf(store.project, menuClip.mediaId)?.hasAudio}
+      <button class="ghost" onclick={() => edit.toggleEnabled()}><Icon name={clipOn(menuClip) ? 'eyeoff' : 'eye'} />{clipOn(menuClip) ? 'Turn clip off' : 'Turn clip on'}<span class="kbd">D</span></button>
+      {#if !menuClip.freeze}
+        <button class="ghost" onclick={() => store.edit(() => (menuClip.reverse = !menuClip.reverse))}><Icon name="reset" />{menuClip.reverse ? 'Play forwards' : 'Reverse'}</button>
+      {/if}
+      {#if mediaOf(store.project, menuClip.mediaId)?.hasVideo && !menuClip.freeze && (menuClip.track === VIDEO_TRACK || isOverlayTrack(menuClip.track))}
+        <button class="ghost" onclick={() => edit.freezeAtPlayhead()}><Icon name="freeze" />Freeze frame at playhead<span class="kbd">Shift R</span></button>
+      {/if}
+      {#if (menuClip.track === VIDEO_TRACK || isOverlayTrack(menuClip.track)) && mediaOf(store.project, menuClip.mediaId)?.hasAudio && !menuClip.freeze}
         <button class="ghost" onclick={() => store.edit(() => (menuClip.muted = !menuClip.muted))}><Icon name={menuClip.muted ? 'sound' : 'mute'} />{menuClip.muted ? 'Unmute sound' : 'Mute sound'}</button>
         {#if !menuClip.muted}<button class="ghost" onclick={() => edit.detach(menuClip.id)}><Icon name="music" />Detach audio</button>{/if}
       {/if}
@@ -793,9 +1091,17 @@
         <button class="ghost" onclick={() => (edit.setTransition(menuClip.id, 'melt'), store.selectTransition(menuClip.id))}><Icon name="split" />Melt into this clip</button>
         <button class="ghost" onclick={() => (edit.setTransition(menuClip.id, 'dissolve'), store.selectTransition(menuClip.id))}><Icon name="split" />Dissolve into this clip</button>
       {/if}
+      <button class="ghost" onclick={() => edit.markClip()}><Icon name="loop" />Mark In / Out on this clip<span class="kbd">X</span></button>
+      <div class="labels" role="group" aria-label="Clip colour">
+        {#each CLIP_LABELS as col}
+          <button class="lab" style="--lc:{col}" class:on={menuClip.label === col} title="Colour label" aria-label="Colour label {col}" onclick={() => edit.setLabel(col)}></button>
+        {/each}
+        <button class="lab none" title="No colour" aria-label="No colour" onclick={() => edit.setLabel(null)}>×</button>
+      </div>
     {/if}
     <hr />
-    <button class="ghost danger" onclick={edit.deleteSelected}><Icon name="trash" />Delete<span class="kbd">Del</span></button>
+    <button class="ghost danger" onclick={() => edit.deleteSelected()}><Icon name="trash" />Delete<span class="kbd">Del</span></button>
+    <button class="ghost danger" onclick={() => edit.deleteSelected(true)}><Icon name="trash" />Ripple delete<span class="kbd">Shift Del</span></button>
   </div>
 {/if}
 
@@ -1445,5 +1751,165 @@
     .toolbar button:not(.icon) {
       padding: 0 6px;
     }
+  }
+  .tools {
+    display: inline-flex;
+    gap: 1px;
+  }
+  .inout {
+    color: var(--ok);
+    font-size: 11px;
+    margin-right: 6px;
+  }
+  .tool-blade .lane:not(.ruler),
+  .tool-blade .clip {
+    cursor: crosshair;
+  }
+  .tool-trim .clip {
+    cursor: col-resize;
+  }
+  .bladeline {
+    position: absolute;
+    top: 22px;
+    bottom: 29px;
+    width: 1px;
+    background: var(--danger, #e05a4f);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .marquee {
+    position: fixed;
+    border: 1px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    pointer-events: none;
+    z-index: 40;
+  }
+  .phandle {
+    position: absolute;
+    top: 0;
+    width: 13px;
+    height: 22px;
+    margin-left: -6px;
+    cursor: ew-resize;
+    z-index: 4;
+    touch-action: none;
+  }
+  .phandle::before {
+    content: '';
+    position: absolute;
+    left: 1px;
+    top: 0;
+    width: 11px;
+    height: 12px;
+    background: var(--accent);
+    clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+  }
+  .inoutr {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: color-mix(in srgb, var(--ok) 18%, transparent);
+    border-left: 2px solid var(--ok);
+    border-right: 2px solid var(--ok);
+    pointer-events: none;
+  }
+  .inoutr.off {
+    opacity: 0.4;
+  }
+  .marker {
+    position: absolute;
+    top: 0;
+    width: 10px;
+    height: 10px;
+    margin-left: -5px;
+    background: var(--mc);
+    clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+    cursor: pointer;
+    z-index: 3;
+    touch-action: none;
+  }
+  .mname {
+    position: absolute;
+    left: 12px;
+    top: -1px;
+    font-size: 10px;
+    color: var(--mc);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .marker:has(.mname) {
+    overflow: visible;
+    clip-path: none;
+    background: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 9px solid var(--mc);
+    width: 0;
+    height: 0;
+  }
+  .medit {
+    position: absolute;
+    top: 1px;
+    height: 19px;
+    width: 140px;
+    font-size: 11px;
+    z-index: 6;
+  }
+  .up-lane {
+    height: 46px;
+  }
+  .lane.locked {
+    background-image: repeating-linear-gradient(135deg, transparent 0 8px, rgba(255, 255, 255, 0.035) 8px 16px);
+  }
+  .lane.locked .clip {
+    cursor: not-allowed;
+  }
+  .clip.off {
+    opacity: 0.38;
+    filter: grayscale(1);
+  }
+  .clip.labeled {
+    box-shadow: inset 0 3px 0 var(--lab);
+  }
+  .vfadeshape {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.55), transparent);
+  }
+  .vfadeshape.in {
+    left: 0;
+  }
+  .vfadeshape.out {
+    right: 0;
+    background: linear-gradient(to left, rgba(0, 0, 0, 0.55), transparent);
+  }
+  .vnew {
+    height: 18px;
+  }
+  .labels {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px 2px;
+  }
+  .lab {
+    width: 16px;
+    height: 16px;
+    min-width: 0;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--lc);
+    border: 1px solid var(--line-2);
+  }
+  .lab.on {
+    outline: 2px solid var(--text);
+    outline-offset: 1px;
+  }
+  .lab.none {
+    background: none;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--text-3);
   }
 </style>

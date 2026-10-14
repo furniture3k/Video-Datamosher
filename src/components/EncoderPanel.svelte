@@ -73,7 +73,7 @@
     <span class="grow">Forced keyframes: {e.keyMarkers.length}</span>
     {#if e.keyMarkers.length}<button class="small" onclick={() => store.edit((p) => (p.encoder.keyMarkers = []))}>Clear</button>{/if}
   </div>
-  <div class="small faint">Press <span class="kbd">K</span> or double-click the keyframe lane to force a clean frame at that point.</div>
+  <div class="small faint">Press <span class="kbd">Shift K</span> or double-click the keyframe lane to force a clean frame at that point.</div>
 
   {#if adv}
     <div class="label sect">Encoder internals</div>

@@ -41,6 +41,7 @@
     return +v.toFixed(4);
   };
   const playSrc = $derived(store.playFrame);
+  const optHint = $derived(def.type === 'select' ? def.options.find((o) => o.value === value)?.hint : undefined);
 </script>
 
 <div class="pc" class:locked class:automated={!!auto}>
@@ -86,7 +87,7 @@
     {#if def.options.length <= 3}
       <div class="seg full">
         {#each def.options as o}
-          <button class:on={value === o.value} onclick={() => set(o.value)}>{o.label}</button>
+          <button class:on={value === o.value} title={o.hint} onclick={() => set(o.value)}>{o.label}</button>
         {/each}
       </div>
     {:else}
@@ -101,9 +102,22 @@
       <button class="icon ghost" title="Use playhead position" aria-label="Use playhead" onclick={() => set(playSrc)}><Icon name="import" size={13} /></button>
     </div>
   {/if}
+  {#if store.ui.tips}
+    <p class="hint">{def.help}</p>
+    {#if optHint}<p class="hint opt">{optHint}</p>{/if}
+  {/if}
 </div>
 
 <style>
+  .hint {
+    margin: 3px 0 0;
+    font-size: 11.5px;
+    line-height: 1.4;
+    color: var(--text-3);
+  }
+  .hint.opt {
+    color: var(--text-2);
+  }
   .pc {
     padding: 6px 0 4px;
   }

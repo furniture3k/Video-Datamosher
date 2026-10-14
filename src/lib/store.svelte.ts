@@ -1,7 +1,7 @@
 // Global app state (Svelte 5 runes), undo/redo, autosave and auto-render.
 import { newProject, type Project, type EffectInstance, type Clip } from '../engine/types';
 import { limits } from '../engine/mosh';
-import { timelineFrames, timelineDuration, cutFrames, remapToFootage } from '../engine/timeline';
+import { timelineFrames, timelineDuration, cutFrames, remapToFootage, layoutVideo, clipLen as timelineClipLen } from '../engine/timeline';
 import { migrate } from '../engine/migrate';
 import { renderPreview, renderKey, proxyKey, Cancelled, type RenderResult } from './renderer';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
@@ -24,6 +24,8 @@ class Store {
   render = $state.raw<RenderResult | null>(null);
   ui = $state({
     advanced: localGet('advanced', false),
+    /** show the description under every setting */
+    tips: localGet('tips', true),
     selectedEffect: null as string | null,
     /** selected timeline clips */
     selectedClips: [] as string[],
@@ -44,8 +46,16 @@ class Store {
     timelineViewW: 800,
     timelineHeight: localGet('timelineHeight', 300),
     playing: false,
-    loop: null as [number, number] | null,
+    /** shuttle rate (J / K / L): negative plays backwards */
+    shuttle: 1,
+    /** In / Out marks on the timeline (seconds): the loop range and the export range */
+    inPoint: null as number | null,
+    outPoint: null as number | null,
     loopOn: true,
+    /** timeline tool: select (A), trim (T: roll edges, slip clips) or blade (B) */
+    tool: 'select' as 'select' | 'trim' | 'blade',
+    /** media item picked in the media panel (source for insert / overwrite edits) */
+    selectedMedia: null as string | null,
     speed: 1,
     compare: 'off' as CompareMode,
     split: 0.5,
@@ -105,25 +115,26 @@ class Store {
     return id ? this.project.clips.find((c) => c.id === id) : undefined;
   }
 
-  /** Output frame showing timeline time t (first frame whose source is at or after it). */
+  /** Output frame showing timeline time t (the first one at or after it). */
   frameAtTime(t: number): number {
     const fr = this.render?.frames;
     if (!fr?.length) return 0;
     const s = t * this.render!.fps;
-    let lo = 0;
-    // frames are mostly in source order; a linear scan is fine and handles reorders
-    for (let i = 0; i < fr.length; i++) {
-      if (fr[i].src >= s - 0.5) return i;
-      lo = i;
-    }
-    return lo;
+    const pos = (i: number) => fr[i].at ?? fr[i].src;
+    // usually output frame N is timeline frame N (effects keep their length)
+    const g = Math.max(0, Math.min(fr.length - 1, Math.round(s)));
+    if (Math.abs(pos(g) - s) <= 0.5 && (g === 0 || pos(g - 1) < s - 0.5)) return g;
+    // frames are mostly in timeline order; a linear scan handles inserted and reordered ones
+    for (let i = 0; i < fr.length; i++) if (pos(i) >= s - 0.5) return i;
+    return fr.length - 1;
   }
 
   /** Move the playhead to timeline time t (both previews follow). */
   seek(t: number) {
     const d = this.duration;
     this.ui.time = Math.max(0, Math.min(d, t));
-    if (this.render && this.renderFresh) this.ui.playhead = Math.min(this.render.frames.length - 1, this.frameAtTime(this.ui.time));
+    // also when the render is out of date (the Mosh view still shows it, near enough)
+    if (this.render) this.ui.playhead = Math.min(this.render.frames.length - 1, this.frameAtTime(this.ui.time));
   }
 
   /** Move the mosh preview to output frame i (the timeline playhead follows). */
@@ -131,7 +142,8 @@ class Store {
     const r = this.render;
     if (!r) return;
     this.ui.playhead = Math.max(0, Math.min(r.frames.length - 1, i));
-    this.ui.time = (r.frames[this.ui.playhead]?.src ?? 0) / r.fps;
+    const f = r.frames[this.ui.playhead];
+    this.ui.time = Math.min(this.duration, (f ? (f.at ?? f.src) : 0) / r.fps);
   }
 
   /** Select an effect (clip selection is cleared so Delete/Duplicate act on the effect). */
@@ -226,6 +238,7 @@ class Store {
     }
     if (this.ui.selectedEffect && !p.effects.some((e) => e.id === this.ui.selectedEffect)) this.ui.selectedEffect = null;
     if (this.ui.time > this.duration) this.ui.time = this.duration;
+    if (this.ui.selectedMedia && !p.media.some((m) => m.id === this.ui.selectedMedia)) this.ui.selectedMedia = null;
   }
 
   undo() {
@@ -250,11 +263,35 @@ class Store {
   }
 
   // ---------- effects ----------
+  /**
+   * Where a new effect goes: over the marked In–Out range, else over the selected clip, else (for
+   * local effects like Bloom) a short stretch from the playhead, else the whole timeline.
+   */
+  defaultRange(type: string): [number, number] {
+    const total = this.totalFrames;
+    const fps = this.fps;
+    const a = this.ui.inPoint;
+    const b = this.ui.outPoint;
+    if (a !== null || b !== null) return [Math.round((a ?? 0) * fps), Math.max(Math.round((a ?? 0) * fps) + 1, Math.round((b ?? this.duration) * fps))];
+    const c = this.selectedClip;
+    if (c && c.track !== 'v1' && 'mediaId' in c) return [Math.round(c.start * fps), Math.round((c.start + timelineClipLen(c)) * fps)];
+    if (c) {
+      const pl = layoutVideo(this.project).find((x) => x.clip.id === c.id);
+      if (pl) return [Math.round(pl.start * fps), Math.round(pl.end * fps)];
+    }
+    const span = EFFECTS[type]?.span;
+    if (!span) return [0, total];
+    const len = Math.min(total, Math.round(span * fps));
+    const s = Math.max(0, Math.min(total - len, this.playFrame));
+    return [s, s + len];
+  }
+
   addEffect(type: string, range?: [number, number]) {
     const total = this.totalFrames;
-    const [s, e] = range ?? [0, total];
+    const [s, e] = range ?? this.defaultRange(type);
     const fx = makeEffect(type, s, Math.max(s + 1, e));
-    if (EFFECTS[type].kind === 'bitstream' && type === 'splice') fx.params.from = Math.min(total - 1, Math.round(total / 2));
+    // borrow motion from somewhere else: the other half of the timeline
+    if (type === 'splice') fx.params.from = Math.max(0, Math.min(total - 1, s < total / 2 ? Math.round(total / 2) : 0));
     this.edit((p) => p.effects.push(fx));
     this.selectEffect(fx.id);
     return fx;
@@ -325,7 +362,6 @@ class Store {
         this.toast(`Output capped at ${limits.maxOutputFrames} frames. Lower the Bloom or Stutter repeats.`, 'error', 6000);
       if (this.renderFresh) this.ui.playhead = Math.min(r.frames.length - 1, this.frameAtTime(this.ui.time));
       if (this.ui.playhead >= r.frames.length) this.ui.playhead = Math.max(0, r.frames.length - 1);
-      if (this.ui.loop && this.ui.loop[1] > r.frames.length) this.ui.loop = null;
     } catch (e) {
       if (!(e instanceof Cancelled)) {
         console.error(e);
@@ -370,7 +406,7 @@ class Store {
     prepareAll(this.project.media);
   }
 
-  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight'>(k: K, v: (typeof this.ui)[K]) {
+  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips'>(k: K, v: (typeof this.ui)[K]) {
     this.ui[k] = v;
     localSet(k, v);
     if (k === 'autoRender' && v) this.scheduleRender(50);

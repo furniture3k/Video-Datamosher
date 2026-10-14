@@ -6,6 +6,8 @@
   import ParamControl from './ParamControl.svelte';
   import Icon from './Icon.svelte';
   import type { EffectInstance } from '../engine/types';
+  import { layoutVideo } from '../engine/timeline';
+  import { markedRange } from '../lib/edit';
 
   let { effect }: { effect: EffectInstance } = $props();
   const def = $derived(EFFECTS[effect.type]);
@@ -26,6 +28,16 @@
   }
   const rangeLocked = $derived(effect.locks.includes('__range'));
   let showInfo = $state(false);
+  const marked = $derived(store.ui.inPoint !== null || store.ui.outPoint !== null ? markedRange() : null);
+  const clipUnder = $derived(layoutVideo(store.project).find((p) => store.ui.time >= p.start && store.ui.time < p.end));
+  function fitTo(a: number, b: number) {
+    const f = store.fps;
+    store.edit(() => {
+      effect.start = Math.max(0, Math.round(a * f));
+      effect.end = Math.max(effect.start + 1, Math.min(total, Math.round(b * f)));
+    });
+  }
+  const info = $derived(showInfo || store.ui.tips);
 </script>
 
 <div class="editor" style="--c:{def.color}">
@@ -38,10 +50,10 @@
       spellcheck="false"
       onchange={(e) => store.edit(() => (effect.name = (e.target as HTMLInputElement).value === def.name ? undefined : (e.target as HTMLInputElement).value))}
     />
-    <button class="icon ghost" class:on={showInfo} title="What does this do?" aria-label="About this effect" onclick={() => (showInfo = !showInfo)}><Icon name="help" size={14} /></button>
+    <button class="icon ghost" class:on={info} title="What does this do?" aria-label="About this effect" onclick={() => (store.ui.tips ? store.setPref('tips', false) : (showInfo = !showInfo))}><Icon name="help" size={14} /></button>
     <button class="icon ghost" title="Randomize unlocked settings" aria-label="Randomize settings" onclick={randomize}><Icon name="dice" size={14} /></button>
   </div>
-  {#if showInfo}<p class="desc small muted">{def.description}</p>{/if}
+  {#if info}<p class="desc small muted">{def.description}</p>{/if}
 
   <section>
     <div class="sh">
@@ -68,7 +80,14 @@
       </label>
       <button class="tiny" title="Set out point to playhead" onclick={() => store.edit(() => (effect.end = Math.max(effect.start + 1, playSrc + 1)))}>Mark out</button>
       <button class="tiny ghost" title="Cover the whole timeline" onclick={() => store.edit(() => ((effect.start = 0), (effect.end = total)))}>All</button>
+      {#if marked}
+        <button class="tiny ghost" title="Cover the In–Out range marked with I and O" onclick={() => fitTo(marked[0], marked[1])}>In–Out</button>
+      {/if}
+      {#if clipUnder}
+        <button class="tiny ghost" title="Cover the clip under the playhead" onclick={() => fitTo(clipUnder.start, clipUnder.end)}>Clip</button>
+      {/if}
     </div>
+    <div class="small faint">{((effect.end - effect.start) / store.fps).toFixed(2)} s long. Drag the bar's ends on the timeline to change it.</div>
   </section>
 
   <section>

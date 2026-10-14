@@ -2,9 +2,9 @@
   import { store } from '../lib/store.svelte';
   import Field from './Field.svelte';
   import Icon from './Icon.svelte';
-  import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition } from '../engine/timeline';
-  import { VIDEO_TRACK, type Clip, type TextClip, type TransitionType } from '../engine/types';
-  import { setTransition, detach, splitAtPlayhead, deleteSelected } from '../lib/edit';
+  import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
+  import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type TextClip, type Transform, type TransitionType } from '../engine/types';
+  import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead } from '../lib/edit';
 
   const c = $derived(store.selectedClip);
   const media = $derived(c ? mediaOf(store.project, c.mediaId) : undefined);
@@ -12,6 +12,31 @@
   const trClip = $derived(store.ui.selectedTransition ? store.project.clips.find((x) => x.id === store.ui.selectedTransition) : undefined);
   const isStill = $derived(media?.source.kind === 'file' && media.source.isImage);
   const isVideo = $derived(c?.track === VIDEO_TRACK);
+  const isUpper = $derived(!!c && isOverlayTrack(c.track));
+  const hasPicture = $derived(!!c && !!media?.hasVideo && (isVideo || isUpper));
+  const T = $derived(c ? transformOf(c) : transformOf({}));
+  const Gr = $derived(c ? gradeOf(c) : gradeOf({}));
+  const setTf = (k: keyof Transform) => (v: number | boolean) => {
+    const id = c!.id;
+    store.edit((p) => {
+      const x = p.clips.find((y) => y.id === id);
+      if (x) x.transform = { ...(x.transform ?? {}), [k]: v };
+    }, 'tf' + k + id);
+  };
+  const setGr = (k: keyof Grade) => (v: number) => {
+    const id = c!.id;
+    store.edit((p) => {
+      const x = p.clips.find((y) => y.id === id);
+      if (x) x.grade = { ...(x.grade ?? {}), [k]: v };
+    }, 'gr' + k + id);
+  };
+  const resetC = (k: 'transform' | 'grade') => {
+    const id = c!.id;
+    store.edit((p) => {
+      const x = p.clips.find((y) => y.id === id);
+      if (x) x[k] = undefined;
+    });
+  };
   const placedStart = $derived(c && isVideo ? (layoutVideo(store.project).find((p) => p.clip.id === c.id)?.start ?? 0) : (c?.start ?? 0));
   const prevName = $derived.by(() => {
     if (!trClip) return '';
@@ -47,14 +72,15 @@
     <div class="grid">
       <button class:on={!t} onclick={() => setTransition(trClip.id, null)}>Cut</button>
       {#each Object.entries(BLEND_TRANSITIONS) as [id, d]}
-        <button class:on={t?.type === id} onclick={() => setTransition(trClip.id, id as TransitionType)}>{d.name}</button>
+        <button class:on={t?.type === id} title={d.description} onclick={() => setTransition(trClip.id, id as TransitionType)}>{d.name}</button>
       {/each}
     </div>
     {#if t}
       <Field label="Length" unit="s" min={0.1} max={6} step={0.05} value={t.duration} help={isMoshTransition(t) ? 'How long the melt effect runs after the cut.' : 'How long both shots overlap. The timeline gets shorter by this much.'} onchange={(v: number) => setTransition(trClip.id, t.type, { duration: v })} />
       {#if isMoshTransition(t)}
-        <Field label="Intensity" min={0} max={1} step={0.01} value={t.intensity} help="How hard the melt hits: more repeats, more corruption, stronger warp." onchange={(v: number) => setTransition(trClip.id, t.type, { intensity: v })} />
-        <p class="small muted">{MOSH_TRANSITIONS[t.type].description} You'll see it in the mosh view once it has rendered.</p>
+        <Field label="Intensity" min={0} max={1} step={0.01} value={t.intensity} help="How hard the melt hits: longer blooms, more loops, more corruption, stronger warp." onchange={(v: number) => setTransition(trClip.id, t.type, { intensity: v })} />
+        <Field type="bool" label="Resolve at the end" value={t.resolve !== false} help="On: a fresh keyframe at the end of the transition brings the next shot back clean, so the melt lasts exactly the Length. Off: the melt carries on until the next keyframe (often the end of the clip)." onchange={(v: boolean) => setTransition(trClip.id, t.type, { resolve: v })} />
+        <p class="small muted">{MOSH_TRANSITIONS[t.type].description} The live edit view shows a plain cut; the melt appears in the mosh view once it has rendered.</p>
       {/if}
       <button class="ghost" onclick={() => setTransition(trClip.id, null)}><Icon name="x" />Remove transition</button>
     {/if}
@@ -101,7 +127,7 @@
     <Field type="bool" label="Background box" value={text.box} help="Dark box behind the text." onchange={setT('box')} />
     <Field label="Fade" unit="s" min={0} max={3} step={0.05} value={text.fade} help="Fade in and out." onchange={setT('fade')} />
     <Field type="bool" label="Melt with the video" value={text.moshed} help="Burn the text into the footage before moshing, so it smears and melts with everything else. Off = clean text on top." onchange={(v: boolean) => store.edit(() => (text.moshed = v))} />
-    <button class="ghost" onclick={deleteSelected}><Icon name="trash" />Delete text</button>
+    <button class="ghost" onclick={() => deleteSelected()}><Icon name="trash" />Delete text</button>
   </div>
 {:else if c && media}
   <div class="col">
@@ -110,14 +136,19 @@
       <b class="grow nm">{media.source.name}</b>
       <span class="small muted mono">{media.hasVideo ? `${media.width}×${media.height}` : 'sound'}</span>
     </div>
-    <div class="small faint mono">{isVideo ? 'Video track' : store.project.tracks.find((t) => t.id === c.track)?.name} · at {fmt(placedStart)} · {clipLen(c).toFixed(2)} s long</div>
+    <div class="small faint mono">{isVideo ? 'Main video track' : store.project.tracks.find((t) => t.id === c.track)?.name} · at {fmt(placedStart)} · {clipLen(c).toFixed(2)} s long{c.freeze ? ' · freeze frame' : ''}</div>
     <div class="row btns">
       <button class="small" onclick={splitAtPlayhead} title="Split at playhead  S"><Icon name="blade" size={13} />Split</button>
-      {#if isVideo && media.hasAudio && !c.muted}<button class="small" onclick={() => detach(c.id)} title="Move this clip's sound to its own audio track"><Icon name="music" size={13} />Detach audio</button>{/if}
-      <button class="small ghost" onclick={deleteSelected}><Icon name="trash" size={13} />Delete</button>
+      <button class="small" class:on={!clipOn(c)} onclick={() => toggleEnabled()} title="Turn the clip off (it keeps its place but isn't seen or heard)  D"><Icon name={clipOn(c) ? 'eye' : 'eyeoff'} size={13} />{clipOn(c) ? 'On' : 'Off'}</button>
+      {#if hasPicture && !c.freeze}<button class="small" onclick={() => freezeAtPlayhead()} title="Hold the picture at the playhead for 2 seconds  Shift R"><Icon name="freeze" size={13} />Freeze</button>{/if}
+      {#if (isVideo || isUpper) && media.hasAudio && !c.muted && !c.freeze}<button class="small" onclick={() => detach(c.id)} title="Move this clip's sound to its own audio track"><Icon name="music" size={13} />Detach audio</button>{/if}
+      <button class="small ghost" onclick={() => deleteSelected()}><Icon name="trash" size={13} />Delete</button>
     </div>
-    {#if isStill}
-      <Field label="Duration" unit="s" min={0.1} max={600} step={0.1} value={c.out - c.in} help="How long this still image lasts." onchange={(v: number) => setC('out', true)(c.in + v)} />
+    {#if isStill || c.freeze}
+      <Field label="Duration" unit="s" min={0.1} max={600} step={0.1} value={c.out - c.in} help={c.freeze ? 'How long the frozen frame is held.' : 'How long this still image lasts.'} onchange={(v: number) => setC('out', true)(c.in + v)} />
+      {#if c.freeze && !isStill}
+        <Field label="Frame" unit="s" min={0} max={media.duration} step={0.04} value={c.in} help="Which moment of the source is frozen." onchange={(v: number) => { const d = c.out - c.in; store.editTimeline((p) => { const x = p.clips.find((y) => y.id === c.id); if (x) (x.in = v), (x.out = v + d); }, 'frz' + c.id); }} />
+      {/if}
     {:else}
       <Field label="In" unit="s" min={0} max={media.duration} step={0.04} value={c.in} help="Where the clip starts in the source file. You can also drag the clip's left edge." onchange={(v: number) => setC('in', true)(Math.min(v, c.out - 0.1))} />
       <Field label="Out" unit="s" min={0} max={media.duration} step={0.04} value={c.out} help="Where the clip ends in the source file. You can also drag the clip's right edge." onchange={(v: number) => setC('out', true)(Math.max(v, c.in + 0.1))} />
@@ -125,9 +156,15 @@
     {#if !isVideo}
       <Field label="Position" unit="s" min={0} max={Math.max(60, store.duration + 30)} step={0.04} value={c.start} help="Where the clip sits on the timeline." onchange={setC('start')} />
     {/if}
-    <Field label="Speed" unit="×" min={0.1} max={4} step={0.05} value={c.speed} help="Slow down or speed up the clip. For moshing: slow clips have smaller motion, fast clips have bigger, wilder vectors." onchange={(v: number) => setC('speed', true)(Math.max(0.05, v))} />
-    <Field type="bool" label="Reverse" value={c.reverse} help="Play the clip backwards." onchange={setC('reverse', true)} />
-    {#if isVideo}
+    {#if !c.freeze}
+      <Field label="Speed" unit="×" min={0.05} max={16} step={0.05} value={c.speed} help="Slow down or speed up the clip (the clip gets longer or shorter; later clips move). For moshing: slow clips have smaller motion, fast clips have bigger, wilder vectors." onchange={(v: number) => setC('speed', true)(Math.max(0.05, Math.min(16, v)))}>
+        <div class="seg speeds">
+          {#each [0.25, 0.5, 1, 2, 4] as sp}<button class:on={c.speed === sp} onclick={() => setC('speed', true)(sp)}>{sp}×</button>{/each}
+        </div>
+      </Field>
+      <Field type="bool" label="Reverse" value={c.reverse} help="Play the clip backwards." onchange={setC('reverse', true)} />
+    {/if}
+    {#if hasPicture}
       <Field
         type="select"
         label="Fit to frame"
@@ -141,7 +178,51 @@
         onchange={setC('fit')}
       />
     {/if}
-    {#if media.hasAudio}
+    {#if hasPicture}
+      <div class="label sect">Picture</div>
+      <Field label="Opacity" min={0} max={1} step={0.01} value={c.opacity ?? 1} help={isUpper ? 'How see-through the clip is over the tracks below.' : 'Fades the picture toward black.'} onchange={(v: number) => setC('opacity')(v)} />
+      {#if isUpper}
+        <Field
+          type="select"
+          label="Blend mode"
+          value={c.blend ?? 'normal'}
+          options={[
+            { value: 'normal', label: 'Normal', hint: 'Drawn on top.' },
+            { value: 'screen', label: 'Screen', hint: 'Only brightens: black disappears. Great for light leaks, fire, glitch overlays shot on black.' },
+            { value: 'add', label: 'Add', hint: 'Adds the light of both pictures: hotter and brighter than Screen.' },
+            { value: 'multiply', label: 'Multiply', hint: 'Only darkens: white disappears. Good for textures, paper, grain.' },
+            { value: 'difference', label: 'Difference', hint: 'Subtracts the pictures: inverted, psychedelic colours where they differ.' },
+          ]}
+          help="How the clip mixes with the picture below it."
+          onchange={setC('blend')}
+        />
+      {/if}
+      <Field label="Fade in" unit="s" min={0} max={Math.min(10, clipLen(c) / 2)} step={0.05} value={c.vfadeIn ?? 0} help={isUpper ? 'The picture fades in from transparent. You can also drag the dot at the clip\'s top-left corner.' : 'The picture fades in from black. You can also drag the dot at the clip\'s top-left corner.'} onchange={(v: number) => setC('vfadeIn')(v)} />
+      <Field label="Fade out" unit="s" min={0} max={Math.min(10, clipLen(c) / 2)} step={0.05} value={c.vfadeOut ?? 0} help={isUpper ? 'The picture fades out to transparent.' : 'The picture fades out to black.'} onchange={(v: number) => setC('vfadeOut')(v)} />
+
+      <div class="row sect"><span class="label grow">Transform</span>{#if !isIdentityTransform(T)}<button class="small ghost" onclick={() => resetC('transform')}><Icon name="reset" size={12} />Reset</button>{/if}</div>
+      <Field label="Zoom" unit="×" min={0.05} max={4} step={0.01} value={T.zoom} help="Scales the picture around its centre. Below 1 for picture-in-picture." onchange={setTf('zoom')} />
+      <Field label="Position X" min={-1} max={1} step={0.005} value={T.x} help="Moves the picture left (−) or right (+), as a share of the frame width." onchange={setTf('x')} />
+      <Field label="Position Y" min={-1} max={1} step={0.005} value={T.y} help="Moves the picture up (−) or down (+), as a share of the frame height." onchange={setTf('y')} />
+      <Field label="Rotation" unit="°" min={-180} max={180} step={0.5} value={T.rotate} help="Turns the picture clockwise (+) or anticlockwise (−)." onchange={setTf('rotate')} />
+      <div class="row">
+        <Field type="bool" label="Flip horizontal" value={T.flipH} help="Mirror left to right." onchange={setTf('flipH')} />
+        <Field type="bool" label="Flip vertical" value={T.flipV} help="Upside down." onchange={setTf('flipV')} />
+      </div>
+      <Field label="Crop left" min={0} max={0.95} step={0.005} value={T.cropL} help="Cuts away this share of the picture's left edge." onchange={setTf('cropL')} />
+      <Field label="Crop right" min={0} max={0.95} step={0.005} value={T.cropR} help="Cuts away this share of the right edge." onchange={setTf('cropR')} />
+      <Field label="Crop top" min={0} max={0.95} step={0.005} value={T.cropT} help="Cuts away this share of the top edge." onchange={setTf('cropT')} />
+      <Field label="Crop bottom" min={0} max={0.95} step={0.005} value={T.cropB} help="Cuts away this share of the bottom edge." onchange={setTf('cropB')} />
+
+      <div class="row sect"><span class="label grow">Colour</span>{#if !isIdentityGrade(Gr)}<button class="small ghost" onclick={() => resetC('grade')}><Icon name="reset" size={12} />Reset</button>{/if}</div>
+      <Field label="Brightness" min={-1} max={1} step={0.01} value={Gr.brightness} help="Lifts (+) or lowers (−) every level evenly." onchange={setGr('brightness')} />
+      <Field label="Contrast" min={0} max={3} step={0.01} value={Gr.contrast} help="Spreads levels away from mid-grey (above 1) or squashes them together (below 1)." onchange={setGr('contrast')} />
+      <Field label="Saturation" min={0} max={3} step={0.01} value={Gr.saturation} help="0 = black and white, 1 = unchanged, higher = more intense colour." onchange={setGr('saturation')} />
+      <Field label="Gamma" min={0.2} max={5} step={0.01} value={Gr.gamma} help="Brightens (above 1) or darkens (below 1) the mid-tones while keeping black and white." onchange={setGr('gamma')} />
+      <Field label="Hue" unit="°" min={-180} max={180} step={1} value={Gr.hue} help="Rotates every colour around the colour wheel." onchange={setGr('hue')} />
+      <p class="small faint">Colour, transform and fades are applied before moshing, so they smear with the melt.</p>
+    {/if}
+    {#if media.hasAudio && !c.freeze}
       <div class="label sect">Sound</div>
       <Field type="bool" label={isVideo ? 'Mute clip sound' : 'Mute'} value={c.muted} help={isVideo ? 'Silence this clip (detached sound lives on an audio track).' : 'Silence this clip.'} onchange={setC('muted')} />
       <Field label="Volume" min={0} max={2} step={0.01} value={c.volume} help="1 = original level." onchange={setC('volume')} />
