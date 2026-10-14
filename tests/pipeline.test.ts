@@ -1,18 +1,15 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ff, ffLog, hasFfmpeg, tmpdir } from './helpers';
-import { prepArgs, decodeToMjpegArgs, audioArgs, exportArgs, defaultExport, parseProbe, inputName } from '../src/engine/args';
-import { framesFromAvi, applyBitstream, writeMoshed, clipStarts } from '../src/engine/mosh';
+import { ff, ffLog, hasFfmpeg, tmpdir, fileMedia, clipOf, place } from './helpers';
+import { prepArgs, segmentArgs, decodeToMjpegArgs, audioMixArgs, exportArgs, defaultExport, parseProbe } from '../src/engine/args';
+import { framesFromAvi, applyBitstream, writeMoshed, concatPrepared } from '../src/engine/mosh';
+import { cutFrames, segments, timelineDuration, transitionEffects } from '../src/engine/timeline';
 import { splitJpegs } from '../src/engine/jpeg';
-import { newProject, type Clip, type EffectInstance, type Project } from '../src/engine/types';
+import { newProject, type EffectInstance, type Project } from '../src/engine/types';
 import { EFFECTS, defaultParams } from '../src/engine/effects';
 
 const d = hasFfmpeg ? describe : describe.skip;
-
-function clip(id: string, ext: string, dur: number, hasAudio: boolean): Clip {
-  return { id, source: { kind: 'file', fileId: id, name: id, mime: 'video/mp4', isImage: false, ext }, duration: dur, width: 320, height: 240, fps: 25, hasAudio, in: 0, out: dur, speed: 1, reverse: false, fit: 'fit' };
-}
 
 function effect(type: string, params: Record<string, unknown> = {}, start = 0, end = 1e9): EffectInstance {
   return { id: type + Math.random(), type, enabled: true, solo: false, start, end, seed: 7, params: { ...defaultParams(EFFECTS[type].params), ...params } as EffectInstance['params'], auto: {}, locks: [] };
@@ -29,8 +26,12 @@ d('native ffmpeg pipeline', () => {
     project.encoder.fps = 25;
     project.encoder.width = 320;
     project.encoder.gop = 12;
-    project.clips = [clip('a', 'mp4', 2, true), clip('b', 'mp4', 2, false)];
-    project.clips.forEach((c, i) => fs.copyFileSync(path.join(dir, c.id + '.mp4'), path.join(dir, inputName(c, i))));
+    const ma = fileMedia('a', 'mp4');
+    const mb = fileMedia('b', 'mp4', { hasAudio: false });
+    project.media = [ma, mb];
+    project.clips = [clipOf(ma), clipOf(mb)];
+    place(dir, 'a.mp4', ma);
+    place(dir, 'b.mp4', mb);
     ff(dir, prepArgs(project, 320));
   });
 
@@ -50,7 +51,7 @@ d('native ffmpeg pipeline', () => {
     expect(types.every((t) => t === 'I' || t === 'P')).toBe(true);
     expect(types[50]).toBe('I'); // forced key at the cut
     expect(types.filter((t) => t === 'I').length).toBeGreaterThanOrEqual(8); // gop 12
-    expect(clipStarts(project.clips, 25)).toEqual([0, 50]);
+    expect(cutFrames(project, 25)).toEqual([50]);
   });
 
   it('round-trips unmodified and decodes every frame', () => {
@@ -90,11 +91,12 @@ d('native ffmpeg pipeline', () => {
   }
 
   it('builds timeline audio and exports mp4 / gif / webm', () => {
-    const aa = audioArgs(project)!;
-    ff(dir, aa);
-    const raw = fs.readFileSync(path.join(dir, 'audio.raw'));
-    expect(raw.length / 4 / 44100).toBeCloseTo(4, 0);
-    ff(dir, ['-f', 's16le', '-ar', '44100', '-ac', '2', '-i', 'audio.raw', 'audio.wav']);
+    const mix = audioMixArgs(project, timelineDuration(project))!;
+    expect(mix.outputs.clean).toBeUndefined();
+    ff(dir, mix.args);
+    const raw = fs.readFileSync(path.join(dir, 'mosh.raw'));
+    expect(raw.length / 4 / 44100).toBeCloseTo(4, 1);
+    ff(dir, ['-f', 's16le', '-ar', '44100', '-ac', '2', '-i', 'mosh.raw', 'audio.wav']);
     for (const format of ['mp4', 'gif', 'webm'] as const) {
       const o = { ...defaultExport(), format, width: 160 };
       ff(dir, exportArgs(o, project.decoder, 25, { file: 'prep.avi', mjpeg: false }, 'audio.wav', `out.${format}`));
@@ -116,5 +118,86 @@ d('native ffmpeg pipeline', () => {
     fs.writeFileSync(path.join(dir, 'm2.avi'), writeMoshed(prep, frames));
     ff(dir, decodeToMjpegArgs(project.decoder, 'm2.avi', 'm2.mjpeg'));
     expect(splitJpegs(new Uint8Array(fs.readFileSync(path.join(dir, 'm2.mjpeg')))).length).toBeGreaterThan(frames.length - 5);
+  });
+
+  it('segments prepared separately join into one decodable stream', () => {
+    const segs = segments(project, 25);
+    expect(segs.map((sg) => [sg.f0, sg.f1])).toEqual([[0, 50], [50, 100]]);
+    const parts = segs.map((sg, i) => {
+      ff(dir, segmentArgs(project, sg, 320, `seg${i}.avi`));
+      const pr = framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, `seg${i}.avi`))), 'mpeg4');
+      expect(pr.frames.length).toBe(sg.f1 - sg.f0);
+      expect(pr.frames[0].type).toBe('I');
+      return pr;
+    });
+    const prep = concatPrepared(parts);
+    expect(prep.frames.map((f) => f.src)).toEqual([...Array(100).keys()]);
+    const frames = applyBitstream(prep, { ...project, effects: [effect('kill', {}, 50, 51)] }, [50]);
+    expect(frames.length).toBe(99);
+    fs.writeFileSync(path.join(dir, 'segm.avi'), writeMoshed(prep, frames));
+    ff(dir, decodeToMjpegArgs(project.decoder, 'segm.avi', 'segm.mjpeg'));
+    expect(splitJpegs(new Uint8Array(fs.readFileSync(path.join(dir, 'segm.mjpeg')))).length).toBe(99);
+  });
+
+  it('blend transitions overlap clips and keep exact frame counts', () => {
+    for (const type of ['dissolve', 'dip', 'wipeleft', 'circleopen', 'pixelize'] as const) {
+      const p: Project = { ...project, clips: [project.clips[0], { ...project.clips[1], transition: { type, duration: 0.8, intensity: 0.5 } }] };
+      expect(timelineDuration(p)).toBeCloseTo(3.2, 5);
+      const segs = segments(p, 25);
+      expect(segs.length).toBe(1);
+      ff(dir, segmentArgs(p, segs[0], 320, 'x.avi'));
+      expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'x.avi'))), 'mpeg4').frames.length).toBe(80);
+      ff(dir, prepArgs(p, 320, 'xw.avi'));
+      expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'xw.avi'))), 'mpeg4').frames.length).toBe(80);
+    }
+  });
+
+  it('mosh transitions turn into effects at the cut', () => {
+    for (const type of ['melt', 'bloom', 'glitch', 'stutter', 'liquid'] as const) {
+      const p: Project = { ...project, clips: [project.clips[0], { ...project.clips[1], transition: { type, duration: 1, intensity: 0.7 } }] };
+      const fx = transitionEffects(p, 25);
+      expect(fx[0].type).toBe('kill');
+      expect(fx[0].start).toBeLessThanOrEqual(50);
+      expect(fx[0].end).toBeGreaterThan(50);
+      const prep = framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'prep.avi'))), 'mpeg4');
+      const frames = applyBitstream(prep, p, [50]);
+      expect(frames.filter((f) => f.type === 'I').length).toBeLessThan(prep.frames.filter((f) => f.type === 'I').length);
+      if (type === 'bloom') expect(frames.length).toBeGreaterThan(prep.frames.length);
+    }
+  });
+
+  it('mixes clip audio and audio tracks into mosh and clean buses', () => {
+    const music = fileMedia('m', 'wav', { duration: 6 });
+    ff(dir, ['-f', 'lavfi', '-i', 'sine=f=220:d=6', 'm.wav']);
+    place(dir, 'm.wav', music);
+    const p: Project = {
+      ...project,
+      media: [...project.media, music],
+      clips: [...project.clips, clipOf(music, { track: 'a1', start: 1, in: 0.5, out: 6, fadeIn: 0.5, fadeOut: 1, volume: 0.8 })],
+    };
+    const total = timelineDuration(p);
+    expect(total).toBeCloseTo(6.5, 5);
+    const mix = audioMixArgs(p, total)!;
+    expect(mix.outputs).toEqual({ mosh: 'mosh.raw', clean: 'clean.raw' });
+    ff(dir, mix.args);
+    for (const f of ['mosh.raw', 'clean.raw']) expect(Math.abs(fs.statSync(path.join(dir, f)).size / 4 / 44100 - total)).toBeLessThan(0.03);
+    const clean = new Int16Array(new Uint8Array(fs.readFileSync(path.join(dir, 'clean.raw'))).buffer);
+    const rms = (a: number, b: number) => Math.sqrt(clean.subarray(a * 88200, b * 88200).reduce((s, v) => s + v * v, 0) / ((b - a) * 88200));
+    expect(rms(0, 0.9)).toBeLessThan(10); // music starts at 1 s
+    expect(rms(2, 4)).toBeGreaterThan(1000);
+    // the video (4 s) is shorter than the music, so the prepared video gets a black tail
+    ff(dir, prepArgs(p, 320, 'tail.avi'));
+    expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'tail.avi'))), 'mpeg4').frames.length).toBe(Math.round(6.5 * 25));
+    const segs = segments(p, 25);
+    expect(segs.at(-1)!.clips.length).toBe(0);
+    ff(dir, segmentArgs(p, segs.at(-1)!, 320, 'black.avi'));
+    expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'black.avi'))), 'mpeg4').frames.length).toBe(segs.at(-1)!.f1 - segs.at(-1)!.f0);
+  });
+
+  it('muted tracks and clips drop out of the mix', () => {
+    const p: Project = { ...project, tracks: project.tracks.map((t) => (t.id === 'a0' ? { ...t, muted: true } : t)) };
+    expect(audioMixArgs(p, 4)).toBeNull();
+    const q: Project = { ...project, clips: project.clips.map((c) => ({ ...c, muted: true })) };
+    expect(audioMixArgs(q, 4)).toBeNull();
   });
 });

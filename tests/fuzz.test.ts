@@ -2,15 +2,15 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ff, hasFfmpeg, tmpdir } from './helpers';
-import { prepArgs, decodeToMjpegArgs, inputName } from '../src/engine/args';
+import { ff, hasFfmpeg, tmpdir, fileMedia, clipOf, place } from './helpers';
+import { prepArgs, decodeToMjpegArgs } from '../src/engine/args';
 import { framesFromAvi, applyBitstream, writeMoshed, type Prepared } from '../src/engine/mosh';
 import { splitJpegs } from '../src/engine/jpeg';
 import { buildAudio } from '../src/engine/audio';
 import { chaos, mutate, makeEffect, randomizeEffect } from '../src/engine/presets';
 import { EFFECTS } from '../src/engine/effects';
 import { makeRng } from '../src/engine/rng';
-import { newProject, defaultAudio, type Clip, type Project } from '../src/engine/types';
+import { newProject, defaultAudio, type Project } from '../src/engine/types';
 
 const d = hasFfmpeg ? describe : describe.skip;
 
@@ -23,9 +23,10 @@ d('fuzz', () => {
     ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=192x108:r=24:d=3', '-c:v', 'libx264', 'v.mp4']);
     project = newProject();
     project.encoder = { ...project.encoder, width: 192, gop: 20 };
-    const c: Clip = { id: 'a', source: { kind: 'file', fileId: 'a', name: 'a', mime: '', isImage: false, ext: 'mp4' }, duration: 3, width: 192, height: 108, fps: 24, hasAudio: false, in: 0, out: 3, speed: 1, reverse: false, fit: 'fit' };
-    project.clips = [c, { ...c, id: 'b' }];
-    project.clips.forEach((cl, i) => fs.copyFileSync(path.join(dir, 'v.mp4'), path.join(dir, inputName(cl, i))));
+    const m = fileMedia('a', 'mp4', { duration: 3, width: 192, height: 108, fps: 24, hasAudio: false });
+    project.media = [m];
+    project.clips = [clipOf(m, { out: 3 }), clipOf(m, { out: 3 })];
+    place(dir, 'v.mp4', m);
     ff(dir, prepArgs(project, 192, 'p.avi'));
     prep = framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'p.avi'))), 'mpeg4');
   });

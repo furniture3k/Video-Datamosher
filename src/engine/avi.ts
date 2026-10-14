@@ -149,7 +149,11 @@ export interface WriteFrame {
   keyframe: boolean;
 }
 
-export function writeAvi(info: AviInfo, frames: WriteFrame[]): Uint8Array {
+/**
+ * Build an AVI as a list of byte parts. Frame payloads are referenced, not copied, so a Blob made
+ * from the parts never needs one huge contiguous buffer (important for long or high-res exports).
+ */
+export function writeAviParts(info: AviInfo, frames: WriteFrame[]): Uint8Array[] {
   let maxSize = 0;
   let total = 0;
   for (const f of frames) {
@@ -175,27 +179,44 @@ export function writeAvi(info: AviInfo, frames: WriteFrame[]): Uint8Array {
 
   const hdrl = list('hdrl', [chunk('avih', avih), list('strl', [chunk('strh', strh), chunk('strf', info.strf)])]);
 
-  // movi + idx1
-  const movi = new Writer();
-  movi.str('movi');
+  // movi: chunk headers + payloads (+ pad bytes), referenced in place
+  const moviParts: Uint8Array[] = [];
   const idx = new Writer();
   let off = 4; // offsets relative to the 'movi' fourcc
+  const pad = new Uint8Array(1);
   for (const f of frames) {
-    const c = chunk('00dc', f.data);
-    movi.push(c);
+    const h = new Uint8Array(8);
+    h.set([0x30, 0x30, 0x64, 0x63]); // '00dc'
+    new DataView(h.buffer).setUint32(4, f.data.length, true);
+    moviParts.push(h, f.data);
+    if (f.data.length & 1) moviParts.push(pad);
     idx.str('00dc');
     idx.u32(f.keyframe ? 0x10 : 0);
     idx.u32(off);
     idx.u32(f.data.length);
-    off += c.length;
+    off += 8 + f.data.length + (f.data.length & 1);
   }
-  const moviList = chunk('LIST', movi.concat());
+  const moviBody = off; // 'movi' fourcc + chunks
+  const moviHead = new Writer();
+  moviHead.str('LIST');
+  moviHead.u32(moviBody);
+  moviHead.str('movi');
   const idx1 = chunk('idx1', idx.concat());
 
-  const body = new Writer();
-  body.str('AVI ');
-  body.push(hdrl);
-  body.push(moviList);
-  body.push(idx1);
-  return chunk('RIFF', body.concat());
+  const riffBody = 4 + hdrl.length + 8 + moviBody + idx1.length;
+  const head = new Writer();
+  head.str('RIFF');
+  head.u32(riffBody);
+  head.str('AVI ');
+  head.push(hdrl);
+  head.push(moviHead.concat());
+  return [head.concat(), ...moviParts, idx1];
+}
+
+export function writeAvi(info: AviInfo, frames: WriteFrame[]): Uint8Array {
+  const parts = writeAviParts(info, frames);
+  const out = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
+  let o = 0;
+  for (const p of parts) (out.set(p, o), (o += p.length));
+  return out;
 }

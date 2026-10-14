@@ -1,20 +1,24 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { untrack, onDestroy } from 'svelte';
   import { store, type CompareMode } from '../lib/store.svelte';
   import { loadExample } from '../lib/media';
   import Icon from './Icon.svelte';
   import { originalFrames, moshedAudioWav, type RenderResult } from '../lib/renderer';
+  import { EditPreview, EditAudio } from '../lib/preview';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
 
   let canvas: HTMLCanvasElement;
+  let editCanvas: HTMLCanvasElement;
   let wrap: HTMLDivElement;
   let muted = $state(false);
   let originals = $state.raw<Uint8Array[] | null>(null);
   let origKey = '';
   let loadingOrig = $state(false);
 
-  // ---- bitmap cache ----
+  const mosh = $derived(store.showingMosh);
+
+  // ---- bitmap cache (mosh frames) ----
   let cache = new Map<string, Promise<ImageBitmap>>();
   let cacheFor: RenderResult | null = null;
   function bitmap(jpegs: Uint8Array[], i: number, tag: string): Promise<ImageBitmap> | null {
@@ -98,7 +102,42 @@
     void store.ui.compare;
     void store.ui.split;
     void originals;
-    draw();
+    if (mosh) draw();
+  });
+
+  // ---- live edit preview ----
+  let preview: EditPreview | null = null;
+  const editAudio = new EditAudio();
+  let dirty = false;
+  function drawEdit() {
+    if (!editCanvas) return;
+    preview ??= new EditPreview(editCanvas);
+    preview.onDirty = () => {
+      if (!store.ui.playing && !dirty) {
+        dirty = true;
+        requestAnimationFrame(() => {
+          dirty = false;
+          if (!mosh) drawEdit();
+        });
+      }
+    };
+    preview.draw(store.project, store.ui.time, store.ui.playing && !mosh, store.ui.speed);
+  }
+  $effect(() => {
+    // redraw when the time or anything on the timeline changes (while paused)
+    void store.ui.time;
+    void JSON.stringify(store.project.clips);
+    void JSON.stringify(store.project.texts);
+    void store.project.media.length;
+    void store.project.encoder.aspect;
+    if (!mosh && !store.ui.playing) untrack(drawEdit);
+  });
+  $effect(() => {
+    if (mosh) preview?.pauseAll();
+  });
+  onDestroy(() => {
+    preview?.dispose();
+    editAudio.dispose();
   });
 
   // ---- originals for A/B ----
@@ -117,7 +156,7 @@
       .finally(() => (loadingOrig = false));
   });
 
-  // ---- audio ----
+  // ---- mosh audio ----
   let actx: AudioContext | null = null;
   let abuf = $state.raw<AudioBuffer | null>(null);
   let srcNode: AudioBufferSourceNode | null = null;
@@ -125,9 +164,9 @@
   $effect(() => {
     const r = store.render;
     const a = $state.snapshot(store.project.audio);
-    void store.project.clips.length;
+    const tracks = $state.snapshot(store.project.tracks);
     if (!r) return;
-    const key = r.id + JSON.stringify(a);
+    const key = r.id + JSON.stringify([a, tracks]);
     if (key === audioKey) return;
     audioKey = key;
     const p = $state.snapshot(store.project) as Project;
@@ -147,12 +186,11 @@
       /* noop */
     }
     srcNode = null;
+    editAudio.stop();
   }
 
   // ---- playback loop ----
   let raf = 0;
-  let t0 = 0;
-  let f0 = 0;
   $effect(() => {
     // Only these restart playback; everything else is read untracked so the
     // loop isn't torn down on every frame.
@@ -161,77 +199,153 @@
     const buf = abuf;
     const mute = muted;
     const speed = store.ui.speed;
-    if (!playing || !r) {
+    const showMosh = mosh;
+    if (!playing || (showMosh && !r)) {
       cancelAnimationFrame(raf);
       stopAudio();
+      preview?.pauseAll();
+      if (!showMosh) untrack(drawEdit);
       return;
     }
-    return untrack(() => {
-      const n = r.frames.length;
-      const range = (): [number, number] => (store.ui.loop && store.ui.loopOn ? store.ui.loop : [0, n]);
-      const [a0, b0] = range();
-      if (store.ui.playhead >= b0 - 1 || store.ui.playhead < a0) store.ui.playhead = a0;
-      const startAudio = () => {
-        stopAudio();
-        if (!buf || mute || !actx || speed !== 1) return;
-        actx.resume();
-        srcNode = actx.createBufferSource();
-        srcNode.buffer = buf;
-        srcNode.connect(actx.destination);
-        srcNode.start(0, Math.min(buf.duration, store.ui.playhead / r.fps));
-      };
-      t0 = performance.now();
-      f0 = store.ui.playhead;
-      startAudio();
-      let expected = f0;
-      const tick = (now: number) => {
-        const [a, b] = range();
-        if (store.ui.playhead !== expected) {
-          // user seeked while playing: continue from there
-          f0 = store.ui.playhead;
-          t0 = now;
-          startAudio();
-        }
-        let f = f0 + Math.floor(((now - t0) / 1000) * r.fps * speed);
-        if (f >= b) {
-          if (store.ui.loopOn) {
-            f0 = a;
-            t0 = now;
-            f = a;
-            store.ui.playhead = a;
-            expected = a;
-            startAudio();
-          } else {
-            store.ui.playhead = n - 1;
-            store.ui.playing = false;
-            return;
-          }
-        }
-        if (f !== store.ui.playhead) store.ui.playhead = f;
-        expected = f;
-        raf = requestAnimationFrame(tick);
-      };
-      raf = requestAnimationFrame(tick);
-      return () => {
-        cancelAnimationFrame(raf);
-        stopAudio();
-      };
-    });
+    return untrack(() => (showMosh && r ? playMosh(r, buf, mute, speed) : playEdit(mute, speed)));
   });
 
+  function playMosh(r: RenderResult, buf: AudioBuffer | null, mute: boolean, speed: number) {
+    const n = r.frames.length;
+    // pick up where the edit preview was
+    const cur = r.frames[store.ui.playhead];
+    if (!cur || Math.abs(cur.src / r.fps - store.ui.time) > 1.5 / r.fps) store.ui.playhead = Math.min(n - 1, store.frameAtTime(store.ui.time));
+    const range = (): [number, number] => (store.ui.loop && store.ui.loopOn ? store.ui.loop : [0, n]);
+    const [a0, b0] = range();
+    if (store.ui.playhead >= b0 - 1 || store.ui.playhead < a0) store.seekFrame(a0);
+    const startAudio = () => {
+      stopAudio();
+      if (!buf || mute || !actx || speed !== 1) return;
+      actx.resume();
+      srcNode = actx.createBufferSource();
+      srcNode.buffer = buf;
+      srcNode.connect(actx.destination);
+      srcNode.start(0, Math.min(buf.duration, store.ui.playhead / r.fps));
+    };
+    let t0 = performance.now();
+    let f0 = store.ui.playhead;
+    startAudio();
+    let expected = f0;
+    const tick = (now: number) => {
+      const [a, b] = range();
+      if (store.ui.playhead !== expected) {
+        // user seeked while playing: continue from there
+        f0 = store.ui.playhead;
+        t0 = now;
+        startAudio();
+      }
+      let f = f0 + Math.floor(((now - t0) / 1000) * r.fps * speed);
+      if (f >= b) {
+        if (store.ui.loopOn) {
+          f0 = a;
+          t0 = now;
+          f = a;
+          store.seekFrame(a);
+          expected = a;
+          startAudio();
+        } else {
+          store.seekFrame(n - 1);
+          store.ui.playing = false;
+          return;
+        }
+      }
+      if (f !== store.ui.playhead) store.seekFrame(f);
+      expected = f;
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      stopAudio();
+    };
+  }
+
+  function playEdit(mute: boolean, speed: number) {
+    const end = store.duration;
+    if (end <= 0) {
+      store.ui.playing = false;
+      return;
+    }
+    if (store.ui.time >= end - 0.05) store.seek(0);
+    let t0 = store.ui.time;
+    let n0 = performance.now();
+    const startAudio = () => editAudio.start($state.snapshot(store.project) as Project, store.ui.time, mute || speed !== 1);
+    startAudio();
+    let expected = t0;
+    let audioKey = JSON.stringify([store.project.clips, store.project.tracks]);
+    const tick = (now: number) => {
+      if (Math.abs(store.ui.time - expected) > 1e-6) {
+        // seeked while playing
+        t0 = store.ui.time;
+        n0 = now;
+        startAudio();
+      }
+      const k = JSON.stringify([store.project.clips, store.project.tracks]);
+      if (k !== audioKey) {
+        audioKey = k;
+        t0 = store.ui.time;
+        n0 = now;
+        startAudio();
+      }
+      let t = t0 + ((now - n0) / 1000) * speed;
+      if (t >= store.duration) {
+        if (store.ui.loopOn) {
+          t = 0;
+          t0 = 0;
+          n0 = now;
+          store.seek(0);
+          startAudio();
+        } else {
+          store.seek(store.duration);
+          store.ui.playing = false;
+          return;
+        }
+      }
+      store.seek(t);
+      expected = store.ui.time;
+      preview?.draw(store.project, t, true, speed);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      editAudio.stop();
+      preview?.pauseAll();
+    };
+  }
+
   const n = $derived(store.render?.frames.length ?? 0);
-  const cur = $derived(store.render?.frames[store.ui.playhead]);
-  // SMPTE-style timecode: MM:SS:FF
+  const cur = $derived(mosh ? store.render?.frames[store.ui.playhead] : undefined);
+  const p2 = (x: number) => String(x).padStart(2, '0');
+  // SMPTE-style timecode: MM:SS:FF (timeline time in the edit view, output frames in the mosh view)
   const timecode = $derived.by(() => {
     const fps = store.render?.fps ?? store.project.encoder.fps;
-    const f = store.ui.playhead;
+    const f = mosh ? store.ui.playhead : Math.round(store.ui.time * fps);
     const secs = Math.floor(f / fps);
-    const p2 = (x: number) => String(x).padStart(2, '0');
     return `${p2(Math.floor(secs / 60))}:${p2(secs % 60)}:${p2(f % fps)}`;
   });
 
+  function step(d: number) {
+    store.ui.playing = false;
+    if (mosh) store.seekFrame(store.ui.playhead + d);
+    else store.seek(store.ui.time + d / store.project.encoder.fps);
+  }
+  function toStart() {
+    if (mosh) store.seekFrame(0);
+    else store.seek(0);
+  }
+  function toEnd() {
+    if (mosh) store.seekFrame(n - 1);
+    else store.seek(store.duration);
+  }
+
   function snapshot() {
-    canvas.toBlob((b) => b && download(b, `${store.project.name.replace(/[^\w-]+/g, '_')}_frame${store.ui.playhead}.png`), 'image/png');
+    (mosh ? canvas : editCanvas).toBlob((b) => b && download(b, `${store.project.name.replace(/[^\w-]+/g, '_')}_${mosh ? 'frame' + store.ui.playhead : 't' + store.ui.time.toFixed(2)}.png`), 'image/png');
   }
 
   let draggingSplit = false;
@@ -248,6 +362,12 @@
     ['side', 'Side'],
     ['hold', 'Source'],
   ];
+  const VIEWS: ['auto' | 'edit' | 'mosh', string, string][] = [
+    ['auto', 'Auto', 'Show the mosh when it is up to date, otherwise the live edit'],
+    ['edit', 'Edit', 'Always show the live edit preview (no mosh, instant)'],
+    ['mosh', 'Mosh', 'Always show the last rendered mosh'],
+  ];
+  const hasTimeline = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
 </script>
 
 <div class="player">
@@ -268,12 +388,18 @@
     {#if store.status.busy}
       <div class="progress" style="width:{Math.max(2, Math.round(store.status.progress * 100))}%"></div>
     {/if}
-    <canvas bind:this={canvas} class:hidden={!store.render} class:split={store.ui.compare === 'split'}></canvas>
-    {#if !store.render && !store.status.busy}
+    <canvas bind:this={canvas} class:hidden={!mosh} class:split={store.ui.compare === 'split'}></canvas>
+    <canvas bind:this={editCanvas} class="edit" class:hidden={mosh || !hasTimeline}></canvas>
+    {#if hasTimeline}
+      <div class="badge-view mono" class:live={!mosh} title={mosh ? 'Showing the rendered mosh' : 'Live edit preview: your cut as it is, before moshing'}>
+        {#if mosh}mosh{:else}edit{#if store.status.busy || store.status.pending}<span class="faint"> · mosh rendering</span>{:else if store.render && !store.renderFresh && !store.ui.autoRender}<span class="faint"> · mosh out of date</span>{/if}{/if}
+      </div>
+    {/if}
+    {#if !hasTimeline && !store.status.busy}
       <div class="empty">
-        {#if store.project.clips.length}
-          <p class="muted">Nothing rendered yet.</p>
-          <button onclick={() => store.doRender(true)}><Icon name="render" />Render preview</button>
+        {#if store.project.media.length}
+          <p class="muted">The timeline is empty.</p>
+          <p class="muted small">Drag clips from the Media panel onto the timeline below.</p>
         {:else}
           <p>No footage.</p>
           <p class="muted small">Import a clip from the Media panel or drop files anywhere.<br />Two clips with lots of motion make the best melts.</p>
@@ -283,7 +409,7 @@
     {/if}
     {#if store.status.busy}
       <div class="stage-note mono">{store.status.stage || 'Working'} {Math.round(store.status.progress * 100)}%</div>
-    {:else if store.ui.compare !== 'off' && store.render}
+    {:else if store.ui.compare !== 'off' && mosh}
       <div class="stage-note mono">
         {#if loadingOrig}loading source{:else if store.ui.compare === 'split'}source | mosh{:else if store.ui.compare === 'side'}source | mosh{:else}source{/if}
       </div>
@@ -300,7 +426,7 @@
   <div class="transport">
     <div class="tc mono" title="minutes:seconds:frames">{timecode}</div>
     <div class="frameinfo mono small">
-      <span class="faint">{n ? store.ui.playhead + 1 : 0}/{n}</span>
+      {#if mosh}<span class="faint">{n ? store.ui.playhead + 1 : 0}/{n}</span>{/if}
       {#if cur}
         <span class="ftype" class:i={cur.type === 'I'}>{cur.type}</span>
         <span class="faint">{TAG_LABEL[cur.tag]}</span>
@@ -308,13 +434,13 @@
     </div>
 
     <div class="buttons">
-      <button class="icon ghost" title="Start  Home" aria-label="Start" onclick={() => (store.ui.playhead = 0)}><Icon name="start" /></button>
-      <button class="icon ghost" title="Previous frame  ←" aria-label="Previous frame" onclick={() => (store.ui.playhead = Math.max(0, store.ui.playhead - 1))}><Icon name="prev" /></button>
-      <button class="play" title="Play / pause  Space" aria-label={store.ui.playing ? 'Pause' : 'Play'} disabled={!store.render} onclick={() => (store.ui.playing = !store.ui.playing)}>
+      <button class="icon ghost" title="Start  Home" aria-label="Start" onclick={toStart}><Icon name="start" /></button>
+      <button class="icon ghost" title="Previous frame  ←" aria-label="Previous frame" onclick={() => step(-1)}><Icon name="prev" /></button>
+      <button class="play" title="Play / pause  Space" aria-label={store.ui.playing ? 'Pause' : 'Play'} disabled={!hasTimeline} onclick={() => (store.ui.playing = !store.ui.playing)}>
         <Icon name={store.ui.playing ? 'pause' : 'play'} />
       </button>
-      <button class="icon ghost" title="Next frame  →" aria-label="Next frame" onclick={() => (store.ui.playhead = Math.min(n - 1, store.ui.playhead + 1))}><Icon name="next" /></button>
-      <button class="icon ghost" title="End  End" aria-label="End" onclick={() => (store.ui.playhead = Math.max(0, n - 1))}><Icon name="end" /></button>
+      <button class="icon ghost" title="Next frame  →" aria-label="Next frame" onclick={() => step(1)}><Icon name="next" /></button>
+      <button class="icon ghost" title="End  End" aria-label="End" onclick={toEnd}><Icon name="end" /></button>
     </div>
 
     <div class="right">
@@ -324,6 +450,12 @@
       </select>
       <button class="icon ghost" class:on={muted} title="Mute preview" aria-label="Mute" onclick={() => ((muted = !muted), muted && stopAudio())}><Icon name={muted ? 'mute' : 'sound'} /></button>
       <span class="divider"></span>
+      <div class="seg" role="group" aria-label="Preview">
+        {#each VIEWS as [v, label, tip]}
+          <button class:on={store.ui.view === v} title={tip} onclick={() => store.setPref('view', v)}>{label}</button>
+        {/each}
+      </div>
+      <span class="divider"></span>
       <span class="label cmp-label">A/B</span>
       <div class="seg" role="group" aria-label="Compare with source  C">
         {#each COMPARE as [m, label]}
@@ -331,7 +463,7 @@
         {/each}
       </div>
       <span class="divider"></span>
-      <button class="icon ghost" title="Save this frame as PNG" aria-label="Save frame" disabled={!store.render} onclick={snapshot}><Icon name="still" /></button>
+      <button class="icon ghost" title="Save this frame as PNG" aria-label="Save frame" disabled={!hasTimeline} onclick={snapshot}><Icon name="still" /></button>
       <button class="icon ghost render-btn" title="Render now  Enter" aria-label="Render now" disabled={!store.project.clips.length} onclick={() => store.doRender(true)}><Icon name="render" /></button>
     </div>
   </div>
@@ -365,6 +497,21 @@
   }
   canvas.hidden {
     display: none;
+  }
+  .badge-view {
+    position: absolute;
+    right: 10px;
+    top: 8px;
+    font-size: 11px;
+    color: var(--text-2);
+    background: rgba(0, 0, 0, 0.5);
+    padding: 1px 6px;
+    border-radius: 2px;
+    border-left: 2px solid var(--accent);
+    z-index: 2;
+  }
+  .badge-view.live {
+    border-left-color: var(--ok);
   }
   .progress {
     position: absolute;
@@ -502,7 +649,8 @@
       flex-wrap: wrap;
     }
     .divider,
-    .render-btn {
+    .render-btn,
+    .cmp-label {
       display: none;
     }
   }

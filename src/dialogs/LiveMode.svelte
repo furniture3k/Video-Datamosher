@@ -85,7 +85,7 @@
     }
   }
   async function useClip(id: string) {
-    const c = store.project.clips.find((x) => x.id === id);
+    const c = store.project.media.find((x) => x.id === id);
     if (c?.source.kind !== 'file') return;
     const b = await getFile(c.source.fileId);
     if (b) useFile(b);
@@ -164,7 +164,7 @@
       const blob = new Blob(chunks, { type: 'video/webm' });
       const name = `live-mosh-${Date.now() % 100000}.webm`;
       if (confirm('Add the recording to your project as a clip? (Cancel = just download it)')) {
-        await addFiles([new File([blob], name, { type: 'video/webm' })], (performance.now() - t0) / 1000);
+        await addFiles([new File([blob], name, { type: 'video/webm' })], 'auto', (performance.now() - t0) / 1000);
       } else download(blob, name);
     };
     recorder.start(250);
@@ -207,7 +207,7 @@
     gl?.gl.getExtension('WEBGL_lose_context')?.loseContext();
   });
 
-  const fileClips = $derived(store.project.clips.filter((c) => c.source.kind === 'file' && !c.source.isImage));
+  const fileClips = $derived(store.project.media.filter((c) => c.source.kind === 'file' && !c.source.isImage && c.hasVideo));
 </script>
 
 <svelte:window onkeydown={onKey} />

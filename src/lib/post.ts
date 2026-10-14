@@ -1,14 +1,14 @@
 // Applies pixel/flow effects to decoded frames (JPEG in, JPEG out).
 import { GL, COPY, type Target } from './gl';
 import { FlowEngine, CHROMA, type FlowParams } from './flow';
-import { activeEffects } from '../engine/mosh';
+import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
 import { paramAt } from '../engine/automation';
 import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project } from '../engine/types';
 
 export function pixelEffectsOf(project: Project): EffectInstance[] {
-  return activeEffects(project.effects).filter((e) => EFFECTS[e.type].kind === 'pixel');
+  return activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'pixel');
 }
 
 const tOf = (src: number, e: EffectInstance) => (src - e.start) / Math.max(1, e.end - e.start - 1);
@@ -141,6 +141,43 @@ export class PostProcessor {
   }
 }
 
+/** Runs pixel effects over decoded frames in chunks, keeping effect state (flow) between chunks. */
+export class PostRunner {
+  private pp: PostProcessor | null = null;
+  private effects: EffectInstance[];
+  constructor(
+    project: Project,
+    private quality: number,
+  ) {
+    this.effects = pixelEffectsOf(project);
+  }
+  get active() {
+    return this.effects.length > 0;
+  }
+
+  /** jpegs[i] is output frame offset + i */
+  async run(jpegs: Uint8Array[], frames: Pick<Frame, 'src'>[], offset: number, onProgress?: (p: number) => void, signal?: { cancelled: boolean }): Promise<Uint8Array[]> {
+    if (!this.active || !jpegs.length) return jpegs;
+    const out: Uint8Array[] = [];
+    for (let i = 0; i < jpegs.length; i++) {
+      if (signal?.cancelled) throw new Error('cancelled');
+      const bmp = await createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
+      this.pp ??= new PostProcessor(bmp.width, bmp.height);
+      const k = offset + i;
+      this.pp.processFrame(bmp, frames[Math.min(k, frames.length - 1)] ?? { src: k }, k, this.effects);
+      bmp.close();
+      out.push(await this.pp.toJpeg(this.quality));
+      if (i % 4 === 0) onProgress?.(i / jpegs.length);
+    }
+    return out;
+  }
+
+  dispose() {
+    this.pp?.dispose();
+    this.pp = null;
+  }
+}
+
 export async function runPost(
   jpegs: Uint8Array[],
   frames: Pick<Frame, 'src'>[],
@@ -149,23 +186,10 @@ export async function runPost(
   onProgress?: (p: number) => void,
   signal?: { cancelled: boolean },
 ): Promise<Uint8Array[]> {
-  const effects = pixelEffectsOf(project);
-  if (!effects.length || !jpegs.length) return jpegs;
-  const first = await createImageBitmap(new Blob([jpegs[0] as BlobPart], { type: 'image/jpeg' }));
-  const pp = new PostProcessor(first.width, first.height);
-  first.close();
-  const out: Uint8Array[] = [];
+  const r = new PostRunner(project, quality);
   try {
-    for (let i = 0; i < jpegs.length; i++) {
-      if (signal?.cancelled) throw new Error('cancelled');
-      const bmp = await createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
-      pp.processFrame(bmp, frames[Math.min(i, frames.length - 1)] ?? { src: i }, i, effects);
-      bmp.close();
-      out.push(await pp.toJpeg(quality));
-      if (i % 4 === 0) onProgress?.(i / jpegs.length);
-    }
+    return await r.run(jpegs, frames, 0, onProgress, signal);
   } finally {
-    pp.dispose();
+    r.dispose();
   }
-  return out;
 }

@@ -1,7 +1,9 @@
 // Global app state (Svelte 5 runes), undo/redo, autosave and auto-render.
 import { newProject, type Project, type EffectInstance, type Clip } from '../engine/types';
-import { timelineFrames, clipStarts, MAX_OUTPUT_FRAMES } from '../engine/mosh';
-import { renderPreview, Cancelled, type RenderResult } from './renderer';
+import { MAX_OUTPUT_FRAMES } from '../engine/mosh';
+import { timelineFrames, timelineDuration, cutFrames, remapToFootage } from '../engine/timeline';
+import { migrate } from '../engine/migrate';
+import { renderPreview, renderKey, proxyKey, Cancelled, type RenderResult } from './renderer';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
@@ -23,9 +25,22 @@ class Store {
   ui = $state({
     advanced: localGet('advanced', false),
     selectedEffect: null as string | null,
-    selectedClip: null as string | null,
+    /** selected timeline clips */
+    selectedClips: [] as string[],
+    /** selected transition (id of the clip it leads into) */
+    selectedTransition: null as string | null,
     tab: 'effects' as 'effects' | 'clip' | 'encoder' | 'audio',
+    /** output frame shown by the mosh preview */
     playhead: 0,
+    /** timeline position (s) shown by the edit preview */
+    time: 0,
+    /** what the player shows: live edit, rendered mosh, or whichever is up to date */
+    view: localGet<'auto' | 'edit' | 'mosh'>('view', 'auto'),
+    /** timeline zoom in pixels per second (0 = fit) */
+    pxPerSec: 0,
+    snap: true,
+    timelineViewW: 800,
+    timelineHeight: localGet('timelineHeight', 300),
     playing: false,
     loop: null as [number, number] | null,
     loopOn: true,
@@ -56,16 +71,83 @@ class Store {
     return this.project.encoder.fps;
   }
   get totalFrames() {
-    return this.render?.prep.frames.length ?? timelineFrames(this.project.clips, this.project.encoder.fps);
+    return this.render && this.renderFresh ? this.render.prep.frames.length : timelineFrames(this.project, this.project.encoder.fps);
+  }
+  get duration() {
+    return timelineDuration(this.project);
   }
   get cuts() {
-    return clipStarts(this.project.clips, this.project.encoder.fps).slice(1);
+    return cutFrames(this.project, this.project.encoder.fps);
+  }
+  /** the rendered mosh matches the current project */
+  get renderFresh() {
+    return !!this.render && this.render.key === renderKey(this.project);
+  }
+  /** the player is showing the rendered mosh (otherwise the live edit preview) */
+  get showingMosh() {
+    const v = this.ui.view;
+    return !!this.render && (v === 'mosh' || (v === 'auto' && this.renderFresh && !this.status.busy && !this.status.pending));
+  }
+  get selectedClipId(): string | null {
+    return this.ui.selectedClips[0] ?? null;
   }
   get selected(): EffectInstance | undefined {
     return this.project.effects.find((e) => e.id === this.ui.selectedEffect);
   }
   get selectedClip(): Clip | undefined {
-    return this.project.clips.find((c) => c.id === this.ui.selectedClip);
+    const id = this.ui.selectedClips[0];
+    return id ? this.project.clips.find((c) => c.id === id) : undefined;
+  }
+
+  /** Output frame showing timeline time t (first frame whose source is at or after it). */
+  frameAtTime(t: number): number {
+    const fr = this.render?.frames;
+    if (!fr?.length) return 0;
+    const s = t * this.render!.fps;
+    let lo = 0;
+    // frames are mostly in source order; a linear scan is fine and handles reorders
+    for (let i = 0; i < fr.length; i++) {
+      if (fr[i].src >= s - 0.5) return i;
+      lo = i;
+    }
+    return lo;
+  }
+
+  /** Move the playhead to timeline time t (both previews follow). */
+  seek(t: number) {
+    const d = this.duration;
+    this.ui.time = Math.max(0, Math.min(d, t));
+    if (this.render && this.renderFresh) this.ui.playhead = Math.min(this.render.frames.length - 1, this.frameAtTime(this.ui.time));
+  }
+
+  /** Move the mosh preview to output frame i (the timeline playhead follows). */
+  seekFrame(i: number) {
+    const r = this.render;
+    if (!r) return;
+    this.ui.playhead = Math.max(0, Math.min(r.frames.length - 1, i));
+    this.ui.time = (r.frames[this.ui.playhead]?.src ?? 0) / r.fps;
+  }
+
+  selectClip(id: string | null, add = false) {
+    if (!id) this.ui.selectedClips = [];
+    else if (add) this.ui.selectedClips = this.ui.selectedClips.includes(id) ? this.ui.selectedClips.filter((x) => x !== id) : [...this.ui.selectedClips, id];
+    else this.ui.selectedClips = [id];
+    this.ui.selectedTransition = null;
+    if (id) this.ui.tab = 'clip';
+  }
+
+  selectTransition(clipId: string) {
+    this.ui.selectedTransition = clipId;
+    this.ui.selectedClips = [];
+    this.ui.tab = 'clip';
+  }
+
+  /** Edit the timeline; effects, markers and Motion Transfer sources stay on their footage. */
+  editTimeline(fn: (p: Project) => void, key: string | null = null) {
+    const before = clone($state.snapshot(this.project)) as Project;
+    fn(this.project);
+    remapToFootage(before, this.project);
+    this.commit(key);
   }
 
   toast(text: string, kind: Toast['kind'] = 'info', ms = 3500) {
@@ -179,17 +261,13 @@ class Store {
     this.renderTimer = window.setTimeout(() => this.doRender(), delay);
   }
 
-  private keyOf() {
-    return JSON.stringify({ c: this.project.clips, e: this.project.effects, enc: this.project.encoder, d: this.project.decoder, s: this.project.globalSeed });
-  }
-
   async doRender(force = false) {
     this.status.pending = false;
     if (!this.project.clips.length) {
       this.render = null;
       return;
     }
-    const key = this.keyOf();
+    const key = renderKey(this.project);
     if (!force && key === this.renderKey && this.render) return;
     if (this.status.busy) {
       // let the running render notice it is stale, then re-run
@@ -210,6 +288,7 @@ class Store {
       this.renderKey = key;
       if (r.frames.length >= MAX_OUTPUT_FRAMES)
         this.toast(`Output capped at ${MAX_OUTPUT_FRAMES} frames. Lower the Bloom or Stutter repeats.`, 'error', 6000);
+      if (this.renderFresh) this.ui.playhead = Math.min(r.frames.length - 1, this.frameAtTime(this.ui.time));
       if (this.ui.playhead >= r.frames.length) this.ui.playhead = Math.max(0, r.frames.length - 1);
       if (this.ui.loop && this.ui.loop[1] > r.frames.length) this.ui.loop = null;
     } catch (e) {
@@ -239,17 +318,24 @@ class Store {
 
   async restore() {
     const p = await kvGet<Project>('autosave');
-    if (p && p.version === 1) {
-      this.project = { ...newProject(), ...p, encoder: { ...newProject().encoder, ...p.encoder }, audio: { ...newProject().audio, ...p.audio }, decoder: { ...newProject().decoder, ...p.decoder } };
-      this.last = this.snapshot();
-      if (this.project.clips.length) this.scheduleRender(100);
-    } else this.last = this.snapshot();
-    // Media no longer used by the saved project is removed on startup only, so undo
+    let ok = false;
+    if (p)
+      try {
+        this.project = migrate(p);
+        ok = true;
+      } catch (e) {
+        console.warn('autosave not restored', e);
+      }
+    this.last = this.snapshot();
+    if (ok && this.project.clips.length) this.scheduleRender(100);
+    // Media no longer in the saved project is removed on startup only, so undo
     // within a session can always bring a deleted clip back.
-    pruneFiles(this.project.clips.flatMap((c) => (c.source.kind === 'file' ? [c.source.fileId] : [])));
+    pruneFiles(this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])));
+    const { prepareAll } = await import('./media');
+    prepareAll(this.project.media);
   }
 
-  setPref<K extends 'advanced' | 'autoRender' | 'theme'>(k: K, v: (typeof this.ui)[K]) {
+  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight'>(k: K, v: (typeof this.ui)[K]) {
     this.ui[k] = v;
     localSet(k, v);
     if (k === 'autoRender' && v) this.scheduleRender(50);

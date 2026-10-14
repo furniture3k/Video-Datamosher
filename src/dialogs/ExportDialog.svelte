@@ -7,6 +7,7 @@
   import { download, localGet, localSet } from '../lib/storage';
   import { defaultExport, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
+  import { audioSources } from '../engine/timeline';
 
   let o = $state<ExportOptions>({ ...defaultExport(), ...localGet<Partial<ExportOptions>>('exportOpts', {}) });
   let running = $state(false);
@@ -16,7 +17,7 @@
   let error = $state('');
   let signal = { cancelled: false };
   const hasPixel = $derived(store.project.effects.some((e) => e.enabled && ['vectorWarp', 'chroma', 'pixelSort'].includes(e.type)));
-  const hasAudio = $derived(store.project.audio.source !== 'none' && store.project.clips.some((c) => c.hasAudio));
+  const hasAudio = $derived(audioSources(store.project).length > 0);
 
   const FORMATS = [
     { id: 'mp4', label: 'MP4', desc: 'H.264' },

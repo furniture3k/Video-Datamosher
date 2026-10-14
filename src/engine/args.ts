@@ -1,6 +1,6 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
-import type { Clip, DecoderSettings, EncoderSettings, Project } from './types';
-import { clipDuration } from './mosh';
+import type { Clip, DecoderSettings, EncoderSettings, MediaItem, Project } from './types';
+import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
   { id: 'mandelbrot', name: 'Mandelbrot zoom', spec: (w, h, r) => `mandelbrot=s=${w}x${h}:r=${r}` },
@@ -15,23 +15,30 @@ export const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 
 const ASPECTS: Record<string, number> = { '16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '9:16': 9 / 16, '4:5': 4 / 5, '21:9': 21 / 9 };
 
-export function outputSize(project: Project, width: number): { w: number; h: number } {
-  const first = project.clips[0];
-  const ar = project.encoder.aspect === 'auto' ? (first ? first.width / Math.max(1, first.height) : 16 / 9) : ASPECTS[project.encoder.aspect];
+export function outputSize(project: Pick<Project, 'encoder' | 'clips' | 'media'>, width: number): { w: number; h: number } {
+  const firstClip = project.clips.find((c) => c.track === 'v1');
+  const first = (firstClip && project.media.find((m) => m.id === firstClip.mediaId)) || project.media.find((m) => m.hasVideo);
+  const ar = project.encoder.aspect === 'auto' ? (first && first.height ? first.width / first.height : 16 / 9) : ASPECTS[project.encoder.aspect];
   const w = even(width);
   return { w, h: even(w / (ar || 16 / 9)) };
 }
 
-export const inputName = (c: Clip, _i = 0) => (c.source.kind === 'file' ? `in_${c.id}.${c.source.ext}` : '');
+export type PathFn = (m: MediaItem) => string;
 
-/** Input arguments for clip i (files must be written to the FS under inputName). */
-export function inputArgs(c: Clip, i: number, fps: number): string[] {
-  if (c.source.kind === 'generator') {
-    const g = GENERATORS.find((x) => x.id === (c.source as { generator: string }).generator) ?? GENERATORS[0];
-    return ['-f', 'lavfi', '-t', String(c.out), '-i', g.spec(even(c.width), even(c.height), fps)];
+/** File name of a media item inside the ffmpeg file system. */
+export const inputName = (m: Pick<MediaItem, 'id' | 'source'>) => (m.source.kind === 'file' ? `in_${m.id}.${m.source.ext}` : '');
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/** Input arguments for one clip, already cut to its in/out range (fast seek). */
+export function clipInputArgs(c: Clip, m: MediaItem, fps: number, path: PathFn = inputName): string[] {
+  const dur = r3(Math.max(0.04, c.out - c.in));
+  if (m.source.kind === 'generator') {
+    const g = GENERATORS.find((x) => x.id === (m.source as { generator: string }).generator) ?? GENERATORS[0];
+    return ['-f', 'lavfi', '-t', String(r3(c.out)), '-i', g.spec(even(m.width), even(m.height), fps)];
   }
-  if (c.source.isImage) return ['-loop', '1', '-framerate', String(fps), '-t', String(c.out), '-i', inputName(c, i)];
-  return ['-i', inputName(c, i)];
+  if (m.source.isImage) return ['-loop', '1', '-framerate', String(fps), '-t', String(dur), '-i', path(m)];
+  return ['-ss', String(r3(c.in)), '-t', String(dur), '-i', path(m)];
 }
 
 function scaleChain(c: Clip, w: number, h: number): string {
@@ -40,18 +47,48 @@ function scaleChain(c: Clip, w: number, h: number): string {
   return `scale=${w}:${h}:force_original_aspect_ratio=decrease:flags=bicubic,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2`;
 }
 
-const r3 = (n: number) => Math.round(n * 1000) / 1000;
+/** Filter chain for one clip's picture (input already trimmed), padded/cut to its exact length. */
+function clipVideoChain(c: Clip, m: MediaItem, fps: number, w: number, h: number): string {
+  const len = r3(clipLen(c));
+  const f: string[] = [];
+  if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(c.out)}`);
+  f.push('setpts=PTS-STARTPTS');
+  if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
+  f.push(`fps=${fps}`, scaleChain(c, w, h), 'setsar=1', 'format=yuv420p');
+  // reverse buffers the whole clip in memory, so do it after scaling down
+  if (c.reverse) f.push('reverse', 'setpts=PTS-STARTPTS');
+  f.push(`tpad=stop_mode=clone:stop_duration=${len}`, `trim=duration=${len}`);
+  return f.join(',');
+}
 
-export function videoFilter(clips: Clip[], fps: number, w: number, h: number): string {
-  const parts = clips.map((c, i) => {
-    const f = [`trim=start=${r3(c.in)}:end=${r3(c.out)}`, 'setpts=PTS-STARTPTS'];
-    if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
-    f.push(`fps=${fps}`, scaleChain(c, w, h), 'setsar=1', 'format=yuv420p');
-    // reverse buffers the whole clip in memory, so do it after scaling down
-    if (c.reverse) f.push('reverse');
-    return `[${i}:v]${f.join(',')}[v${i}]`;
+/**
+ * Filter graph for one segment. Clips inside a segment are joined by blend transitions (xfade)
+ * or plain concatenation. Returns the inputs it needs and its output label.
+ */
+function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn): { inputs: string[]; filter: string[]; label: string } {
+  const n = seg.f1 - seg.f0;
+  const label = `seg${tag}`;
+  if (!seg.clips.length) {
+    return { inputs: [], filter: [`color=c=black:s=${w}x${h}:r=${fps}:d=${r3(n / fps + 1)},format=yuv420p,setsar=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${label}]`], label };
+  }
+  const inputs: string[] = [];
+  const filter: string[] = [];
+  seg.clips.forEach((pl, k) => {
+    inputs.push(...clipInputArgs(pl.clip, pl.media, fps, path));
+    filter.push(`[${first + k}:v]${clipVideoChain(pl.clip, pl.media, fps, w, h)}[${tag}c${k}]`);
   });
-  return `${parts.join(';')};${clips.map((_, i) => `[v${i}]`).join('')}concat=n=${clips.length}:v=1:a=0[vout]`;
+  let acc = `${tag}c0`;
+  seg.clips.slice(1).forEach((pl, i) => {
+    const k = i + 1;
+    const out = `${tag}x${k}`;
+    if (pl.overlap > 0) {
+      const tr = BLEND_TRANSITIONS[pl.clip.transition!.type]?.xfade ?? 'fade';
+      filter.push(`[${acc}][${tag}c${k}]xfade=transition=${tr}:duration=${r3(pl.overlap)}:offset=${r3(pl.start - seg.start)}[${out}]`);
+    } else filter.push(`[${acc}][${tag}c${k}]concat=n=2:v=1:a=0[${out}]`);
+    acc = out;
+  });
+  filter.push(`[${acc}]tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${label}]`);
+  return { inputs, filter, label };
 }
 
 export function encoderArgs(enc: EncoderSettings, keyTimes: number[]): string[] {
@@ -73,35 +110,67 @@ export function encoderArgs(enc: EncoderSettings, keyTimes: number[]): string[] 
   a.push('-mbd', enc.mbd, '-cmp', enc.cmp, '-subcmp', enc.cmp);
   if (enc.trellis) a.push('-trellis', '1');
   a.push('-sc_threshold', enc.sceneCut ? '0' : '1000000000');
-  if (keyTimes.length) a.push('-force_key_frames', keyTimes.map((t) => r3(t)).join(','));
+  const kt = keyTimes.filter((t) => t > 0.001);
+  if (kt.length) a.push('-force_key_frames', kt.map((t) => r3(t)).join(','));
   return a;
 }
 
-/** Keyframe times in seconds: clip cuts (optional) + user markers. */
+/** Keyframe times (s) on the whole timeline: clip cuts (optional), mosh transitions and user markers. */
 export function keyTimes(project: Project): number[] {
-  const t: number[] = [];
   const fps = project.encoder.fps;
-  if (project.encoder.keyAtCuts) {
-    let acc = 0;
-    project.clips.forEach((c, i) => {
-      if (i > 0) t.push(acc);
-      acc += clipDuration(c);
-    });
-  }
+  const t: number[] = [...transitionKeyTimes(project)];
+  if (project.encoder.keyAtCuts) for (const s of segments(project, fps)) t.push(s.f0 / fps);
+  if (project.encoder.keyAtCuts) t.push(...cutFrames(project, fps).map((f) => f / fps));
   for (const m of project.encoder.keyMarkers) t.push(m / fps);
-  return [...new Set(t)].sort((a, b) => a - b);
+  return [...new Set(t.map(r3))].filter((x) => x > 0).sort((a, b) => a - b);
 }
 
-export function prepArgs(project: Project, width: number, out = 'prep.avi'): string[] {
+/** Prepare the whole timeline in a single pass (used when cuts must not get keyframes). */
+export function prepArgs(project: Project, width: number, out = 'prep.avi', path: PathFn = inputName): string[] {
   const { w, h } = outputSize(project, width);
   const fps = project.encoder.fps;
-  return [
-    ...project.clips.flatMap((c, i) => inputArgs(c, i, fps)),
-    '-filter_complex', videoFilter(project.clips, fps, w, h),
-    '-map', '[vout]', '-an',
-    ...encoderArgs(project.encoder, keyTimes(project)),
-    '-f', 'avi', out,
-  ];
+  const segs = segments(project, fps);
+  const inputs: string[] = [];
+  const filter: string[] = [];
+  const labels: string[] = [];
+  let next = 0;
+  segs.forEach((s, i) => {
+    const g = segmentGraph(s, fps, w, h, next, `s${i}`, path);
+    next += s.clips.length;
+    inputs.push(...g.inputs);
+    filter.push(...g.filter);
+    labels.push(g.label);
+  });
+  filter.push(labels.length > 1 ? `${labels.map((l) => `[${l}]`).join('')}concat=n=${labels.length}:v=1:a=0[vout]` : `[${labels[0]}]null[vout]`);
+  return [...inputs, '-filter_complex', filter.join(';'), '-map', '[vout]', '-an', ...encoderArgs(project.encoder, keyTimes(project)), '-f', 'avi', out];
+}
+
+/** Prepare one segment on its own (starts with a keyframe). Keyframe times are relative to it. */
+export function segmentArgs(project: Project, seg: Segment, width: number, out: string, path: PathFn = inputName): string[] {
+  const { w, h } = outputSize(project, width);
+  const fps = project.encoder.fps;
+  const g = segmentGraph(seg, fps, w, h, 0, 'a', path);
+  const t0 = seg.f0 / fps;
+  const t1 = seg.f1 / fps;
+  const keys = keyTimes(project)
+    .filter((t) => t > t0 + 0.001 && t < t1 - 0.001)
+    .map((t) => t - t0);
+  return [...g.inputs, '-filter_complex', g.filter.join(';'), '-map', `[${g.label}]`, '-an', '-frames:v', String(seg.f1 - seg.f0), ...encoderArgs(project.encoder, keys), '-f', 'avi', out];
+}
+
+/** Stable identity of a segment's prepared output (for caching). */
+export function segmentKey(project: Project, seg: Segment, width: number, path: PathFn = inputName): string {
+  const fps = project.encoder.fps;
+  const t0 = seg.f0 / fps;
+  const t1 = seg.f1 / fps;
+  const { previewWidth: _p, width: _w, keyMarkers: _k, ...enc } = project.encoder;
+  return JSON.stringify({
+    enc,
+    size: outputSize(project, width),
+    n: seg.f1 - seg.f0,
+    keys: keyTimes(project).filter((t) => t > t0 + 0.001 && t < t1 - 0.001).map((t) => r3(t - t0)),
+    clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '' })),
+  });
 }
 
 /**
@@ -131,33 +200,60 @@ export function decodeToMjpegArgs(d: DecoderSettings, input: string, out: string
   ];
 }
 
-/** Audio for the whole timeline as raw s16le stereo 44.1k (silence for clips without audio). */
-export function audioArgs(project: Project, out = 'audio.raw', onlyClip: string | null = null): string[] | null {
-  const clips = project.clips;
+function tempo(speed: number): string[] {
+  const f: string[] = [];
+  let s = speed;
+  while (s > 2) (f.push('atempo=2'), (s /= 2));
+  while (s < 0.5) (f.push('atempo=0.5'), (s /= 0.5));
+  if (Math.abs(s - 1) > 1e-4) f.push(`atempo=${r3(s)}`);
+  return f;
+}
+
+export interface AudioMix {
+  args: string[];
+  /** output files that were produced, by bus */
+  outputs: { mosh?: string; clean?: string };
+}
+
+/**
+ * Mix every audible clip into two raw s16le stereo 44.1 kHz buses: sound that follows the mosh
+ * and sound that stays clean. Both are exactly `total` seconds long.
+ */
+export function audioMixArgs(project: Project, total: number, path: PathFn = inputName, names = { mosh: 'mosh.raw', clean: 'clean.raw' }): AudioMix | null {
   const fps = project.encoder.fps;
-  if (!clips.some((c) => c.hasAudio)) return null;
+  const srcs = audioSources(project).filter((s) => s.start < total);
+  if (!srcs.length || total <= 0) return null;
   const inputs: string[] = [];
-  const parts: string[] = [];
-  clips.forEach((c, i) => {
-    const d = r3(clipDuration(c));
-    const use = c.hasAudio && (!onlyClip || onlyClip === c.id);
-    if (use) {
-      inputs.push(...inputArgs(c, i, fps));
-      const n = inputs.filter((x) => x === '-i').length - 1;
-      const f = [`atrim=start=${r3(c.in)}:end=${r3(c.out)}`, 'asetpts=PTS-STARTPTS'];
-      if (c.reverse) f.push('areverse');
-      let s = c.speed;
-      while (s > 2) (f.push('atempo=2'), (s /= 2));
-      while (s < 0.5) (f.push('atempo=0.5'), (s /= 0.5));
-      if (s !== 1) f.push(`atempo=${r3(s)}`);
-      f.push('aresample=44100', 'aformat=sample_fmts=s16:channel_layouts=stereo', 'apad', `atrim=end=${d}`);
-      parts.push(`[${n}:a]${f.join(',')}[a${i}]`);
-    } else {
-      parts.push(`anullsrc=r=44100:cl=stereo,atrim=end=${d},aformat=sample_fmts=s16:channel_layouts=stereo[a${i}]`);
-    }
+  const filter: string[] = [];
+  const buses: Record<'mosh' | 'clean', string[]> = { mosh: [], clean: [] };
+  srcs.forEach((s, i) => {
+    inputs.push(...clipInputArgs(s.clip, s.media, fps, path));
+    const len = r3(Math.min(s.len, total - s.start));
+    const f: string[] = ['asetpts=PTS-STARTPTS'];
+    if (s.clip.reverse) f.push('areverse');
+    f.push(...tempo(s.clip.speed));
+    f.push('aresample=44100', 'aformat=sample_fmts=fltp:channel_layouts=stereo', 'apad', `atrim=end=${len}`);
+    if (Math.abs(s.gain - 1) > 1e-4) f.push(`volume=${r3(s.gain)}`);
+    const fi = Math.min(s.fadeIn, len / 2);
+    const fo = Math.min(s.fadeOut, len / 2);
+    if (fi > 0.005) f.push(`afade=t=in:st=0:d=${r3(fi)}`);
+    if (fo > 0.005) f.push(`afade=t=out:st=${r3(len - fo)}:d=${r3(fo)}`);
+    const ms = Math.round(s.start * 1000);
+    if (ms > 0) f.push(`adelay=delays=${ms}:all=1`);
+    filter.push(`[${i}:a]${f.join(',')}[s${i}]`);
+    buses[s.bus].push(`[s${i}]`);
   });
-  const fc = `${parts.join(';')};${clips.map((_, i) => `[a${i}]`).join('')}concat=n=${clips.length}:v=0:a=1[aout]`;
-  return [...inputs, '-filter_complex', fc, '-map', '[aout]', '-f', 's16le', '-ar', '44100', '-ac', '2', out];
+  const maps: string[] = [];
+  const outputs: AudioMix['outputs'] = {};
+  for (const bus of ['mosh', 'clean'] as const) {
+    const ins = buses[bus];
+    if (!ins.length) continue;
+    const mix = ins.length > 1 ? `${ins.join('')}amix=inputs=${ins.length}:duration=longest:dropout_transition=0:normalize=0,` : `${ins[0]}`;
+    filter.push(`${mix}${ins.length > 1 ? '' : 'anull,'}apad,atrim=end=${r3(total)},aformat=sample_fmts=s16:channel_layouts=stereo[${bus}]`);
+    maps.push('-map', `[${bus}]`, '-f', 's16le', '-ar', '44100', '-ac', '2', names[bus]);
+    outputs[bus] = names[bus];
+  }
+  return { args: [...inputs, '-filter_complex', filter.join(';'), ...maps], outputs };
 }
 
 export type ExportFormat = 'mp4' | 'webm' | 'gif' | 'avi' | 'png';

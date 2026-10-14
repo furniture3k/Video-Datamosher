@@ -50,7 +50,7 @@
       const dur = (performance.now() - started) / 1000;
       stop();
       store.ui.dialog = null;
-      await addFiles([file], dur);
+      await addFiles([file], 'auto', dur);
     };
     recorder.start(250);
     started = performance.now();
