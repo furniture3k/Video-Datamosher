@@ -145,7 +145,7 @@ Everything above has been built, with these deliberate changes from the plan:
 
 - **Motion-vector editing** is done with a GPU **flow engine** (Vector Warp) instead of rewriting MPEG-4 macroblock syntax. It gives the same controls (amplify, rotate, swap, quantise, noise) on any footage, runs in real time, and also powers Live Mode. Rewriting the real bitstream vectors stays a possible future addition.
 - **WebM export uses VP8 + Vorbis**, because the VP9 and Opus encoders in ffmpeg.wasm crash.
-- **Native "turbo mode"** (desktop FFmpeg) was not built yet; it's planned in [DESKTOP.md](DESKTOP.md).
+- **Native "turbo mode"** became the desktop app (Tauri + native FFmpeg); see [DESKTOP.md](DESKTOP.md).
 - Extra additions: procedural clip generators, webcam/screen recording, mosh share codes, and audio that follows the mosh.
 
 ---
@@ -166,4 +166,4 @@ The app is now a video editor first, with the datamosher working on the edit:
 - **Export.** Media and the moshed stream are read in place (WORKERFS). Pixel effects and titles
   run in bounded chunks that are joined without re-encoding, so 1080p (and short 4K) exports fit
   in browser memory. The 30-second import limit is gone; the output cap is 10 minutes at 24 fps.
-- **Next:** a desktop build with native FFmpeg. See [DESKTOP.md](DESKTOP.md).
+- **Apps:** an installable offline web app (phones and desktop browsers) and a desktop app for Windows, macOS and Linux with native FFmpeg. See [DESKTOP.md](DESKTOP.md).

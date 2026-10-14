@@ -5,6 +5,7 @@
   import { exportVideo, Cancelled } from '../lib/renderer';
   import { ffmpeg } from '../lib/ffmpeg';
   import { download, localGet, localSet } from '../lib/storage';
+  import { isDesktop } from '../lib/platform';
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
@@ -72,7 +73,7 @@
     <div class="small muted">
       Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if o.width && o.format !== 'avi'}, saved at {outW}×{outH}{o.width > mosh.w ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Pixel effects (Vector Warp, Chroma, Pixel Sort) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
     </div>
-    {#if heavy}
+    {#if heavy && !isDesktop}
       <div class="small warn">This is a big render for a browser ({Math.round(pixels / 1e6)} megapixel-frames). Expect it to take a while; keep this tab in front. Lower the mosh resolution or use "Ultra fast" to speed it up.</div>
     {/if}
 
@@ -157,7 +158,11 @@
         {/if}
         <div class="row small">
           <span class="grow mono">{result.name} · {mb(result.size)}</span>
-          <a href={result.url} download={result.name}>Download again</a>
+          {#if isDesktop}
+            <button class="link" onclick={() => fetch(result!.url).then((r) => r.blob()).then((b) => download(b, result!.name))}>Save again</button>
+          {:else}
+            <a href={result.url} download={result.name}>Download again</a>
+          {/if}
         </div>
       </div>
     {/if}
@@ -234,8 +239,17 @@
     background: #000;
     object-fit: contain;
   }
-  a {
+  a,
+  .link {
     color: var(--text);
+  }
+  .link {
+    background: none;
+    border: none;
+    padding: 0;
+    height: auto;
+    font: inherit;
+    text-decoration: underline;
   }
   @media (max-width: 560px) {
     .formats {

@@ -68,7 +68,7 @@
         <li>Audio tracks can play clean (like a soundtrack) or <b>follow the mosh</b> (the <b>~</b> button) so they stutter with the picture.</li>
         <li>Titles can sit clean on top or <b>melt with the video</b>.</li>
         <li>Quality 6–12 and a long keyframe interval give the classic chunky look.</li>
-        <li>Everything runs in your browser; nothing is uploaded.</li>
+        <li>Everything runs on your device; nothing is uploaded.</li>
       </ul>
     </div>
     <div class="col">

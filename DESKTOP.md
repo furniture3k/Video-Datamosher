@@ -1,84 +1,85 @@
-# Desktop app plan (for later)
+# Desktop app
 
-The web version does everything the desktop app would, but the browser's copy of FFmpeg
-(ffmpeg.wasm) is single-threaded, roughly 3–10× slower than a native install, and has limited
-memory. 1080p works on the web; 1440p and 4K work for short pieces but are slow. A desktop app
-removes those limits without rewriting the editor.
+The desktop app is the web app in a native window ([Tauri 2](https://tauri.app)), with one
+change: video jobs run on a native FFmpeg instead of ffmpeg.wasm. Native FFmpeg uses every core
+and has no wasm memory limit, so preparing clips and exporting are several times faster and
+1440p, 4K and long videos are practical. Everything else (editor, effects, engine) is the same code.
 
-## Goal
+## How it fits together
 
-- Windows (`.exe`/`.msi` installer) and macOS (`.dmg`, Apple Silicon and Intel).
-- Same interface and engine as the website, with one codebase for both.
-- Native FFmpeg for preparing, decoding and exporting: fast 1080p/4K, long videos, hardware
-  encoders (VideoToolbox on Mac, NVENC / Quick Sync / AMF on Windows).
-- Media opened from disk by path (no copies into browser storage).
+```
+src-tauri/                  the native shell (Rust)
+  src/main.rs               window + command registration
+  src/engine.rs             native engine: work folder, run FFmpeg, stream logs, cancel, Save dialog
+  tauri.conf.json           window, bundle targets, bundled FFmpeg (externalBin)
+  binaries/                 moshpit-ffmpeg-<target triple>, downloaded at build time (not committed)
+src/lib/platform.ts         isDesktop
+src/lib/ffmpeg.ts           Engine interface; picks ffmpeg.wasm or native at startup
+src/lib/ffmpeg-native.ts    native Engine: same run(args, { inputs, mounts, outputs }) contract
+```
 
-## Recommended stack: Tauri 2 (Rust)
+- **One engine boundary.** Every FFmpeg job in the app goes through `ffmpeg.run(args, { mounts, inputs, outputs })`.
+  `ffmpeg-native.ts` implements the same interface: inputs are written into a per-engine work
+  folder in the system temp directory, mounted media are written there once per file and passed
+  to FFmpeg by path, log lines stream back (for progress bars), and outputs are read back.
+  The temp folder is deleted when the app quits.
+- **Cancel** kills the FFmpeg process.
+- **Saving.** The webview can't download files, so `download()` (`src/lib/storage.ts`) opens the
+  native Save dialog instead.
+- **FFmpeg** is bundled next to the app as `moshpit-ffmpeg`. `MOSHPIT_FFMPEG=/path/to/ffmpeg`
+  overrides it; if it's missing, the `ffmpeg` on PATH is used.
 
-Tauri wraps the existing web app in a small native shell written in Rust and builds a `.dmg`
-for Mac and `.msi`/`.exe` for Windows from the same project.
+## Building
 
-|  | Tauri 2 (recommended) | Electron (alternative) |
-|---|---|---|
-| Language of the shell | Rust | JavaScript (Node) |
-| Installer size | ~15 MB + FFmpeg (~60–80 MB) | ~150 MB + FFmpeg |
-| Web engine | System WebView (WKWebView on Mac, WebView2 on Windows) | Bundled Chromium |
-| Risk | Small rendering differences between Safari-based WKWebView and Chromium-based WebView2 | Same engine everywhere; bigger download |
+Prerequisites: Node 22, [Rust](https://rustup.rs), and on Linux the
+[WebKitGTK packages](https://tauri.app/start/prerequisites/#linux)
+(`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`).
 
-The app already runs in Safari and Chrome, uses WebGL (supported in both WebViews) and doesn't
-depend on WebCodecs, so Tauri's system WebViews are fine. If something WebKit-specific turns up,
-the same frontend can go into Electron instead; only the small native layer changes.
+```bash
+npm install
+npm run desktop          # development window with hot reload
+npm run desktop:build    # installers in src-tauri/target/release/bundle/
+```
 
-## What is already prepared in the web code
+`npm run desktop` copies the `ffmpeg` on your PATH into `src-tauri/binaries/` (or downloads one if
+there is none). `npm run desktop:build` always downloads a static build for the current platform
+(`scripts/fetch-ffmpeg.mjs`; `--target <triple>` for another one, `MOSHPIT_FFMPEG_URL` for your own archive).
 
-These were built into the web version so the desktop step stays small:
+Releases: pushing a tag like `v1.1.0` runs `.github/workflows/desktop.yml`, which builds Windows
+(x64 `.msi` + `-setup.exe`), macOS (Apple Silicon and Intel `.dmg`) and Linux (`.AppImage`,
+`.deb`, `.rpm`) and attaches them to a draft GitHub Release. Running the workflow by hand
+builds the same files as workflow artifacts. Bump `version` in `package.json` first; the app
+takes its version from there.
 
-- **One engine boundary.** Every FFmpeg job goes through `ffmpeg.run(args, { mounts, inputs, outputs })`
-  in `src/lib/ffmpeg.ts`. A desktop build swaps in a second implementation of that one function.
-- **Media by reference.** Inputs are passed as `mounts` (read in place, never copied). On desktop
-  these become real file paths.
-- **Segmented, cached preparation.** Only the clips you change are re-prepared
-  (`segments()` / `segmentArgs()` in `src/engine/`).
-- **Bounded-memory export.** Pixel effects and titles run in chunks and the pieces are joined
-  without re-encoding (`exportVideo()` in `src/lib/renderer.ts`).
-- **Mosh resolution separate from output resolution**, so 4K output can come from a 1080p mosh.
-- **Pure argument builders** (`src/engine/args.ts`) that are already tested against native FFmpeg in CI.
+Tests: `ci.yml` builds the app on Linux and drives it through WebDriver
+(`scripts/e2e-desktop.mjs`: load the example, render, export MP4 and WebM, cancel, import).
+Locally: `npm run build`, `cargo build --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol`,
+then `xvfb-run node scripts/e2e-desktop.mjs` (needs `cargo install tauri-driver` and `webkit2gtk-driver`).
 
-## Steps
+## FFmpeg builds and licensing
 
-1. **Scaffold.** `npm create tauri-app` style setup in `src-tauri/`, pointing at the Vite build.
-   Keep the website build unchanged (`npm run build`); add `npm run desktop` and `npm run desktop:build`.
-2. **Ship FFmpeg as a sidecar.** Bundle a static FFmpeg per platform (macOS arm64 + x64, Windows x64)
-   with Tauri's `externalBin`. Licensing: builds with libx264 are GPL, so the app's distribution must
-   meet GPL terms (publish source, which this repo already does), or use an LGPL build with hardware
-   encoders only.
-3. **Native engine adapter.** A Rust command `ffmpeg_run(args, mounts, outputs)` that maps mount names
-   to file paths, spawns the sidecar, streams `-progress` lines back as events (for progress bars),
-   supports cancel (kill the process) and returns output files by path. In the frontend, pick the
-   adapter at startup (`'__TAURI_INTERNALS__' in window`).
-4. **Files on disk.** Use the dialog/fs plugins: importing stores the file path in the project
-   instead of copying into IndexedDB; previews load via Tauri's asset protocol. Projects save as
-   `.mosh` files next to the media, with relink-on-open if files move.
-5. **Bigger limits.** Raise `MAX_OUTPUT_FRAMES`; keep preview frames in a disk cache instead of RAM;
-   write exports straight to the chosen file instead of building a Blob.
-6. **Hardware export.** Add encoder choices in the Export dialog when available:
-   `h264_videotoolbox` / `hevc_videotoolbox` (Mac), `h264_nvenc` / `hevc_nvenc`, `h264_qsv`,
-   `h264_amf` (Windows), plus ProRes on Mac. Detect with `ffmpeg -encoders` at startup.
-7. **Builds and releases.** GitHub Actions matrix using `tauri-action` builds the `.dmg` and
-   `.msi`/`.exe` on tag pushes and attaches them to a GitHub Release. Add Tauri's updater for
-   in-app updates.
-8. **Signing (optional but recommended before sharing widely).**
-   - macOS: Apple Developer Program ($99/year) for a Developer ID certificate and notarisation;
-     without it, people have to right-click → Open the first time.
-   - Windows: a code-signing certificate avoids the SmartScreen "unknown publisher" warning.
+The release builds bundle GPL builds of FFmpeg (with libx264): BtbN/FFmpeg-Builds for Windows and
+Linux, ffmpeg.martin-riedl.de for macOS. FFmpeg runs as a separate program, but distributing it
+means meeting the GPL for that binary: say which build is included and where its source is.
+The release notes and this file do that; keep the links current if the sources change.
+Alternatively, point `MOSHPIT_FFMPEG_URL` at an LGPL build and use hardware H.264 encoders.
 
-## Rough effort
+## Signing (not set up yet)
 
-Steps 1–4 give a working, faster desktop app; 5–6 make it a proper 4K tool; 7–8 are packaging.
-The editor, effects and engine logic don't change.
+- **macOS:** builds are ad-hoc signed, so people have to right-click → Open the first time.
+  An Apple Developer ID ($99/year) plus notarisation removes that: set `APPLE_CERTIFICATE`,
+  `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and
+  `APPLE_TEAM_ID` as repository secrets and pass them to `tauri-action`.
+- **Windows:** a code-signing certificate avoids SmartScreen's "unknown publisher" warning.
 
-## Things to check when starting
+## Next steps
 
-- WebGL flow engine performance inside WKWebView at 4K (fall back to lower-resolution flow if needed).
-- Audio preview (Web Audio) behaves the same in both WebViews.
-- Very large projects: memory use of the segment cache (make it disk-backed on desktop).
+- Raise `MAX_OUTPUT_FRAMES` (10 minutes at 24 fps) on desktop and keep preview frames in a disk
+  cache instead of RAM for long projects.
+- Hardware export: `h264_videotoolbox` / `hevc_videotoolbox` and ProRes on Mac; `h264_nvenc`,
+  `h264_qsv`, `h264_amf` on Windows. Detect with `ffmpeg -encoders` at startup.
+- Open media by path instead of copying it into the app's storage, and save projects as files next
+  to the media.
+- In-app updates with Tauri's updater plugin (needs a signing key for update bundles).
+- Phone apps from the same code (Tauri 2 also targets iOS and Android, using ffmpeg.wasm there).
+  Until then the installable web app covers phones.

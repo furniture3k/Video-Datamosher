@@ -1,5 +1,8 @@
 // ffmpeg.wasm wrapper: one instance, serialised jobs, crash recovery and cancellation.
+// In the desktop app the same interface is backed by a native FFmpeg (see ffmpeg-native.ts).
 import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
+import { isDesktop } from './platform';
+import { NativeService } from './ffmpeg-native';
 
 type LogFn = (line: string) => void;
 
@@ -15,6 +18,26 @@ export interface RunOptions {
   onFrame?: (n: number) => void;
 }
 
+export interface RunResult {
+  code: number;
+  log: string;
+  out: Record<string, Uint8Array>;
+}
+
+/** What the rest of the app uses; implemented by ffmpeg.wasm (web) and native FFmpeg (desktop). */
+export interface Engine {
+  ready: boolean;
+  stallMs: number;
+  onStatus: (s: string) => void;
+  warmup(): Promise<unknown>;
+  onLog(fn: LogFn): () => void;
+  cancel(): void;
+  abort(): void;
+  has(name: string): boolean;
+  run(args: string[], opts?: RunOptions): Promise<RunResult>;
+  remove(name: string): Promise<void>;
+}
+
 export class EngineCrash extends Error {}
 /** Thrown when a job is killed on purpose (user cancel). */
 export class Cancelled extends Error {
@@ -23,7 +46,7 @@ export class Cancelled extends Error {
   }
 }
 
-class FFmpegService {
+class FFmpegService implements Engine {
   private ff: FFmpeg | null = null;
   private loading: Promise<FFmpeg> | null = null;
   private files = new Set<string>();
@@ -214,7 +237,8 @@ class FFmpegService {
   }
 }
 
-export const ffmpeg = new FFmpegService();
+const create = (name: string): Engine => (isDesktop ? new NativeService(name) : new FFmpegService());
+export const ffmpeg = create('main');
 /** A second engine for background jobs (preview proxies, audio waveforms) so they never block renders. */
-export const ffmpegBg = new FFmpegService();
+export const ffmpegBg = create('bg');
 ffmpegBg.stallMs = 60000;
