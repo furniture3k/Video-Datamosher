@@ -248,6 +248,33 @@ await step('playback runs and loops', async () => {
   if (!(p1 > 5 && p2 !== p1)) throw new Error(`playhead ${p1} -> ${p2}`);
 });
 
+const alignment = () =>
+  S(() => {
+    const lane = document.querySelector('.v-lane');
+    const g = lane.previousElementSibling.getBoundingClientRect();
+    const l = lane.getBoundingClientRect();
+    const v = window.__moshpit.store.project.clips.filter((c) => c.track === 'v1');
+    const second = document.querySelectorAll('.clip.video')[1]?.getBoundingClientRect();
+    return { gap: Math.abs(l.left - g.right), height: Math.abs(l.height - g.height), n: v.length, second: second?.left };
+  });
+
+await step('timeline lanes line up with headers and the playhead', async () => {
+  const a = await alignment();
+  if (a.gap > 0.5 || a.height > 0.5) throw new Error('track headers and lanes misaligned: ' + JSON.stringify(a));
+  // put the playhead exactly on the second clip's start and compare positions
+  const cut = await S(() => {
+    const s = window.__moshpit.store;
+    const v = s.project.clips.filter((c) => c.track === 'v1');
+    const len = (c) => (c.out - c.in) / c.speed;
+    const t = len(v[0]) - (v[1].transition && ['dissolve', 'dip', 'dipwhite', 'wipeleft', 'wiperight', 'wipeup', 'wipedown', 'slideleft', 'slideright', 'circleopen', 'pixelize'].includes(v[1].transition.type) ? Math.min(v[1].transition.duration, len(v[0]) / 2, len(v[1]) / 2) : 0);
+    s.seek(t);
+    return t;
+  });
+  await page.waitForTimeout(200);
+  const pos = await S(() => [document.querySelector('.phead.main').getBoundingClientRect().left, document.querySelectorAll('.clip.video')[1].getBoundingClientRect().left]);
+  if (Math.abs(pos[0] - pos[1]) > 1) throw new Error(`playhead at ${pos[0]} but the cut (${cut}s) is drawn at ${pos[1]}`);
+});
+
 await step('phone layout: one panel at a time, timeline usable', async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);
@@ -257,6 +284,8 @@ await step('phone layout: one panel at a time, timeline usable', async () => {
   }
   const box = await page.locator('footer .v-lane').boundingBox();
   if (!box || box.y + box.height > 844 || box.height < 30) throw new Error('timeline not on screen: ' + JSON.stringify(box));
+  const a = await alignment();
+  if (a.gap > 0.5 || a.height > 0.5) throw new Error('phone: track headers and lanes misaligned: ' + JSON.stringify(a));
   const overflow = await S(() => document.documentElement.scrollWidth > window.innerWidth + 1 || document.documentElement.scrollHeight > window.innerHeight + 1);
   if (overflow) throw new Error('page overflows the phone screen');
   await page.setViewportSize({ width: 1440, height: 900 });

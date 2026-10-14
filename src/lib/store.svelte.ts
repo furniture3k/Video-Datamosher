@@ -213,6 +213,21 @@ class Store {
     }
   }
 
+  /** Drop selections that point at things that no longer exist (after undo, redo, loading). */
+  private pruneSelection() {
+    const p = this.project;
+    const ok = (id: string) => p.clips.some((c) => c.id === id) || p.texts.some((t) => t.id === id);
+    if (this.ui.selectedClips.some((id) => !ok(id))) this.ui.selectedClips = this.ui.selectedClips.filter(ok);
+    const tr = this.ui.selectedTransition;
+    if (tr) {
+      const vids = p.clips.filter((c) => c.track === 'v1');
+      const c = vids.find((x) => x.id === tr);
+      if (!c || vids[0] === c) this.ui.selectedTransition = null;
+    }
+    if (this.ui.selectedEffect && !p.effects.some((e) => e.id === this.ui.selectedEffect)) this.ui.selectedEffect = null;
+    if (this.ui.time > this.duration) this.ui.time = this.duration;
+  }
+
   undo() {
     const prev = this.undoStack.pop();
     if (!prev) return;
@@ -270,6 +285,7 @@ class Store {
 
   // ---------- rendering ----------
   private changed() {
+    this.pruneSelection();
     this.autosave();
     if (this.ui.autoRender) this.scheduleRender();
   }

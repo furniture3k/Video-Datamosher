@@ -32,9 +32,9 @@
   <div class="sep"></div>
 
   <nav class="tools">
-    <button class="ghost" onclick={() => (store.ui.dialog = 'presets')} title="Presets  P"><Icon name="list" />Presets</button>
+    <button class="ghost" onclick={() => (store.ui.dialog = 'presets')} title="Presets  P"><Icon name="list" /><span class="lbl">Presets</span></button>
     <div class="roll">
-      <button class="ghost" onclick={onchaos} disabled={!hasClips} title="Roll a random effect stack  R. Locked settings and pinned effects stay put."><Icon name="dice" />Randomize</button>
+      <button class="ghost" onclick={onchaos} disabled={!hasClips} title="Roll a random effect stack  R. Locked settings and pinned effects stay put."><Icon name="dice" /><span class="lbl">Randomize</span></button>
       <input
         type="range"
         min="0"
@@ -45,8 +45,8 @@
         aria-label="Randomize amount"
       />
     </div>
-    <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  M"><Icon name="nudge" />Nudge</button>
-    <button class="ghost" onclick={() => (store.ui.dialog = 'variations')} disabled={!hasClips} title="Compare several variations side by side  V"><Icon name="grid" />Variations</button>
+    <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  M"><Icon name="nudge" /><span class="lbl">Nudge</span></button>
+    <button class="ghost" onclick={() => (store.ui.dialog = 'variations')} disabled={!hasClips} title="Compare several variations side by side  V"><Icon name="grid" /><span class="lbl">Variations</span></button>
   </nav>
 
   <label class="seed" title="Every random choice comes from this number. Same seed, same result.">
@@ -123,6 +123,7 @@
     padding: 0 8px;
     height: 40px;
     background: var(--surface);
+    min-width: 0;
   }
   .brand {
     display: flex;
@@ -227,7 +228,22 @@
       display: none;
     }
   }
-  @media (max-width: 860px) {
+  /* laptop widths: tools become icon buttons so Export always fits */
+  @media (max-width: 1280px) and (min-width: 861px) {
+    .tools .lbl {
+      display: none;
+    }
+    .name {
+      width: 120px;
+    }
+  }
+  @media (max-width: 1000px) and (min-width: 861px) {
+    .seg,
+    .txt {
+      display: none;
+    }
+  }
+  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
     header {
       height: auto;
       flex-wrap: wrap;
@@ -236,8 +252,18 @@
     }
     .tools {
       order: 10;
-      width: 100%;
-      flex-wrap: wrap;
+      width: calc(100% + 24px);
+      margin: 0 -12px;
+      padding: 0 8px;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tools::-webkit-scrollbar {
+      display: none;
+    }
+    .tools > * {
+      flex: none;
     }
     .name {
       flex: 1;

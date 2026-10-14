@@ -358,3 +358,21 @@ input.switch:checked::after {
 ::selection {
   background: var(--accent-soft);
 }
+
+/* ---------- touch screens ---------- */
+html {
+  /* no double-tap zoom on buttons */
+  touch-action: manipulation;
+}
+#app {
+  /* keep clear of notches and rounded corners */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+@media (pointer: coarse) {
+  /* iOS zooms the page into any field with text under 16px and leaves it zoomed */
+  input:not([type='range']):not([type='checkbox']):not([type='color']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

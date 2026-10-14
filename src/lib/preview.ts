@@ -8,6 +8,7 @@ import { drawTexts } from './text';
 import { layoutVideo, sourceTime, audioSources, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
 import { outputSize } from '../engine/args';
 import { SAMPLE_RATE } from '../engine/audio';
+import { audioCtx } from './audioctx';
 import type { MediaItem, Project } from '../engine/types';
 
 type Src = { url: string; proxy: boolean };
@@ -107,7 +108,10 @@ export class EditPreview {
     ctx.fillRect(0, 0, w, h);
     const placed = layoutVideo(p);
     const fps = p.encoder.fps;
-    const visible = placed.filter((pl) => t >= pl.start - 1e-6 && t < pl.end);
+    // at the very end of the video show its last frame, not black
+    const vEnd = placed.at(-1)?.end ?? 0;
+    const tv = t >= vEnd - 1e-3 && t <= vEnd + 1e-3 ? Math.max(0, vEnd - 0.5 / fps) : t;
+    const visible = placed.filter((pl) => tv >= pl.start - 1e-6 && tv < pl.end);
     const used = new Set<HTMLVideoElement>();
     let waiting = false;
     let unavailable = false;
@@ -118,13 +122,14 @@ export class EditPreview {
       const v = this.video(m, pl.index % 2);
       if (!v || v.readyState < 2) {
         const st = mediaState[m.id];
-        if (st?.playable === false && st.proxy === 'failed') unavailable = true;
+        // old projects' generated clips have no file; neither do files the browser can't play without a preview copy
+        if (m.source.kind === 'generator' || (st?.playable === false && st.proxy === 'failed')) unavailable = true;
         else waiting = true;
         if (v) used.add(v);
         return this.thumb(m);
       }
       used.add(v);
-      const target = sourceTime(pl.clip, t - pl.start);
+      const target = sourceTime(pl.clip, tv - pl.start);
       const rate = pl.clip.speed * speed;
       if (playing && !pl.clip.reverse && rate >= 0.0625 && rate <= 16) {
         if (Math.abs(v.playbackRate - rate) > 1e-3) v.playbackRate = rate;
@@ -145,7 +150,7 @@ export class EditPreview {
       const imgA = layer(a);
       if (b && b.overlap > 0) {
         const imgB = layer(b);
-        const prog = Math.max(0, Math.min(1, (t - b.start) / b.overlap));
+        const prog = Math.max(0, Math.min(1, (tv - b.start) / b.overlap));
         this.blend(ctx, w, h, a, imgA, b, imgB, prog);
       } else if (imgA) this.fit(ctx, imgA, a, w, h);
     }
@@ -323,7 +328,7 @@ export class EditAudio {
   async start(p: Project, t: number, muted: boolean) {
     this.stop();
     if (muted) return;
-    this.ctx ??= new AudioContext();
+    this.ctx ??= audioCtx();
     const ctx = this.ctx;
     ctx.resume();
     const gen = ++this.gen;
@@ -387,7 +392,6 @@ export class EditAudio {
   dispose() {
     this.stop();
     this.buffers.clear();
-    this.ctx?.close();
     this.ctx = null;
   }
 }

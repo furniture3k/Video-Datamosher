@@ -90,3 +90,14 @@ describe('containers', () => {
     expect(z.size).toBeGreaterThan(100);
   });
 });
+
+import { parseProbe } from '../src/engine/args';
+describe('probe', () => {
+  it('swaps width and height for rotated phone video', () => {
+    const base = 'Duration: 00:00:02.00, start: 0\n  Stream #0:0[0x1]: Video: hevc (Main), yuv420p, 1920x1080 [SAR 1:1 DAR 16:9], 30 fps, 30 tbr\n';
+    expect(parseProbe(base)).toMatchObject({ width: 1920, height: 1080 });
+    expect(parseProbe(base + '      displaymatrix: rotation of -90.00 degrees\n')).toMatchObject({ width: 1080, height: 1920 });
+    expect(parseProbe(base + '      rotate          : 90\n')).toMatchObject({ width: 1080, height: 1920 });
+    expect(parseProbe(base + '      displaymatrix: rotation of 180.00 degrees\n')).toMatchObject({ width: 1920, height: 1080 });
+  });
+});
