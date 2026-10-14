@@ -83,8 +83,10 @@ describe('edit operations', () => {
 
   it('move, insert, delete and nearest cut', () => {
     const p = proj();
+    p.clips[1].transition = { type: 'melt', duration: 1, intensity: 0.5 };
     moveVideo(p, 'B', 0);
     expect(p.clips.map((c) => c.id)).toEqual(['B', 'A']);
+    expect(p.clips[0].transition).toBeUndefined();
     insertVideo(p, clipOf(p.media[0], { id: 'C', out: 1 }), 1);
     expect(p.clips.map((c) => c.id)).toEqual(['B', 'C', 'A']);
     expect(nearestCut(p, 3.4)).toBe(1);

@@ -248,6 +248,20 @@ await step('playback runs and loops', async () => {
   if (!(p1 > 5 && p2 !== p1)) throw new Error(`playhead ${p1} -> ${p2}`);
 });
 
+await step('phone layout: one panel at a time, timeline usable', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  for (const tab of ['Media', 'Inspector', 'Timeline']) {
+    await page.locator('.mtabs button', { hasText: tab }).click();
+    await page.waitForTimeout(150);
+  }
+  const box = await page.locator('footer .v-lane').boundingBox();
+  if (!box || box.y + box.height > 844 || box.height < 30) throw new Error('timeline not on screen: ' + JSON.stringify(box));
+  const overflow = await S(() => document.documentElement.scrollWidth > window.innerWidth + 1 || document.documentElement.scrollHeight > window.innerHeight + 1);
+  if (overflow) throw new Error('page overflows the phone screen');
+  await page.setViewportSize({ width: 1440, height: 900 });
+});
+
 await browser.close();
 server.close();
 console.log(failed ? `\n${failed} step(s) failed` : '\nUI sweep passed');

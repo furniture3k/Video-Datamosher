@@ -110,13 +110,16 @@ export class EditPreview {
     const visible = placed.filter((pl) => t >= pl.start - 1e-6 && t < pl.end);
     const used = new Set<HTMLVideoElement>();
     let waiting = false;
+    let unavailable = false;
 
     const layer = (pl: Placed): CanvasImageSource | null => {
       const m = pl.media;
       if (m.source.kind === 'file' && m.source.isImage) return this.image(m) ?? this.thumb(m);
       const v = this.video(m, pl.index % 2);
       if (!v || v.readyState < 2) {
-        waiting = true;
+        const st = mediaState[m.id];
+        if (st?.playable === false && st.proxy === 'failed') unavailable = true;
+        else waiting = true;
         if (v) used.add(v);
         return this.thumb(m);
       }
@@ -161,13 +164,14 @@ export class EditPreview {
     for (const v of this.videos.values()) if (!used.has(v) && !v.paused) v.pause();
 
     drawTexts(ctx, p.texts, t, w, h, 'all');
-    if (waiting) {
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(0, h - 22, 170, 22);
-      ctx.fillStyle = '#ccc';
+    if (waiting || unavailable) {
+      const msg = unavailable ? "this browser can't preview this file live (the mosh view works)" : 'preparing preview…';
       ctx.font = '12px sans-serif';
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, h - 22, ctx.measureText(msg).width + 16, 22);
+      ctx.fillStyle = '#ccc';
       ctx.textBaseline = 'middle';
-      ctx.fillText('preparing preview…', 8, h - 11);
+      ctx.fillText(msg, 8, h - 11);
     }
   }
 

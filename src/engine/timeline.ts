@@ -279,6 +279,9 @@ export function moveVideo(p: Project, id: string, toIndex: number) {
   const j = toIndex > from ? toIndex - 1 : toIndex;
   if (j >= rest.length) p.clips.push(c);
   else p.clips.splice(p.clips.indexOf(rest[Math.max(0, j)]), 0, c);
+  // nothing comes before the first clip, so it can't have a transition into it
+  const first = videoClips(p)[0];
+  if (first) first.transition = undefined;
 }
 
 /** Split a clip at timeline time t. Returns the new (right-hand) clip, or null. */

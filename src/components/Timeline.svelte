@@ -10,11 +10,13 @@
   import Waveform from './Waveform.svelte';
 
   const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
-  const G = 172; // gutter width
 
   let scroller: HTMLDivElement;
   let rulerLane = $state<HTMLDivElement>();
   let viewW = $state(800);
+  const narrow = $derived(viewW < 600);
+  /** gutter (track header) width */
+  const G = $derived(narrow ? 92 : 172);
   let keyCanvas = $state<HTMLCanvasElement>();
   let resultCanvas = $state<HTMLCanvasElement>();
   let fxOpen = $state(true);
@@ -85,6 +87,38 @@
     | { k: 'trans'; id: string; x0: number; d0: number; before: Project };
   let drag = $state<Drag | null>(null);
 
+  // Touch: a finger on a clip or effect bar scrolls the timeline unless it's held still for a
+  // moment (then it drags). Holding and letting go opens the clip menu. Taps select / seek.
+  let pending: { x: number; y: number; timer: number; start: () => void; tap: () => void; held: boolean } | null = null;
+  function touchGate(e: PointerEvent, start: () => void, tap: () => void = () => {}): boolean {
+    if (e.pointerType !== 'touch') return false;
+    clearTimeout(pending?.timer);
+    const p = { x: e.clientX, y: e.clientY, timer: 0, start, tap, held: false };
+    p.timer = window.setTimeout(() => {
+      p.held = true;
+      start();
+      navigator.vibrate?.(15);
+    }, 320);
+    pending = p;
+    return true;
+  }
+  function onTouchMove(e: TouchEvent) {
+    // once a drag has started, stop the page from scrolling under the finger
+    if (drag && drag.k !== 'scrub') e.preventDefault();
+  }
+  // must be non-passive to be allowed to cancel scrolling
+  $effect(() => {
+    const el = scroller;
+    if (!el) return;
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  });
+  let menuAt = 0;
+  function closeMenu() {
+    // the click that ends a touch hold would close the menu it just opened
+    if (performance.now() - menuAt > 400) menu = null;
+  }
+
   /** Clicking the timeline takes keyboard focus away from inspector fields, so shortcuts work. */
   function releaseFocus() {
     const a = document.activeElement as HTMLElement | null;
@@ -92,6 +126,14 @@
   }
 
   function scrubDown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    // on touch, lanes scroll; a tap seeks
+    if (touchGate(e, () => {}, () => ((store.ui.playing = false), store.seek(laneT(e))))) return;
+    store.ui.playing = false;
+    drag = { k: 'scrub' };
+    store.seek(snapT(laneT(e), e, null));
+  }
+  function rulerDown(e: PointerEvent) {
     if (e.button !== 0) return;
     store.ui.playing = false;
     drag = { k: 'scrub' };
@@ -102,9 +144,19 @@
     if (e.button !== 0) return;
     e.stopPropagation();
     menu = null;
+    const ev = { clientX: e.clientX, clientY: e.clientY, shiftKey: false } as PointerEvent;
+    const hold = () => {
+      store.selectClip(id);
+      startMove(ev, id, kind);
+    };
+    if (touchGate(e, hold, () => store.selectClip(id))) return;
     if (e.shiftKey || e.metaKey || e.ctrlKey) store.selectClip(id, true);
     else if (!sel.has(id)) store.selectClip(id);
     else store.ui.tab = 'clip';
+    startMove(e, id, kind);
+  }
+
+  function startMove(e: PointerEvent, id: string, kind: 'v' | 'a' | 't') {
     const orig = kind === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     const start = kind === 'v' ? (placed.find((p) => p.clip.id === id)?.start ?? 0) : (orig as { start: number }).start;
     drag = { k: 'move', id, kind, x0: e.clientX, dx: 0, moved: false, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, grab: laneT(e) - start, targets: snapTargets(id) };
@@ -127,6 +179,8 @@
   function fxDown(e: PointerEvent, id: string, mode: 'move' | 'l' | 'r') {
     e.stopPropagation();
     const fx = store.project.effects.find((f) => f.id === id)!;
+    const ev = { clientX: e.clientX, clientY: e.clientY, button: 0, pointerType: 'mouse', stopPropagation() {} } as unknown as PointerEvent;
+    if (mode === 'move' && touchGate(e, () => fxDown(ev, id, mode), () => store.selectEffect(id))) return;
     store.selectEffect(id);
     drag = { k: 'fx', id, mode, x0: e.clientX, s0: fx.start, e0: fx.end };
   }
@@ -149,6 +203,11 @@
   }
 
   function onMove(e: PointerEvent) {
+    if (pending && !pending.held && Math.hypot(e.clientX - pending.x, e.clientY - pending.y) > 8) {
+      // the finger moved first: it's a scroll, not a drag
+      clearTimeout(pending.timer);
+      pending = null;
+    }
     const d = drag;
     if (!d) return;
     if (d.k === 'scrub') return store.seek(snapT(laneT(e), e, null));
@@ -231,7 +290,21 @@
     }
   }
 
-  function onUp() {
+  function onUp(e: PointerEvent | null = null) {
+    if (pending) {
+      clearTimeout(pending.timer);
+      const p = pending;
+      pending = null;
+      if (!p.held && e?.type === 'pointerup') p.tap();
+      // held without moving: show the clip's menu
+      if (p.held && drag?.k === 'move' && !drag.moved) {
+        const id = drag.id;
+        const kind = drag.kind;
+        drag = null;
+        openMenuAt(p.x, p.y, id, kind);
+        return;
+      }
+    }
     const d = drag;
     drag = null;
     if (!d || d.k === 'scrub') return;
@@ -314,8 +387,15 @@
   let menu = $state<{ x: number; y: number; id: string; kind: 'v' | 'a' | 't' } | null>(null);
   function openMenu(e: MouseEvent, id: string, kind: 'v' | 'a' | 't') {
     e.preventDefault();
+    // touch long-press is handled by the hold gesture
+    if ((e as PointerEvent).pointerType === 'touch' || pending || drag) return;
+    openMenuAt(e.clientX, e.clientY, id, kind);
+  }
+  function openMenuAt(x: number, y: number, id: string, kind: 'v' | 'a' | 't') {
     if (!sel.has(id)) store.selectClip(id);
-    menu = { x: e.clientX, y: e.clientY, id, kind };
+    // keep the menu on screen
+    menuAt = performance.now();
+    menu = { x: Math.max(4, Math.min(x, window.innerWidth - 220)), y: Math.max(4, Math.min(y, window.innerHeight - 330)), id, kind };
   }
   const menuClip = $derived(menu && menu.kind !== 't' ? store.project.clips.find((c) => c.id === menu!.id) : undefined);
 
@@ -427,15 +507,15 @@
   const fmtDur = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}` : `${s.toFixed(1)}s`);
 </script>
 
-<svelte:window onpointermove={onMove} onpointerup={onUp} onclick={() => (menu = null)} />
+<svelte:window onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp} onclick={closeMenu} />
 
 <div class="wrap">
-  <div class="toolbar">
-    <button class="ghost" title="Split at playhead  S" onclick={edit.splitAtPlayhead} disabled={!store.project.clips.length}><Icon name="blade" />Split</button>
-    <button class="ghost" title="Delete selected  Del" onclick={edit.deleteSelected} disabled={!store.ui.selectedClips.length && !store.ui.selectedTransition}><Icon name="trash" />Delete</button>
-    <button class="ghost" title="Duplicate selected  D" onclick={edit.duplicateSelected} disabled={!store.ui.selectedClips.length}><Icon name="copy" />Duplicate</button>
-    <button class="ghost" title="Add a melt at the cut nearest the playhead  T" onclick={() => edit.transitionAtPlayhead('melt')} disabled={placed.length < 2}><Icon name="split" />Transition</button>
-    <button class="ghost" title="Add a text title at the playhead" onclick={() => edit.addText()}><Icon name="text" />Text</button>
+  <div class="toolbar" class:narrow>
+    <button class="ghost" title="Split at playhead  S" onclick={edit.splitAtPlayhead} disabled={!store.project.clips.length}><Icon name="blade" /><span class="tlbl">Split</span></button>
+    <button class="ghost" title="Delete selected  Del" onclick={edit.deleteSelected} disabled={!store.ui.selectedClips.length && !store.ui.selectedTransition}><Icon name="trash" /><span class="tlbl">Delete</span></button>
+    <button class="ghost" title="Duplicate selected  D" onclick={edit.duplicateSelected} disabled={!store.ui.selectedClips.length}><Icon name="copy" /><span class="tlbl">Duplicate</span></button>
+    <button class="ghost" title="Add a melt at the cut nearest the playhead  T" onclick={() => edit.transitionAtPlayhead('melt')} disabled={placed.length < 2}><Icon name="split" /><span class="tlbl">Transition</span></button>
+    <button class="ghost" title="Add a text title at the playhead" onclick={() => edit.addText()}><Icon name="text" /><span class="tlbl">Text</span></button>
     <span class="tsep"></span>
     <button class="icon ghost" class:on={store.ui.snap} title="Snapping  N (hold Shift while dragging to ignore)" aria-label="Snapping" onclick={() => (store.ui.snap = !store.ui.snap)}><Icon name="magnet" /></button>
     <span class="grow"></span>
@@ -447,12 +527,12 @@
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="tl" bind:this={scroller} bind:clientWidth={viewW} onwheel={onWheel} onpointerdowncapture={releaseFocus}>
-    <div class="inner" style="width:{G + W}px">
+    <div class="inner" class:narrow style="width:{G + W}px;--g:{G}px">
       <!-- ruler -->
       <div class="row ruler-row">
         <div class="g g-ruler"><span class="label">Timeline</span></div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div class="lane ruler" bind:this={rulerLane} style="width:{W}px" onpointerdown={scrubDown}>
+        <div class="lane ruler" bind:this={rulerLane} style="width:{W}px" onpointerdown={rulerDown}>
           {#each ticks.out as s}
             <div class="tick" style="left:{x(s)}px"><span class="mono">{fmtTick(s)}</span></div>
           {/each}
@@ -686,7 +766,7 @@
       <button class="tb" class:on={t.muted} title="Mute" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.muted = !t.muted))}>M</button>
       <button class="tb" class:on={t.solo} title="Solo" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.solo = !t.solo))}>S</button>
       <button class="tb mosh" class:on={t.mosh} title={t.mosh ? 'Sound follows the mosh (stutters with the picture). Click to keep it clean.' : 'Sound stays clean. Click to make it follow the mosh.'} onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.mosh = !t.mosh))}>~</button>
-      {#if id !== CLIP_AUDIO}<button class="tb" title="Remove track" onclick={() => edit.removeTrack(id)}>×</button>{/if}
+      {#if id !== CLIP_AUDIO}<button class="tb rm" title="Remove track" onclick={() => edit.removeTrack(id)}>×</button>{/if}
     </span>
   {/if}
 {/snippet}
@@ -739,6 +819,18 @@
     width: 28px;
     padding: 0;
   }
+  .toolbar.narrow {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .toolbar.narrow .tlbl,
+  .toolbar.narrow .dur {
+    display: none;
+  }
+  .toolbar.narrow button {
+    padding: 0 9px;
+    flex: none;
+  }
   .toolbar .on {
     color: var(--accent);
   }
@@ -772,7 +864,7 @@
     border-bottom: 1px solid var(--line);
   }
   .g {
-    width: 172px;
+    width: var(--g);
     flex: none;
     position: sticky;
     left: 0;
@@ -812,6 +904,7 @@
   .ruler {
     height: 22px;
     cursor: ew-resize;
+    touch-action: none;
     background: var(--surface);
   }
   .tick {
@@ -885,7 +978,8 @@
     display: flex;
     align-items: center;
     overflow: hidden;
-    touch-action: none;
+    touch-action: pan-x pan-y;
+    user-select: none;
   }
   .bar.sel {
     outline: 1px solid var(--text);
@@ -945,6 +1039,15 @@
     flex: 1;
     min-width: 0;
   }
+  .narrow .tname,
+  .narrow .tb.rm,
+  .narrow .fxlabel {
+    display: none;
+  }
+  .narrow .g {
+    padding: 0 5px;
+    gap: 3px;
+  }
   .tbtns {
     display: flex;
     gap: 1px;
@@ -1001,7 +1104,9 @@
     border-radius: 3px;
     overflow: hidden;
     cursor: grab;
-    touch-action: none;
+    touch-action: pan-x pan-y;
+    -webkit-touch-callout: none;
+    user-select: none;
     display: flex;
     align-items: flex-start;
     gap: 4px;
@@ -1081,6 +1186,39 @@
     width: 7px;
     cursor: ew-resize;
     z-index: 2;
+    touch-action: none;
+  }
+  .h,
+  .fade,
+  .trans {
+    touch-action: none;
+  }
+  @media (pointer: coarse) {
+    .edge {
+      width: 14px;
+    }
+    .clip.sel .edge {
+      background: rgba(255, 255, 255, 0.28);
+    }
+    .h {
+      width: 14px;
+    }
+    .fade {
+      width: 16px;
+      height: 16px;
+      margin-left: -8px;
+      opacity: 0.85;
+    }
+    .fade.out {
+      margin-right: -8px;
+    }
+    .cutmark {
+      opacity: 1;
+      width: 24px;
+      height: 24px;
+      margin-left: -12px;
+      top: 14px;
+    }
   }
   .edge:hover {
     background: rgba(255, 255, 255, 0.25);
@@ -1128,8 +1266,8 @@
   }
   .trans {
     position: absolute;
-    top: 12px;
-    height: 28px;
+    top: 26px;
+    height: 20px;
     background: rgba(255, 255, 255, 0.14);
     border: 1px solid rgba(255, 255, 255, 0.55);
     border-radius: 3px;

@@ -161,6 +161,19 @@ try {
       }
       await page.keyboard.press('Escape');
     });
+  await step('record from the (fake) camera onto the timeline', async () => {
+    const n = await page.evaluate(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length);
+    await page.getByRole('button', { name: 'Record' }).first().click();
+    await page.getByRole('button', { name: 'Camera' }).click();
+    await page.locator('.modal video.on').waitFor();
+    await page.locator('.modal').getByRole('button', { name: 'Record' }).click();
+    await page.waitForTimeout(2500);
+    await page.getByRole('button', { name: 'Stop and add' }).click();
+    await page.waitForFunction((n) => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length === n + 1, n, { timeout: 60000 });
+    const m = await page.evaluate(() => window.__moshpit.store.project.media.at(-1));
+    // the recording is tidied so it has a real duration (and can be seeked)
+    if (!(m.duration > 1.5 && m.duration < 4)) throw new Error('recording duration ' + m.duration);
+  });
   await step('live mode with (fake) webcam', async () => {
     await page.getByRole('button', { name: 'Live', exact: true }).click();
     await page.getByRole('button', { name: 'Camera' }).click();

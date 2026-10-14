@@ -39,6 +39,8 @@ class Store {
     /** timeline zoom in pixels per second (0 = fit) */
     pxPerSec: 0,
     snap: true,
+    /** phones show one panel at a time under the player */
+    mobilePanel: 'timeline' as 'timeline' | 'media' | 'inspector',
     timelineViewW: 800,
     timelineHeight: localGet('timelineHeight', 300),
     playing: false,
@@ -72,6 +74,10 @@ class Store {
   }
   get totalFrames() {
     return this.render && this.renderFresh ? this.render.prep.frames.length : timelineFrames(this.project, this.project.encoder.fps);
+  }
+  /** timeline frame under the playhead (works in both the edit and mosh views) */
+  get playFrame() {
+    return Math.round(this.ui.time * this.project.encoder.fps);
   }
   get duration() {
     return timelineDuration(this.project);
@@ -276,7 +282,7 @@ class Store {
 
   async doRender(force = false) {
     this.status.pending = false;
-    if (!this.project.clips.length) {
+    if (!this.project.clips.length && !this.project.texts.length) {
       this.render = null;
       return;
     }
@@ -340,7 +346,7 @@ class Store {
         console.warn('autosave not restored', e);
       }
     this.last = this.snapshot();
-    if (ok && this.project.clips.length) this.scheduleRender(100);
+    if (ok && (this.project.clips.length || this.project.texts.length)) this.scheduleRender(100);
     // Media no longer in the saved project is removed on startup only, so undo
     // within a session can always bring a deleted clip back.
     pruneFiles(this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])));

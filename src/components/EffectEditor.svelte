@@ -13,7 +13,7 @@
   const applicable = $derived(def.params.filter((p) => !p.show || p.show(effect.params)));
   const params = $derived(applicable.filter((p) => store.ui.advanced || !p.advanced));
   const hidden = $derived(applicable.length - params.length);
-  const playSrc = $derived(store.render?.frames[store.ui.playhead]?.src ?? 0);
+  const playSrc = $derived(store.playFrame);
   const total = $derived(store.totalFrames);
   const sec = (f: number) => (f / store.fps).toFixed(2);
 

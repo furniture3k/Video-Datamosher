@@ -473,7 +473,7 @@
       </div>
       <span class="divider"></span>
       <button class="icon ghost" title="Save this frame as PNG" aria-label="Save frame" disabled={!hasTimeline} onclick={snapshot}><Icon name="still" /></button>
-      <button class="icon ghost render-btn" title="Render now  Enter" aria-label="Render now" disabled={!store.project.clips.length} onclick={() => store.doRender(true)}><Icon name="render" /></button>
+      <button class="icon ghost render-btn" title="Render now  Enter" aria-label="Render now" disabled={!hasTimeline} onclick={() => store.doRender(true)}><Icon name="render" /></button>
     </div>
   </div>
 </div>
@@ -641,7 +641,11 @@
   }
   @media (max-width: 860px) {
     .stage {
-      min-height: 56vw;
+      flex: none;
+      height: min(56vw, 38vh);
+    }
+    .tc {
+      font-size: 16px;
     }
     .transport {
       grid-template-columns: auto 1fr;
@@ -660,6 +664,12 @@
     .divider,
     .render-btn,
     .cmp-label {
+      display: none;
+    }
+  }
+  @media (max-width: 520px) {
+    /* A/B compare is a desktop tool; keep the phone transport to two rows */
+    .seg[aria-label^='Compare'] {
       display: none;
     }
   }

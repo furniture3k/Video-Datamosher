@@ -129,7 +129,7 @@ function renderTextPng(tx: TextClip, w: number, h: number): Promise<Blob> {
 }
 
 export async function prepare(project: Project, width: number, progress?: Progress, signal?: Signal, preview = true): Promise<Prepared> {
-  if (!project.clips.length) throw new Error('Add a clip first');
+  if (!project.clips.length && !project.texts?.length) throw new Error('Add a clip first');
   const fps = project.encoder.fps;
   const { mounts, path } = await mountsFor(project, preview);
   const size = outputSize(project, width);
@@ -331,6 +331,27 @@ export async function makeProxy(m: MediaItem, blob: Blob, onProgress?: (p: numbe
   const args = ['-i', MOUNT + name, '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, ...codec, '-ac', '2', out];
   const r = await ffmpegBg.run(args, { mounts: { [name]: blob }, outputs: [out], onFrame: (n) => onProgress?.(Math.min(1, n / total)) });
   return new Blob([r.out[out] as BlobPart], { type: webm ? 'video/webm' : 'video/mp4' });
+}
+
+/**
+ * Browser recordings (MediaRecorder) have no duration and no seek index, so players can't seek
+ * them and their length is unknown. Re-wrap them (no re-encoding) so they behave like normal files.
+ */
+export async function finalizeRecording(blob: Blob, name: string): Promise<File> {
+  const mp4 = /mp4/.test(blob.type);
+  const ext = mp4 ? 'mp4' : 'webm';
+  const out = `fixed.${ext}`;
+  try {
+    const r = await ffmpeg.run(['-fflags', '+genpts', '-i', MOUNT + 'rec.' + ext, '-map', '0', '-c', 'copy', '-avoid_negative_ts', 'make_zero', ...(mp4 ? ['-movflags', '+faststart'] : []), out], {
+      mounts: { ['rec.' + ext]: blob },
+      outputs: [out],
+    });
+    const data = r.out[out];
+    if (data?.length > 1000) return new File([data as BlobPart], `${name}.${ext}`, { type: mp4 ? 'video/mp4' : 'video/webm' });
+  } catch (e) {
+    console.warn('could not tidy the recording, using it as is', e);
+  }
+  return new File([blob], `${name}.${ext}`, { type: blob.type || 'video/webm' });
 }
 
 /** Decoded stereo 44.1 kHz PCM of a media file (background engine). */

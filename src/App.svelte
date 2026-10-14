@@ -188,7 +188,7 @@
         if (store.project.clips.length) store.ui.dialog = 'variations';
         break;
       case 'k': {
-        const src = mosh ? (store.render?.frames[store.ui.playhead]?.src ?? 0) : Math.round(store.ui.time * store.project.encoder.fps);
+        const src = store.playFrame;
         store.edit((p) => {
           const m = p.encoder.keyMarkers;
           const i = m.indexOf(src);
@@ -250,13 +250,20 @@
 >
   <TopBar onchaos={runChaos} onmutate={runMutate} />
   <main>
-    <aside class="left"><MediaBin /></aside>
+    <aside class="left" class:mshow={store.ui.mobilePanel === 'media'}><MediaBin /></aside>
     <section class="center"><Player /></section>
-    <aside class="right"><Inspector /></aside>
+    <aside class="right" class:mshow={store.ui.mobilePanel === 'inspector'}><Inspector /></aside>
   </main>
+  <nav class="mtabs" aria-label="Panels">
+    {#each [['timeline', 'Timeline'], ['media', 'Media'], ['inspector', 'Inspector']] as [id, label]}
+      <button class:on={store.ui.mobilePanel === id} onclick={() => (store.ui.mobilePanel = id as never)}>
+        {label}{#if id === 'inspector' && (store.ui.selectedClips.length || store.ui.selectedTransition || store.ui.selectedEffect)}<span class="dot"></span>{/if}
+      </button>
+    {/each}
+  </nav>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="resizer" title="Drag to resize the timeline" onpointerdown={resizeDown}></div>
-  <footer style="height:{store.ui.timelineHeight}px"><Timeline /></footer>
+  <footer class:mshow={store.ui.mobilePanel === 'timeline'} style="--tlh:{store.ui.timelineHeight}px"><Timeline /></footer>
 
   {#if dragging}
     <div class="dropzone"><div class="label">Drop to import</div></div>
@@ -327,35 +334,72 @@
       grid-template-columns: 220px 1fr 300px;
     }
   }
+  footer {
+    height: var(--tlh);
+  }
+  .mtabs {
+    display: none;
+  }
+  /* Phones: player on top, then one panel at a time (timeline / media / inspector) filling the rest */
   @media (max-width: 860px) {
-    :global(html),
-    :global(body) {
-      overflow: auto;
-    }
     .app {
-      height: auto;
-      min-height: 100%;
+      height: 100%;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
     }
     main {
-      display: flex;
-      flex-direction: column;
+      display: contents;
     }
     .center {
-      order: -1;
+      order: 1;
+      flex: none;
     }
-    .right {
-      height: 75vh;
+    .mtabs {
+      order: 2;
+      display: flex;
+      flex: none;
+      height: 38px;
+      background: var(--surface);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
     }
-    .left {
-      max-height: 60vh;
+    .mtabs button {
+      flex: 1;
+      height: 100%;
+      border: none;
+      border-radius: 0;
+      background: none;
+      color: var(--text-3);
+      font-size: 13px;
+      gap: 5px;
+    }
+    .mtabs button.on {
+      color: var(--text);
+      box-shadow: inset 0 -2px 0 var(--accent);
+    }
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .left,
+    .right,
+    footer {
+      order: 3;
+      display: none;
+      flex: 1;
+      min-height: 0;
+      height: auto;
+    }
+    .left.mshow,
+    .right.mshow,
+    footer.mshow {
+      display: block;
     }
     .resizer {
       display: none;
-    }
-    footer {
-      height: 70vh !important;
     }
   }
 </style>
