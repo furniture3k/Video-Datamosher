@@ -8,6 +8,7 @@ import { drawTexts } from './text';
 import { layoutVideo, sourceTime, audioSources, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
 import { outputSize } from '../engine/args';
 import { SAMPLE_RATE } from '../engine/audio';
+import { audioCtx } from './audioctx';
 import type { MediaItem, Project } from '../engine/types';
 
 type Src = { url: string; proxy: boolean };
@@ -323,7 +324,7 @@ export class EditAudio {
   async start(p: Project, t: number, muted: boolean) {
     this.stop();
     if (muted) return;
-    this.ctx ??= new AudioContext();
+    this.ctx ??= audioCtx();
     const ctx = this.ctx;
     ctx.resume();
     const gen = ++this.gen;
@@ -387,7 +388,6 @@ export class EditAudio {
   dispose() {
     this.stop();
     this.buffers.clear();
-    this.ctx?.close();
     this.ctx = null;
   }
 }

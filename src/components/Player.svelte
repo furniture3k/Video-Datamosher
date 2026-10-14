@@ -6,6 +6,7 @@
   import { originalFrames, moshedAudioWav, type RenderResult } from '../lib/renderer';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
+  import { audioCtx } from '../lib/audioctx';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
 
@@ -177,7 +178,7 @@
     moshedAudioWav(p, r.frames)
       .then(async (w) => {
         if (!w) return (abuf = null);
-        actx ??= new AudioContext();
+        actx ??= audioCtx();
         abuf = await actx.decodeAudioData(w.slice().buffer);
       })
       .catch(() => (abuf = null));
@@ -639,7 +640,28 @@
       display: none;
     }
   }
-  @media (max-width: 860px) {
+  /* the centre column gets narrow on laptops: A/B compare stays on the C key */
+  @media (max-width: 1240px) and (min-width: 861px) {
+    .seg[aria-label^='Compare'],
+    .seg[aria-label^='Compare'] + .divider {
+      display: none;
+    }
+    .transport {
+      grid-template-columns: auto 1fr;
+      row-gap: 4px;
+    }
+    .buttons {
+      grid-column: 2;
+      justify-self: end;
+    }
+    .right {
+      grid-column: 1 / -1;
+      grid-row: 2;
+      justify-self: stretch;
+      justify-content: space-between;
+    }
+  }
+  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
     .stage {
       flex: none;
       height: min(56vw, 38vh);
@@ -664,6 +686,19 @@
     .divider,
     .render-btn,
     .cmp-label {
+      display: none;
+    }
+  }
+  @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+    .stage {
+      height: auto;
+      flex: 1;
+      min-height: 140px;
+    }
+    .player {
+      height: 100%;
+    }
+    .seg[aria-label^='Compare'] {
       display: none;
     }
   }

@@ -366,10 +366,15 @@ export function parseProbe(log: string): { duration: number; width: number; heig
   const duration = dur ? +dur[1] * 3600 + +dur[2] * 60 + +dur[3] : 0;
   const vid = /Stream #.*Video: .*?(\d{2,5})x(\d{2,5})/.exec(log);
   const fpsM = /Stream #.*Video: .*?([\d.]+) (?:fps|tbr)/.exec(log);
+  // phones store upright video as landscape + a rotation flag; ffmpeg rotates it when decoding
+  const rot = /displaymatrix: rotation of (-?[\d.]+)/.exec(log) ?? /\brotate\s*:\s*(-?\d+)/.exec(log);
+  const quarter = rot ? Math.round(Math.abs(+rot[1]) / 90) % 2 === 1 : false;
+  const w = vid ? +vid[1] : 0;
+  const h = vid ? +vid[2] : 0;
   return {
     duration,
-    width: vid ? +vid[1] : 0,
-    height: vid ? +vid[2] : 0,
+    width: quarter ? h : w,
+    height: quarter ? w : h,
     fps: fpsM ? +fpsM[1] : 30,
     hasAudio: /Stream #.*Audio:/.test(log),
     hasVideo: !!vid,

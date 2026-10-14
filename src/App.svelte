@@ -287,7 +287,9 @@
     height: 100%;
     display: grid;
     grid-template-rows: auto 1fr auto auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0;
+    overflow: hidden;
     background: var(--line);
     position: relative;
   }
@@ -341,10 +343,9 @@
     display: none;
   }
   /* Phones: player on top, then one panel at a time (timeline / media / inspector) filling the rest */
-  @media (max-width: 860px) {
+  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
     .app {
       height: 100%;
-      height: 100dvh;
       display: flex;
       flex-direction: column;
     }
@@ -400,6 +401,33 @@
     }
     .resizer {
       display: none;
+    }
+  }
+  /* Phones held sideways: player on the left, panels on the right */
+  @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+    .app {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto auto minmax(0, 1fr);
+    }
+    :global(header) {
+      grid-column: 1 / -1;
+    }
+    .center {
+      grid-column: 1;
+      grid-row: 2 / 4;
+      min-height: 0;
+      overflow: auto;
+    }
+    .mtabs {
+      grid-column: 2;
+      grid-row: 2;
+    }
+    .left,
+    .right,
+    footer {
+      grid-column: 2;
+      grid-row: 3;
     }
   }
 </style>

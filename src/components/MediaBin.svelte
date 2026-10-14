@@ -156,6 +156,13 @@
   .actions button {
     padding: 0 4px;
     gap: 5px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  @media (max-width: 1100px) and (min-width: 861px) {
+    .actions :global(svg) {
+      display: none;
+    }
   }
   .rec {
     color: var(--accent);

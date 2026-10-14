@@ -492,6 +492,13 @@
     }
   }
 
+  // when the whole timeline fits on screen there is nothing to scroll to
+  $effect(() => {
+    void W;
+    void viewW;
+    if (scroller && scroller.scrollWidth <= scroller.clientWidth + 1) scroller.scrollLeft = 0;
+  });
+
   // keep the playhead in view while playing
   $effect(() => {
     if (!scroller || !store.ui.playing) return;
@@ -529,7 +536,7 @@
   <div class="tl" bind:this={scroller} bind:clientWidth={viewW} onwheel={onWheel} onpointerdowncapture={releaseFocus}>
     <div class="inner" class:narrow style="width:{G + W}px;--g:{G}px">
       <!-- ruler -->
-      <div class="row ruler-row">
+      <div class="trow ruler-row">
         <div class="g g-ruler"><span class="label">Timeline</span></div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="lane ruler" bind:this={rulerLane} style="width:{W}px" onpointerdown={rulerDown}>
@@ -540,7 +547,7 @@
       </div>
 
       <!-- mosh effects -->
-      <div class="row">
+      <div class="trow">
         <button class="g g-head ghost" onclick={() => (fxOpen = !fxOpen)} title="Mosh effects placed on the timeline">
           <span class="caret" class:open={fxOpen}>▸</span>Mosh FX<span class="faint mono">{store.project.effects.length || ''}</span>
         </button>
@@ -559,7 +566,7 @@
       {#if fxOpen}
         {#each store.project.effects as fx (fx.id)}
           {@const def = EFFECTS[fx.type]}
-          <div class="row">
+          <div class="trow">
             <button class="g fxname ghost" class:sel={store.ui.selectedEffect === fx.id} class:off={!fx.enabled} onclick={() => store.selectEffect(fx.id)}>
               <span class="code" style="--c:{def?.color}">{def?.icon}</span>
               <span class="fxlabel">{fx.name || def?.name}</span>
@@ -581,7 +588,7 @@
             </div>
           </div>
         {/each}
-        <div class="row">
+        <div class="trow">
           <button class="g add ghost" onclick={() => (store.ui.dialog = 'addEffect')} title="Add effect  A"><Icon name="plus" size={12} />Add effect</button>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="lane fx-lane empty" style="width:{W}px" onpointerdown={scrubDown}></div>
@@ -589,14 +596,14 @@
       {/if}
 
       <!-- keyframes -->
-      <div class="row">
+      <div class="trow">
         <div class="g g-keys" title="Blue ticks: keyframes in the prepared video. Red diamonds: keyframes you forced (double-click the lane or press K).">Keyframes</div>
         <canvas class="lane keys" bind:this={keyCanvas} style="width:{W}px" ondblclick={keysDbl} title="Double-click to add or remove a forced keyframe"></canvas>
       </div>
 
       <!-- titles -->
       {#if store.project.texts.length}
-        <div class="row">
+        <div class="trow">
           <div class="g g-track"><Icon name="text" size={12} /><span class="tname">Titles</span></div>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="lane text-lane" style="width:{W}px" onpointerdown={scrubDown}>
@@ -612,7 +619,7 @@
       {/if}
 
       <!-- video -->
-      <div class="row">
+      <div class="trow">
         <div class="g g-track video"><Icon name="film" size={12} /><span class="tname">Video</span></div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="lane v-lane" data-track={VIDEO_TRACK} style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => laneOver(e, VIDEO_TRACK)} ondragleave={() => (hint = null)} ondrop={(e) => laneDrop(e, VIDEO_TRACK)}>
@@ -679,7 +686,7 @@
 
       <!-- clip audio (sound of the video clips) -->
       {#if clipAudioTrack}
-        <div class="row">
+        <div class="trow">
           <div class="g g-track" title="The sound of the video clips">
             <Icon name="sound" size={12} /><span class="tname">Clip audio</span>
             {@render trackButtons(clipAudioTrack.id)}
@@ -701,7 +708,7 @@
 
       <!-- audio tracks -->
       {#each audioTracks as tr (tr.id)}
-        <div class="row">
+        <div class="trow">
           <div class="g g-track">
             <Icon name="music" size={12} /><span class="tname" title={tr.name}>{tr.name}</span>
             {@render trackButtons(tr.id)}
@@ -728,7 +735,7 @@
           </div>
         </div>
       {/each}
-      <div class="row">
+      <div class="trow">
         <button class="g add ghost" onclick={() => edit.addAudioTrack()} title="Add an audio track (music, voice-over…)"><Icon name="plus" size={12} />Audio track</button>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="lane newtrack" style="width:{W}px" onpointerdown={scrubDown} ondragover={(e) => { const k = dragKind(e); if (k === 'media' || k === 'files') { e.preventDefault(); e.stopPropagation(); } }} ondrop={newTrackDrop}>
@@ -737,7 +744,7 @@
       </div>
 
       <!-- result -->
-      <div class="row out-row">
+      <div class="trow out-row">
         <div class="g g-out" title="Output frames after moshing. Blue: keyframe. Grey: motion. Amber: repeated. Yellow: glitched. Teal: moved. Green: transferred. Click to view the mosh.">
           Output{#if store.render && !fresh}<span class="stale" title="Changed since the last render">●</span>{/if}
         </div>
@@ -857,10 +864,11 @@
   }
   .inner {
     position: relative;
-    min-height: 100%;
   }
-  .row {
+  /* (not ".row": the global .row style adds a gap and centring that misalign the lanes) */
+  .trow {
     display: flex;
+    align-items: stretch;
     border-bottom: 1px solid var(--line);
   }
   .g {
@@ -892,6 +900,8 @@
   .lane {
     position: relative;
     flex: none;
+    /* nothing may stick out past the end of the timeline (it would make the view scroll) */
+    overflow: hidden;
   }
   .ruler-row {
     position: sticky;
@@ -1277,6 +1287,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
+    -webkit-backdrop-filter: blur(2px);
     backdrop-filter: blur(2px);
   }
   .trans.mosh {
@@ -1430,7 +1441,7 @@
   .menu .danger {
     color: var(--danger);
   }
-  @media (max-width: 860px) {
+  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
     .toolbar button:not(.icon) {
       padding: 0 6px;
     }
