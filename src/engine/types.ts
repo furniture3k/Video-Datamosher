@@ -202,7 +202,7 @@ export interface Project {
 
 export const defaultEncoder = (): EncoderSettings => ({
   codec: 'mpeg4',
-  width: 640,
+  width: 1280,
   aspect: 'auto',
   fps: 24,
   quality: 4,

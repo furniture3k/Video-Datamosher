@@ -45,10 +45,10 @@
   <div class="label sect">Size & time</div>
   <Field
     type="select"
-    label="Export width"
+    label="Mosh resolution"
     value={e.width}
-    options={[320, 480, 640, 854, 960, 1280, 1920].map((w) => ({ value: w, label: `${w}px${w === 1280 ? ' (720p)' : w === 1920 ? ' (1080p, slow)' : ''}` }))}
-    help="Resolution used for the final export. Bigger is slower; motion vectors scale with it."
+    options={[320, 480, 640, 854, 960, 1280, 1920, 2560, 3840].map((w) => ({ value: w, label: `${w}px${({ 854: ' (480p)', 1280: ' (720p)', 1920: ' (1080p)', 2560: ' (1440p, slow)', 3840: ' (4K, very slow)' } as Record<number, string>)[w] ?? ''}` }))}
+    help="Resolution the export is moshed at. The codec moves 16-pixel blocks, so lower resolutions give chunkier, bigger smears; you can still export at a higher size (Export → Output size) to upscale the result."
     onchange={setE('width')}
   />
   <Field

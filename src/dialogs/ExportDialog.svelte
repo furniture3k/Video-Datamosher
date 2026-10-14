@@ -5,7 +5,7 @@
   import { exportVideo, Cancelled } from '../lib/renderer';
   import { ffmpeg } from '../lib/ffmpeg';
   import { download, localGet, localSet } from '../lib/storage';
-  import { defaultExport, type ExportOptions } from '../engine/args';
+  import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
 
@@ -18,6 +18,13 @@
   let signal = { cancelled: false };
   const hasPixel = $derived(store.project.effects.some((e) => e.enabled && ['vectorWarp', 'chroma', 'pixelSort'].includes(e.type)));
   const hasAudio = $derived(audioSources(store.project).length > 0);
+  const mosh = $derived(outputSize(store.project, store.project.encoder.width));
+  const outW = $derived(o.width ? even(o.width) : mosh.w);
+  const outH = $derived(even((outW * mosh.h) / mosh.w));
+  const duration = $derived(store.duration);
+  const pixels = $derived(mosh.w * mosh.h * duration * store.project.encoder.fps);
+  const heavy = $derived(pixels > 1920 * 1080 * 24 * 90 || (outW >= 2560 && duration > 20));
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
   const FORMATS = [
     { id: 'mp4', label: 'MP4', desc: 'H.264' },
@@ -63,16 +70,19 @@
     </div>
 
     <div class="small muted">
-      Renders at {store.project.encoder.width}px (set in Encode → Export width){#if hasPixel}{#if o.format === 'avi'}. Pixel effects (Vector Warp, Chroma, Pixel Sort) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
+      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if o.width && o.format !== 'avi'}, saved at {outW}×{outH}{o.width > mosh.w ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Pixel effects (Vector Warp, Chroma, Pixel Sort) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
     </div>
+    {#if heavy}
+      <div class="small warn">This is a big render for a browser ({Math.round(pixels / 1e6)} megapixel-frames). Expect it to take a while; keep this tab in front. Lower the mosh resolution or use "Ultra fast" to speed it up.</div>
+    {/if}
 
     {#if o.format !== 'avi'}
       <Field
         type="select"
         label="Output size"
         value={o.width}
-        options={[{ value: 0, label: 'Same as project' }, ...[320, 480, 640, 960, 1280, 1920, 2560, 3840].map((w) => ({ value: w, label: `${w}px wide` }))]}
-        help="Rescale the final video. Use 'Nearest' scaling for crisp, chunky pixel-art upscales."
+        options={[{ value: 0, label: `Same as mosh (${mosh.w}px)` }, ...[480, 640, 854, 1280, 1920, 2560, 3840].map((w) => ({ value: w, label: ({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w] ? `${({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w]} (${w}px)` : `${w}px wide` }))]}
+        help="Rescale the final video. Use 'Nearest' scaling for crisp, chunky pixel-art upscales of a low-res mosh."
         onchange={(v: number) => (o.width = v)}
       />
       {#if o.width}
@@ -203,6 +213,10 @@
   .bar div {
     height: 100%;
     background: var(--accent);
+  }
+  .warn {
+    color: var(--warn);
+    line-height: 1.4;
   }
   .err {
     color: var(--danger);

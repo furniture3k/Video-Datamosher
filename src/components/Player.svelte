@@ -5,6 +5,7 @@
   import Icon from './Icon.svelte';
   import { originalFrames, moshedAudioWav, type RenderResult } from '../lib/renderer';
   import { EditPreview, EditAudio } from '../lib/preview';
+  import { drawTexts } from '../lib/text';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
 
@@ -92,6 +93,8 @@
     } else if (mode === 'hold' && b) {
       ctx.drawImage(b, 0, 0, w, h);
     } else ctx.drawImage(a, 0, 0, w, h);
+    // clean titles sit on top of the mosh (they're baked in only on export)
+    if (mode !== 'hold' && store.project.texts.length) drawTexts(ctx, store.project.texts, src / r.fps, w, h, 'clean');
     // prefetch
     for (let k = 1; k < 8; k++) bitmap(r.jpegs, i + k, 'm');
   }
@@ -102,6 +105,7 @@
     void store.ui.compare;
     void store.ui.split;
     void originals;
+    void JSON.stringify(store.project.texts);
     if (mosh) draw();
   });
 

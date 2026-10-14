@@ -1,15 +1,16 @@
 // Orchestrates prep -> mosh -> decode -> post for previews and exports.
 import { ffmpeg, ffmpegBg, Cancelled, MOUNT } from './ffmpeg';
 import { getFile } from './storage';
-import { PostRunner, pixelEffectsOf } from './post';
+import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
-import { segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { type TextOverlay, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { framesFromAvi, applyBitstream, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, mediaOf, type Segment } from '../engine/timeline';
 import { splitJpegs } from '../engine/jpeg';
 import { buildAudio, wav, SAMPLE_RATE } from '../engine/audio';
 import { zip } from '../engine/zip';
-import type { Frame, MediaItem, Project } from '../engine/types';
+import type { Frame, MediaItem, Project, TextClip } from '../engine/types';
+import { drawText } from './text';
 
 export interface RenderResult {
   id: number;
@@ -99,10 +100,40 @@ let renderId = 0;
 
 // ---------------------------------------------------------------- prep
 
+const pngCache = new Map<string, Blob>();
+/** Titles that melt with the video, drawn as transparent full-frame PNGs for the prep graph. */
+async function textOverlays(project: Project, w: number, h: number, mounts: Record<string, Blob>): Promise<TextOverlay[]> {
+  const out: TextOverlay[] = [];
+  for (const tx of project.texts ?? []) {
+    if (!tx.moshed || !tx.text.trim()) continue;
+    const key = JSON.stringify({ ...tx, start: 0, duration: 0, fade: 0, w, h });
+    let png = pngCache.get(key);
+    if (!png) {
+      png = await renderTextPng(tx, w, h);
+      if (pngCache.size > 64) pngCache.clear();
+      pngCache.set(key, png);
+    }
+    const name = `text_${tx.id}.png`;
+    mounts[name] = png;
+    out.push({ tx, path: MOUNT + name });
+  }
+  return out;
+}
+
+function renderTextPng(tx: TextClip, w: number, h: number): Promise<Blob> {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  drawText(c.getContext('2d')!, tx, w, h, 1);
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('text render failed'))), 'image/png'));
+}
+
 export async function prepare(project: Project, width: number, progress?: Progress, signal?: Signal, preview = true): Promise<Prepared> {
   if (!project.clips.length) throw new Error('Add a clip first');
   const fps = project.encoder.fps;
   const { mounts, path } = await mountsFor(project, preview);
+  const size = outputSize(project, width);
+  const overlays = await textOverlays(project, size.w, size.h, mounts);
   // Without keyframes at cuts the stream must be encoded in one go (cuts become P-frames).
   const whole = !project.encoder.keyAtCuts;
   const segs: (Segment | null)[] = whole ? [null] : segments(project, fps);
@@ -111,11 +142,11 @@ export async function prepare(project: Project, width: number, progress?: Progre
   let done = 0;
   for (const seg of segs) {
     check(signal);
-    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path) }));
+    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays), t: project.texts.filter((t) => t.moshed) }));
     const n = seg ? seg.f1 - seg.f0 : totalFrames;
     let part = preview ? segCache.get(key) : undefined;
     if (!part) {
-      const args = seg ? segmentArgs(project, seg, width, 'prep.avi', path) : prepArgs(project, width, 'prep.avi', path);
+      const args = seg ? segmentArgs(project, seg, width, 'prep.avi', path, overlays) : prepArgs(project, width, 'prep.avi', path, overlays);
       const base = done;
       const r = await ffmpeg.run(args, { mounts, outputs: ['prep.avi'], onFrame: (k) => progress?.('Preparing clips', Math.min(1, (base + k) / totalFrames)) });
       check(signal);
@@ -158,7 +189,7 @@ export function cutsOf(project: Project): number[] {
 }
 
 /** Identity of everything that changes the moshed picture. */
-export const renderKey = (p: Project) => JSON.stringify({ c: p.clips, m: p.media.map((m) => [m.id, m.width, m.height]), t: p.texts, e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed });
+export const renderKey = (p: Project) => JSON.stringify({ c: p.clips, m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed });
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
@@ -311,6 +342,9 @@ export async function extractPcm(m: MediaItem, blob: Blob): Promise<Int16Array> 
 
 // ---------------------------------------------------------------- export
 
+/** Test hook: force smaller export chunks. */
+export const exportTuning = { maxChunk: Infinity };
+
 /** Frames per decode pass, so decoded frames of a big export never take more than ~300 MB. */
 const chunkFrames = (w: number, h: number) => Math.max(48, Math.min(4000, Math.floor(300e6 / (w * h * 0.16))));
 
@@ -338,7 +372,8 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
   }
 
   const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
-  const post = pixelEffectsOf(project).length > 0;
+  const runner = new PostRunner(project, 0.95, true);
+  const post = runner.active;
   const n = frames.length;
 
   // No pixel effects: encode straight from the moshed file in one pass.
@@ -356,8 +391,7 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
 
   // Pixel effects (or PNGs): decode, process and encode in chunks to keep memory bounded.
   const { w, h } = outputSize(project, width);
-  const per = o.format === 'gif' ? n : chunkFrames(w, h);
-  const runner = new PostRunner(project, 0.95);
+  const per = o.format === 'gif' ? n : Math.min(exportTuning.maxChunk, chunkFrames(w, h));
   const pieces: Uint8Array[] = [];
   const pngs: { name: string; data: Uint8Array }[] = [];
   const gifJpegs: Uint8Array[] = [];

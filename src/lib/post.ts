@@ -5,7 +5,8 @@ import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
 import { paramAt } from '../engine/automation';
 import { makeRng, hashSeed } from '../engine/rng';
-import type { EffectInstance, Frame, Project } from '../engine/types';
+import type { EffectInstance, Frame, Project, TextClip } from '../engine/types';
+import { drawTexts, textAlpha } from './text';
 
 export function pixelEffectsOf(project: Project): EffectInstance[] {
   return activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'pixel');
@@ -145,14 +146,21 @@ export class PostProcessor {
 export class PostRunner {
   private pp: PostProcessor | null = null;
   private effects: EffectInstance[];
+  private texts: TextClip[];
+  private fps: number;
+  private c2d: HTMLCanvasElement | null = null;
+  /** withTexts: also draw clean (non-melting) titles into the frames, for exports */
   constructor(
     project: Project,
     private quality: number,
+    withTexts = false,
   ) {
     this.effects = pixelEffectsOf(project);
+    this.texts = withTexts ? (project.texts ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
+    this.fps = project.encoder.fps;
   }
   get active() {
-    return this.effects.length > 0;
+    return this.effects.length > 0 || this.texts.length > 0;
   }
 
   /** jpegs[i] is output frame offset + i */
@@ -162,11 +170,29 @@ export class PostRunner {
     for (let i = 0; i < jpegs.length; i++) {
       if (signal?.cancelled) throw new Error('cancelled');
       const bmp = await createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
-      this.pp ??= new PostProcessor(bmp.width, bmp.height);
       const k = offset + i;
-      this.pp.processFrame(bmp, frames[Math.min(k, frames.length - 1)] ?? { src: k }, k, this.effects);
+      const fr = frames[Math.min(k, frames.length - 1)] ?? { src: k };
+      let src: CanvasImageSource = bmp;
+      if (this.effects.length) {
+        this.pp ??= new PostProcessor(bmp.width, bmp.height);
+        this.pp.processFrame(bmp, fr, k, this.effects);
+        src = this.pp.canvas;
+      }
+      if (this.texts.length) {
+        const t = fr.src / this.fps;
+        if (this.texts.some((x) => textAlpha(x, t) > 0)) {
+          this.c2d ??= document.createElement('canvas');
+          this.c2d.width = bmp.width;
+          this.c2d.height = bmp.height;
+          const ctx = this.c2d.getContext('2d')!;
+          ctx.drawImage(src, 0, 0);
+          drawTexts(ctx, this.texts, t, bmp.width, bmp.height, 'clean');
+          src = this.c2d;
+        }
+      }
+      if (src === bmp) out.push(jpegs[i]);
+      else out.push(await canvasJpeg(src as HTMLCanvasElement, this.quality));
       bmp.close();
-      out.push(await this.pp.toJpeg(this.quality));
       if (i % 4 === 0) onProgress?.(i / jpegs.length);
     }
     return out;
@@ -176,6 +202,10 @@ export class PostRunner {
     this.pp?.dispose();
     this.pp = null;
   }
+}
+
+function canvasJpeg(c: HTMLCanvasElement, quality: number): Promise<Uint8Array> {
+  return new Promise((res, rej) => c.toBlob((b) => (b ? b.arrayBuffer().then((x) => res(new Uint8Array(x))) : rej(new Error('encode failed'))), 'image/jpeg', quality));
 }
 
 export async function runPost(

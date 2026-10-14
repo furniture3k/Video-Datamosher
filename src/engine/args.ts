@@ -1,5 +1,5 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
-import type { Clip, DecoderSettings, EncoderSettings, MediaItem, Project } from './types';
+import type { Clip, DecoderSettings, EncoderSettings, MediaItem, Project, TextClip } from './types';
 import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
@@ -24,6 +24,12 @@ export function outputSize(project: Pick<Project, 'encoder' | 'clips' | 'media'>
 }
 
 export type PathFn = (m: MediaItem) => string;
+
+/** A title burned into the video before moshing: a transparent PNG of the text, full frame. */
+export interface TextOverlay {
+  tx: TextClip;
+  path: string;
+}
 
 /** File name of a media item inside the ffmpeg file system. */
 export const inputName = (m: Pick<MediaItem, 'id' | 'source'>) => (m.source.kind === 'file' ? `in_${m.id}.${m.source.ext}` : '');
@@ -65,18 +71,44 @@ function clipVideoChain(c: Clip, m: MediaItem, fps: number, w: number, h: number
  * Filter graph for one segment. Clips inside a segment are joined by blend transitions (xfade)
  * or plain concatenation. Returns the inputs it needs and its output label.
  */
-function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn): { inputs: string[]; filter: string[]; label: string } {
+function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn, overlays: TextOverlay[] = []): { inputs: string[]; filter: string[]; label: string; count: number } {
   const n = seg.f1 - seg.f0;
   const label = `seg${tag}`;
-  if (!seg.clips.length) {
-    return { inputs: [], filter: [`color=c=black:s=${w}x${h}:r=${fps}:d=${r3(n / fps + 1)},format=yuv420p,setsar=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${label}]`], label };
-  }
+  const t0 = seg.f0 / fps;
+  const t1 = seg.f1 / fps;
+  const texts = overlays.filter((o) => o.tx.start < t1 && o.tx.start + o.tx.duration > t0);
+  const out = texts.length ? `${tag}pre` : label;
   const inputs: string[] = [];
   const filter: string[] = [];
+  let count = 0;
+  const addTexts = () => {
+    let acc = out;
+    texts.forEach((o, k) => {
+      const idx = first + count++;
+      const a = r3(Math.max(0, o.tx.start - t0));
+      const b = r3(Math.min(t1, o.tx.start + o.tx.duration) - t0);
+      const f = Math.min(o.tx.fade, o.tx.duration / 2);
+      inputs.push('-loop', '1', '-framerate', String(fps), '-t', String(r3(t1 - t0 + 1)), '-i', o.path);
+      // fades that started in an earlier segment can't be expressed (negative start): skip them
+      const fi = r3(o.tx.start - t0);
+      const fo = r3(o.tx.start + o.tx.duration - f - t0);
+      const fades = f > 0.01 ? (fi >= 0 ? `,fade=t=in:st=${fi}:d=${r3(f)}:alpha=1` : '') + (fo >= 0 ? `,fade=t=out:st=${fo}:d=${r3(f)}:alpha=1` : '') : '';
+      filter.push(`[${idx}:v]format=rgba,scale=${w}:${h}${fades}[${tag}t${k}]`);
+      const next = k === texts.length - 1 ? label : `${tag}o${k}`;
+      filter.push(`[${acc}][${tag}t${k}]overlay=0:0:enable='between(t,${a},${b})':format=auto:shortest=1,format=yuv420p[${next}]`);
+      acc = next;
+    });
+  };
+  if (!seg.clips.length) {
+    filter.push(`color=c=black:s=${w}x${h}:r=${fps}:d=${r3(n / fps + 1)},format=yuv420p,setsar=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${out}]`);
+    addTexts();
+    return { inputs, filter, label, count };
+  }
   seg.clips.forEach((pl, k) => {
     inputs.push(...clipInputArgs(pl.clip, pl.media, fps, path));
     filter.push(`[${first + k}:v]${clipVideoChain(pl.clip, pl.media, fps, w, h)}[${tag}c${k}]`);
   });
+  count = seg.clips.length;
   let acc = `${tag}c0`;
   seg.clips.slice(1).forEach((pl, i) => {
     const k = i + 1;
@@ -87,8 +119,9 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     } else filter.push(`[${acc}][${tag}c${k}]concat=n=2:v=1:a=0[${out}]`);
     acc = out;
   });
-  filter.push(`[${acc}]tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${label}]`);
-  return { inputs, filter, label };
+  filter.push(`[${acc}]tpad=stop_mode=clone:stop_duration=1,trim=end_frame=${n},setpts=PTS-STARTPTS[${out}]`);
+  addTexts();
+  return { inputs, filter, label, count };
 }
 
 export function encoderArgs(enc: EncoderSettings, keyTimes: number[]): string[] {
@@ -126,7 +159,7 @@ export function keyTimes(project: Project): number[] {
 }
 
 /** Prepare the whole timeline in a single pass (used when cuts must not get keyframes). */
-export function prepArgs(project: Project, width: number, out = 'prep.avi', path: PathFn = inputName): string[] {
+export function prepArgs(project: Project, width: number, out = 'prep.avi', path: PathFn = inputName, overlays: TextOverlay[] = []): string[] {
   const { w, h } = outputSize(project, width);
   const fps = project.encoder.fps;
   const segs = segments(project, fps);
@@ -135,8 +168,8 @@ export function prepArgs(project: Project, width: number, out = 'prep.avi', path
   const labels: string[] = [];
   let next = 0;
   segs.forEach((s, i) => {
-    const g = segmentGraph(s, fps, w, h, next, `s${i}`, path);
-    next += s.clips.length;
+    const g = segmentGraph(s, fps, w, h, next, `s${i}`, path, overlays);
+    next += g.count;
     inputs.push(...g.inputs);
     filter.push(...g.filter);
     labels.push(g.label);
@@ -146,10 +179,10 @@ export function prepArgs(project: Project, width: number, out = 'prep.avi', path
 }
 
 /** Prepare one segment on its own (starts with a keyframe). Keyframe times are relative to it. */
-export function segmentArgs(project: Project, seg: Segment, width: number, out: string, path: PathFn = inputName): string[] {
+export function segmentArgs(project: Project, seg: Segment, width: number, out: string, path: PathFn = inputName, overlays: TextOverlay[] = []): string[] {
   const { w, h } = outputSize(project, width);
   const fps = project.encoder.fps;
-  const g = segmentGraph(seg, fps, w, h, 0, 'a', path);
+  const g = segmentGraph(seg, fps, w, h, 0, 'a', path, overlays);
   const t0 = seg.f0 / fps;
   const t1 = seg.f1 / fps;
   const keys = keyTimes(project)
@@ -169,6 +202,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
     size: outputSize(project, width),
     n: seg.f1 - seg.f0,
     keys: keyTimes(project).filter((t) => t > t0 + 0.001 && t < t1 - 0.001).map((t) => r3(t - t0)),
+    texts: (project.texts ?? []).filter((t) => t.moshed && t.start < t1 && t.start + t.duration > t0),
     clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '' })),
   });
 }
