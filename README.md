@@ -7,11 +7,11 @@ Nothing is uploaded. Decoding and encoding happen locally with [ffmpeg.wasm](htt
 **[Open moshpit →](https://furniture3k.github.io/Video-Datamosher/)**&emsp;[![CI](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml/badge.svg)](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml)
 
 <p align="center">
-  <img src="docs/demo.gif" alt="A test pattern melting into a Mandelbrot zoom" width="520"><br>
-  <sub>Two generated clips and the Bloom Explosion preset, exported as a GIF from the app.</sub>
+  <img src="docs/demo.gif" alt="A title over a test pattern that melts into a Mandelbrot zoom, then blooms into the next shot" width="420"><br>
+  <sub>Three clips cut together in moshpit with a title, a <b>Melt</b> and a <b>Bloom melt</b> transition, exported as a GIF from the app.</sub>
 </p>
 
-![The editor: media, preview, effect inspector and timeline](docs/studio.png)
+![The editor: media library, preview, inspector, and a timeline with mosh effects, titles, video, clip audio and a music track](docs/studio.png)
 
 ## Getting started
 
@@ -72,7 +72,21 @@ There are 16 presets to start from, and you can save your own.
 - **Titles.** Text with font, colour, position, shadow, box and fades. Titles sit clean on top or **melt with the video**.
 - **Instant preview.** The player shows your cut immediately, straight from the source files, and switches to the rendered mosh when it's ready (or pick **Edit** / **Mosh** yourself). Only the clips you change are re-prepared.
 - **Effects stay on their footage.** Moving, trimming, splitting or deleting clips keeps mosh effects, forced keyframes and Motion Transfer sources on the same shots.
-- Snapping (<kbd>N</kbd>, or hold <kbd>Shift</kbd> while dragging), zoom (<kbd>Ctrl</kbd>+wheel, <kbd>+</kbd> <kbd>−</kbd>), resizable timeline.
+- **Recording.** Record from your camera (front or back) or screen straight onto the timeline.
+- Snapping (<kbd>N</kbd>, or hold <kbd>Shift</kbd> while dragging), zoom (<kbd>Ctrl</kbd>+wheel, <kbd>+</kbd> <kbd>−</kbd>), resizable timeline, right-click menu on clips.
+
+![Transitions: the Transitions tab, a Bloom melt selected on the timeline and its settings in the inspector](docs/transitions.png)
+
+## On your phone
+
+The same app works on phones and tablets. The player stays at the top, and a tab bar switches between the **Timeline**, **Media** and **Inspector** panels.
+
+- **Swipe** the timeline to scroll, **tap** to move the playhead or select a clip.
+- **Press and hold** a clip or effect bar to drag it; **hold and let go** for the clip menu (split, duplicate, reverse, delete).
+- Drag a clip's edges to trim it. Use the **+** next to a media item to add it to the timeline.
+- **Record** uses the phone's camera, with a button to flip between front and back.
+
+![moshpit on a phone: the timeline, the inspector and the media panel](docs/mobile.png)
 
 ## Controls
 
@@ -86,7 +100,13 @@ There are 16 presets to start from, and you can save your own.
 - **Live.** Real-time warp of a camera, screen or video, with recording back into the project.
 - Unlimited undo, autosave (including media) and project files.
 
-![Presets](docs/presets.png)
+![Presets: 16 starting points, each showing the effects it uses](docs/presets.png)
+
+## Exporting
+
+MP4 (H.264) and WebM (VP8) with sound, GIF, a zip of PNG frames, or the raw moshed AVI. The **mosh resolution** (Encode tab) and the **output size** are separate: mosh at 720p for chunky smears and save at 1080p or 4K, or mosh at full resolution. 1080p exports work well in the browser; 1440p and 4K are fine for short videos.
+
+![The export dialog, set to save a 720p mosh at 1080p](docs/export.png)
 
 ## How it works
 
@@ -130,7 +150,7 @@ flowchart LR
 - A desktop version with native FFmpeg (for fast 4K and long videos) is planned: see [DESKTOP.md](DESKTOP.md).
 - A moshed AVI plays differently in every player because each one conceals errors differently. The MP4, WebM and GIF exports contain exactly what the preview shows.
 - WebM export uses VP8 and Vorbis; the VP9 and Opus encoders in ffmpeg.wasm crash.
-- Works in current Chrome, Edge, Firefox and Safari (iOS 15.4 or later).
+- Works in current Chrome, Edge, Firefox and Safari (iOS 15.4 or later), on desktop and on phones. Dragging media from the library needs a mouse; on touch screens use the **+** button.
 
 ## Development
 
