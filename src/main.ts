@@ -22,3 +22,6 @@ Object.assign((window as unknown as { __moshpit: object }).__moshpit, { mosh, re
 import * as flow from './lib/flow';
 import * as glmod from './lib/gl';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { flow, gl: glmod });
+import * as timeline from './engine/timeline';
+import * as media from './lib/media';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline, media });
