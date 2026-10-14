@@ -75,7 +75,11 @@ if (fs.existsSync(dest) && !argv.includes('--force')) {
 if (dev) {
   try {
     const which = execFileSync(win ? 'where' : 'which', ['ffmpeg'], { encoding: 'utf8' }).split(/\r?\n/)[0].trim();
-    if (which) {
+    // the app needs FFmpeg 5.1 or newer (-fps_mode); development builds ("N-…") are recent
+    const v = /ffmpeg version n?(\d+)\.(\d+)/.exec(execFileSync(which, ['-version'], { encoding: 'utf8' }));
+    const recent = !v || +v[1] > 5 || (+v[1] === 5 && +v[2] >= 1);
+    if (!recent) console.log(`the ffmpeg on PATH is ${v[1]}.${v[2]}; moshpit needs 5.1 or newer, downloading one`);
+    if (which && recent) {
       fs.copyFileSync(which, dest);
       fs.chmodSync(dest, 0o755);
       writeNotice(`the ffmpeg installed on the build machine (${which})`);
