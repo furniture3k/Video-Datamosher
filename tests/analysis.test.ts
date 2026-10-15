@@ -10,7 +10,8 @@ import { exportArgs, defaultExport, encoderArgs, decodeToMjpegArgs, loopPassArgs
 import { makeEffect } from '../src/engine/presets';
 import { makeRng } from '../src/engine/rng';
 import { defaultEncoder, newProject } from '../src/engine/types';
-import { hasFfmpeg, tmpdir, ff, ffLog, splitJpegs } from './helpers';
+import { execFileSync } from 'node:child_process';
+import { hasFfmpeg, tmpdir, ff, splitJpegs } from './helpers';
 
 /** Gray frames of textured noise with a bright textured square moving along `path`. */
 function scene(w: number, h: number, n: number, path: (k: number) => [number, number], size = 20, shake?: (k: number) => [number, number]): Gray {
@@ -160,8 +161,13 @@ d('native ffmpeg: reframe and loops', () => {
     const reframe = reframePath(g, 24, 16 / 9, 9 / 16)!;
     const o = { ...defaultExport(), reframe, crossfade: { frames: 96, overlap: 12 } };
     ff(dir, exportArgs(o, newProject().decoder, 24, { file: 'in.mp4', mjpeg: false }, 'a.wav', 'out.mp4'));
-    const log = ffLog(dir, ['-i', 'out.mp4']);
-    expect(/Video: .*?(\d+)x180/.exec(log)?.[1]).toBe(String(Math.trunc((320 * reframe.size) / 2) * 2));
+    // ffprobe's output is stable across FFmpeg builds (the -i log line isn't)
+    const dims = execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height', '-of', 'csv=p=0', 'out.mp4'], { cwd: dir }).toString().trim();
+    expect(dims).toBe(`${Math.trunc((320 * reframe.size) / 2) * 2},180`);
+    // the sound loops too (3.5 s: 4 s minus the 0.5 s seam)
+    const secs = Number(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=duration', '-of', 'csv=p=0', 'out.mp4'], { cwd: dir }).toString());
+    expect(secs).toBeGreaterThan(3.3);
+    expect(secs).toBeLessThan(3.7);
     ff(dir, ['-i', 'out.mp4', '-f', 'image2pipe', '-c:v', 'mjpeg', 'f.mjpeg']);
     expect(splitJpegs(new Uint8Array(fs.readFileSync(path.join(dir, 'f.mjpeg'))))).toBe(84);
     // chunked exports loop in a final pass

@@ -35,6 +35,28 @@ export interface Preset {
 
 export const PRESETS: Preset[] = [
   {
+    id: 'melttheworld',
+    name: 'Melt the World',
+    description: 'Everything melts and blooms, except the people: they stay sharp in the middle of it. Needs footage with people in it.',
+    encoder: { gop: 600 },
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'bloom', start: 0.15, end: 0.85, params: { target: 'every', interval: 3 } },
+      { type: 'mask', start: 0, end: 1, params: { source: 'person', keep: 'subject', feather: 0.02, expand: 0.06 } },
+    ],
+  },
+  {
+    id: 'ghostwalker',
+    name: 'Ghost Walker',
+    description: 'Only the people smear and leave trails; the world around them stays clean.',
+    encoder: { gop: 600 },
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'echo', start: 0, end: 1, params: { delay: 4, probability: 0.9, taps: 3 } },
+      { type: 'mask', start: 0, end: 1, params: { source: 'person', keep: 'background', feather: 0.03 } },
+    ],
+  },
+  {
     id: 'melt',
     name: 'Classic Melt',
     description: 'All keyframes removed. Every cut melts into the next and nothing ever resets.',

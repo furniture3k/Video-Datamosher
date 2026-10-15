@@ -35,3 +35,21 @@ Development-only tools (Vite, TypeScript, Vitest, Playwright, svelte-check) are 
 The moshing approach was informed by [aviglitch](https://github.com/ucnv/aviglitch),
 [tomato](https://github.com/itsKaspar/tomato) and [FFglitch](https://ffglitch.org/). No code from
 these projects is included.
+
+## FFmpeg VLC tables
+
+`src/engine/mpeg4mv.ts` contains variable-length code tables (MCBPC, CBPY, motion vectors, DC
+sizes and the inter/intra coefficient tables) copied from FFmpeg's `libavcodec/h263data.c` and
+`libavcodec/mpeg4data.h`, which are licensed under the GNU Lesser General Public License,
+version 2.1 or later. Copyright the FFmpeg developers.
+
+## Downloaded on first use
+
+These are not bundled. The app downloads them from a CDN the first time the feature is used, and
+the browser caches them:
+
+| Component | Used for | License | Source |
+|---|---|---|---|
+| transformers.js (`@huggingface/transformers` 3.8.1) and Whisper models (`Xenova/whisper-*`) | Auto captions | Apache-2.0 (library); MIT (Whisper weights) | https://github.com/huggingface/transformers.js |
+| MediaPipe Tasks Vision 0.10.21 and the selfie segmentation model | Subject Guard (people) | Apache-2.0 | https://github.com/google-ai-edge/mediapipe |
+

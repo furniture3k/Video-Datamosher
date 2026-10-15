@@ -39,16 +39,18 @@ export function setFrameGrabber(fn: (() => string) | null) {
   grabber = fn;
 }
 
-/** Media files referenced by snapshots (kept when unused media is cleaned up). */
+/** Media and LUT files referenced by snapshots (kept when unused files are cleaned up). */
 export async function snapshotFileIds(): Promise<string[]> {
   await loadSnapshots();
-  return snapshots.list.flatMap((s) => s.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId] : [])));
+  return snapshots.list.flatMap((s) => [...s.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId] : [])), ...(s.project.luts ?? []).map((l) => 'lut:' + l.id)]);
 }
 
 export async function takeSnapshot(name?: string, auto = false): Promise<Snapshot | null> {
   await loadSnapshots();
-  const project = $state.snapshot(store.project) as Project;
-  if (!project.clips.length && !project.effects.length) return null;
+  const live = $state.snapshot(store.project) as Project;
+  if (!live.clips.length && !live.effects.length) return null;
+  // stored without media thumbnails (they're big and come back with the media)
+  const project: Project = { ...live, media: live.media.map((m) => ({ ...m, thumb: undefined })) };
   // nothing changed since the last snapshot: don't pile up copies
   const json = JSON.stringify(project);
   const last = snapshots.list[0];
@@ -64,7 +66,7 @@ export async function takeSnapshot(name?: string, auto = false): Promise<Snapsho
     name: name ?? `Snapshot ${snapshots.list.filter((x) => !x.auto).length + 1}`,
     at: Date.now(),
     auto,
-    project: { ...project, media: project.media.map((m) => ({ ...m, thumb: undefined })) },
+    project,
     thumb,
   };
   const autos = snapshots.list.filter((x) => x.auto);

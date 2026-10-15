@@ -63,6 +63,9 @@ class Store {
     compareSnap: null as string | null,
     /** clicking the player picks a chroma-key colour for the selected clip */
     eyedropper: false,
+    /** Flow Paint effect being painted on the player, and the brush */
+    paintEffect: null as string | null,
+    brush: { tool: 'push' as import('../engine/flowfield').FlowTool, radius: 0.12, strength: 0.012 },
     /** id of the clip to track: the next box drawn on the player is followed through it */
     trackPick: null as string | null,
     /** scopes panel under the player */

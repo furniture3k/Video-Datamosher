@@ -16,7 +16,7 @@
 
 <svelte:window onclick={() => (menuOpen = false)} />
 
-<header>
+<header class:nested={store.seqStack.length > 0}>
   <div class="brand" title="moshpit">
     <span class="tally" class:busy={store.status.busy}></span>
     <span class="word mono">moshpit</span>
@@ -30,10 +30,10 @@
   />
 
   {#if store.seqStack.length}
-    <div class="crumbs" role="navigation" aria-label="Compound clips">
-      <span class="small faint">Main</span>
-      {#each store.seqStack as s}<span class="small faint">›</span><span class="small cur">{s.name}</span>{/each}
-      <button class="small primary" onclick={() => closeCompound()} title="Finish editing this compound: it's rendered again and you're back in the timeline above">Close compound</button>
+    <div class="crumbs" role="navigation" aria-label="Compound clips" title="Editing inside {store.seqStack.map((s) => s.name).join(' › ')}">
+      <span class="small faint">Main ›</span>
+      <span class="small cur">{store.seqStack.map((s) => s.name).join(' › ')}</span>
+      <button class="small primary" onclick={() => closeCompound()} title="Close compound: it's rendered again and you're back in the timeline above">Done</button>
     </div>
   {/if}
   <div class="sep"></div>
@@ -186,6 +186,17 @@
   }
   .crumbs .cur {
     font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+  }
+  .crumbs span {
+    white-space: nowrap;
+  }
+  /* inside a compound the breadcrumb needs the room: tools show icons only */
+  header.nested .tools .lbl {
+    display: none;
   }
   .crumbs button {
     height: 22px;

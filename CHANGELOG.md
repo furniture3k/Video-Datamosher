@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
+
+- **Subject Guard**: keep people (on-device segmentation), a tracked object, bright/dark parts or
+  a colour clean while the rest moshes, or the other way round. Presets: Melt the World, Ghost Walker.
+- **Flow Paint**: paint push / swirl / pinch / bulge strokes on the player; the picture flows along them.
+- **Vector Edit**: rewrites the real motion vectors inside the Xvid frames (amplify, turn, swap,
+  drift, jitter, quantise, paint). See `docs/mv-spike.md`.
 
 - **Object tracking** (titles and clips can follow), **stabilization**.
 - **Auto captions** with Whisper on the device; clean, bold, karaoke and melting styles; .srt / .vtt.

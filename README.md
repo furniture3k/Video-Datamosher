@@ -75,6 +75,7 @@ Bitstream effects change the compressed video itself. The decoder then reconstru
 | `GLT` | Byte Glitch | Corrupts frame data: 11 modes including bit flips, runs, swaps, bit-shifts, inserts and deletes. |
 | `SEQ` | Frame Sequencer | A drum machine for frames: draw a looping pattern of Bloom, Echo, Reverse, Melt and Glitch steps (<kbd>G</kbd> adds one). |
 | `DBD` | Databend | Runs an audio effect (echo, reverb, phaser, bitcrush, reverse, amplify) over the compressed frame data. |
+| `MVX` | Vector Edit | Rewrites the motion vectors inside the compressed frames: amplify, turn, swap, drift, jitter, quantise, or paint them with the brush (Xvid codec). |
 
 Picture effects run on the decoded frames:
 
@@ -84,10 +85,12 @@ Picture effects run on the decoded frames:
 | `CHR` | Chroma Drift | Offsets the colour channels, with jitter and line tearing. |
 | `SRT` | Pixel Sort | Sorts runs of pixels by brightness. |
 | `RAW` | Raw Bend | The Audacity trick on the picture: the RGB values go through echo, reverb, phaser, bitcrush, reverse or amplify. |
+| `PNT` | Flow Paint | Paint on the player where the picture should flow (push, swirl, pinch, bulge) and it smears along the strokes. |
+| `SUB` | Subject Guard | Keeps people (found by a small on-device model), a tracked object, the bright or dark parts, or a colour clean while everything else moshes. Or the reverse. |
 
 Effects that repeat or insert frames (Bloom, Stutter, Echo, Motion Transfer's insert mode, Frame Drop) have a **Timing** setting. **Keep length** (the default) makes the repeats replace the frames after them, so the effect lasts exactly as long as its bar and the picture, the sound and the playhead stay in sync. **Stretch** inserts them instead, so the video gets longer (slow, syrupy melts). Every setting has a description underneath it; the **?** button in the Inspector hides them.
 
-There are 19 presets to start from, and you can save your own.
+There are 21 presets to start from, and you can save your own.
 
 ## Editing
 

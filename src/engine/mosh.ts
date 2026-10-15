@@ -146,7 +146,7 @@ export function applyBitstream(prep: Prepared, project: Project, cuts: number[],
 }
 
 /** Effects that rewrite the bytes of frames (the rest only reorder, repeat or drop them). */
-export const EDITS_BYTES = new Set(['glitch', 'databend', 'sequence']);
+export const EDITS_BYTES = new Set(['glitch', 'databend', 'sequence', 'mvedit']);
 
 /**
  * applyBitstream for disk-backed frames: before each effect that edits bytes, `load` gets the

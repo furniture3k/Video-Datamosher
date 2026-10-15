@@ -31,7 +31,8 @@ export async function bakeToClip(replace: boolean, progress: Progress, signal: S
       // the baked file holds the picture and the whole mixed sound, so every old clip goes
       q.clips = [makeClip(m, VIDEO_TRACK, { muted: false })];
       q.effects = [];
-      q.texts = q.texts.filter((t) => !t.moshed);
+      // every title is in the baked picture already (melting ones in the mosh, the rest drawn on)
+      q.texts = [];
       q.tracks = q.tracks.filter((t) => t.kind === 'audio' || t.id === VIDEO_TRACK).map((t) => (t.id === CLIP_AUDIO ? { ...t, muted: false } : t));
     });
   }

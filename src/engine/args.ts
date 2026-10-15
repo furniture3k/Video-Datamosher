@@ -1,11 +1,11 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
 import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
 import { findRecipe } from './recipe';
-import { hasKeys, keysExpr, rampSetpts, type Keys } from './keys';
+import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
 import { reframeFilter, type ReframePath } from './reframe';
 import { linearExpr } from './track';
-import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
+import { BLEND_TRANSITIONS, audioSources, clipLen, sourceTime, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
   { id: 'mandelbrot', name: 'Mandelbrot zoom', spec: (w, h, r) => `mandelbrot=s=${w}x${h}:r=${r}` },
@@ -159,6 +159,17 @@ function keyedTransform(keys: Keys, T: { zoom: number; x: number; y: number; rot
 /** A clip cut down to part of itself: local seconds a..b of it. */
 export function windowClip(c: Clip, a: number, b: number): Clip {
   if (c.freeze) return { ...c, out: c.in + (b - a) };
+  if (c.ramp?.length) {
+    // the piece of the source under [a, b], with the matching piece of the ramp
+    const len = clipLen(c);
+    const x0 = Math.max(0, Math.min(1, a / len));
+    const x1 = Math.max(x0 + 1e-6, Math.min(1, b / len));
+    let ramp = c.ramp;
+    if (x1 < 1) ramp = splitRamp(ramp, x1)[0];
+    if (x0 > 0) ramp = splitRamp(ramp, x0 / x1)[1];
+    const [s0, s1] = [sourceTime(c, a), sourceTime(c, b)];
+    return { ...c, in: Math.min(s0, s1), out: Math.max(s0, s1), ramp };
+  }
   if (c.reverse) return { ...c, in: c.out - b * c.speed, out: c.out - a * c.speed };
   return { ...c, in: c.in + a * c.speed, out: c.in + b * c.speed };
 }
@@ -444,7 +455,8 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
 
 /** Everything about a clip's picture besides its timing. */
 function clipLook(c: Clip) {
-  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0 };
+  // everything clipGraph draws from, so a change re-prepares the segment
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab };
 }
 
 /**
@@ -621,7 +633,7 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
   if (xf) {
     // the end crossfades into the start, so the file loops without a jump
     const g = [`${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')}`, `[lv]${chain}[v]`];
-    if (withAudio) g.push(loopAudioFilter('[1:a]', xf.overlap / fps, '[aout]'));
+    if (withAudio) g.push(loopAudioFilter('[1:a]', xf.frames / fps, xf.overlap / fps, '[aout]'));
     a.push('-filter_complex', g.join(';'), '-map', '[v]');
     if (withAudio) a.push('-map', '[aout]');
   } else {
@@ -665,15 +677,21 @@ export function loopFilter(input: string, frames: number, overlap: number, fps: 
   return `${input}split[lpa][lpb];[lpa]trim=start_frame=${overlap},setpts=PTS-STARTPTS[lpbody];[lpb]trim=end_frame=${overlap},setpts=PTS-STARTPTS[lphead];[lpbody][lphead]xfade=transition=fade:duration=${d}:offset=${off}${out}`;
 }
 
-export function loopAudioFilter(input: string, seconds: number, out: string): string {
+/**
+ * The sound of a crossfade loop (`total` seconds long, `seconds` of overlap). Built from afade +
+ * adelay + amix rather than acrossfade: acrossfade fed from asplit outputs nothing in FFmpeg 6.1
+ * and older (ffmpeg.wasm included).
+ */
+export function loopAudioFilter(input: string, total: number, seconds: number, out: string): string {
   const d = r3(seconds);
-  return `${input}asplit[lqa][lqb];[lqa]atrim=start=${d},asetpts=PTS-STARTPTS[lqbody];[lqb]atrim=end=${d},asetpts=PTS-STARTPTS[lqhead];[lqbody][lqhead]acrossfade=d=${d}${out}`;
+  const st = r3(Math.max(0, total - 2 * seconds));
+  return `${input}asplit[lqa][lqb];[lqa]atrim=start=${d},asetpts=PTS-STARTPTS,afade=t=out:st=${st}:d=${d}[lqbody];[lqb]atrim=end=${d},asetpts=PTS-STARTPTS,afade=t=in:d=${d},adelay=${Math.round(st * 1000)}:all=1[lqhead];[lqbody][lqhead]amix=inputs=2:normalize=0:duration=first${out}`;
 }
 
 /** A finished (joined) MP4 / WebM made into a crossfade loop: one more encode. */
 export function loopPassArgs(o: ExportOptions, input: string, frames: number, overlap: number, fps: number, withAudio: boolean, out: string): string[] {
   const g = [loopFilter('[0:v]', frames, overlap, fps, '[v]')];
-  if (withAudio) g.push(loopAudioFilter('[0:a]', overlap / fps, '[aout]'));
+  if (withAudio) g.push(loopAudioFilter('[0:a]', frames / fps, overlap / fps, '[aout]'));
   return ['-i', input, '-filter_complex', g.join(';'), '-map', '[v]', ...(withAudio ? ['-map', '[aout]'] : []), '-r', String(fps), '-pix_fmt', 'yuv420p', ...encodeArgs(o, withAudio), ...commentArgs(o.comment), out];
 }
 

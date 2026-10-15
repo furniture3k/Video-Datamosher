@@ -47,18 +47,28 @@ const step = async (name, fn) => {
 };
 
 await page.goto(url);
+// no model downloads in the sweep: a fake people segmenter (everything is a person)
+await S(() => window.__moshpit.segment.setPersonSegmenter(async () => {
+  const c = document.createElement('canvas');
+  c.width = 16;
+  c.height = 9;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.fillRect(0, 0, 16, 9);
+  return c;
+}));
 await step('demo', async () => {
   await page.getByRole('button', { name: 'Load example' }).click();
   await page.waitForFunction(() => window.__moshpit.store.project.clips.some((c) => c.transition), null, { timeout: 120000 });
   await settle();
 });
 
-const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend']);
+const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'mvedit', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend', 'flowPaint', 'mask']);
 for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
     await page.keyboard.press('Shift+A');
-    await page.locator('.modal .item').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend' })[t], t) }).first().click();
+    await page.locator('.modal .item').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', mask: 'Subject Guard' })[t], t) }).first().click();
     await settle();
     const n = await S(() => window.__moshpit.store.render.frames.length);
     if (!n) throw new Error('no frames');
@@ -524,7 +534,7 @@ await step('NLE: make a compound, edit inside, close re-renders it', async () =>
     st.ui.selectedClips = [st.project.clips.filter((c) => c.track === 'v1')[1].id];
   });
   await page.keyboard.press('Shift+Delete');
-  await page.getByRole('button', { name: 'Close compound' }).click();
+  await page.locator('.crumbs').getByRole('button', { name: 'Done' }).click();
   await page.waitForFunction(() => !window.__moshpit.store.seqStack.length && !window.__moshpit.store.ui.dialog, null, { timeout: 240000 });
   const d1 = await S((id) => window.__moshpit.store.project.media.find((m) => m.id === id).duration, cmp.mediaId);
   if (!(d1 < d0 - 0.2)) throw new Error(`compound did not get shorter: ${d0} -> ${d1}`);
@@ -621,6 +631,99 @@ await step('export: 9:16 reframe with a melt loop', async () => {
     localStorage.removeItem('moshpit:exportOpts');
   });
   await page.keyboard.press('Escape');
+});
+
+await step('export: crossfade loop keeps its sound', async () => {
+  await page.keyboard.press('e');
+  await page.locator('.modal .fmt', { hasText: 'MP4' }).click();
+  await page.locator('.modal .field', { hasText: 'Loop' }).locator('select').selectOption('crossfade');
+  await page.locator('.modal .field', { hasText: 'Output size' }).locator('select').selectOption('480');
+  await page.getByRole('button', { name: 'Export MP4' }).click();
+  await page.locator('.modal .done video').waitFor({ timeout: 300000 });
+  const info = await S(async () => {
+    const blob = await (await fetch(document.querySelector('.modal .done video').src)).blob();
+    const r = await window.__moshpit.ffmpeg.run(['-i', '/m/x.mp4'], { mounts: { 'x.mp4': blob } });
+    const d = /Duration: (\d+):(\d+):([\d.]+)/.exec(r.log);
+    return { audio: /Audio: /.test(r.log), secs: +d[1] * 3600 + +d[2] * 60 + +d[3], hasSound: window.__moshpit.store.project.media.some((m) => m.hasAudio) };
+  });
+  const want = await S(() => window.__moshpit.store.duration);
+  if (info.hasSound && !info.audio) throw new Error('crossfade loop lost its audio');
+  if (!(info.secs < want && info.secs > want - 1.5)) throw new Error(`crossfade loop length ${info.secs} vs timeline ${want}`);
+  await S(() => localStorage.removeItem('moshpit:exportOpts'));
+  await page.keyboard.press('Escape');
+});
+
+/** Mean difference (0..255) between frame `i` of the render and the clean footage at the same place. */
+const diffFromClean = (i) =>
+  S(async (i) => {
+    const st = window.__moshpit.store;
+    const r = st.render;
+    const orig = await window.__moshpit.renderer.originalFrames(JSON.parse(JSON.stringify(st.project)), st.project.encoder.previewWidth);
+    const f = r.frames[i];
+    const pix = async (j) => {
+      const b = await createImageBitmap(new Blob([j], { type: 'image/jpeg' }), { resizeWidth: 64, resizeHeight: 36 });
+      const c = new OffscreenCanvas(64, 36).getContext('2d');
+      c.drawImage(b, 0, 0);
+      return c.getImageData(0, 0, 64, 36).data;
+    };
+    const a = await pix(r.jpegs[i]);
+    const b = await pix(orig[Math.min(orig.length - 1, f.at ?? f.src)]);
+    let d = 0;
+    for (let k = 0; k < a.length; k += 4) d += Math.abs(a[k] - b[k]) + Math.abs(a[k + 1] - b[k + 1]) + Math.abs(a[k + 2] - b[k + 2]);
+    return d / (a.length / 4) / 3;
+  }, i);
+
+await step('subject guard: the guarded part stays clean while the rest moshes', async () => {
+  const setFx = (guard) =>
+    S((guard) => {
+      const st = window.__moshpit.store;
+      const total = st.totalFrames;
+      const fx = [
+        { id: 'gk', type: 'kill', enabled: true, solo: false, start: 0, end: total, seed: 1, params: { mode: 'all', replace: 'prev' }, auto: {}, locks: [] },
+        { id: 'gb', type: 'bloom', enabled: true, solo: false, start: 0, end: total, seed: 2, params: { target: 'every', interval: 2, length: 'fill', timing: 'fit' }, auto: {}, locks: [] },
+      ];
+      if (guard) fx.push({ id: 'gg', type: 'mask', enabled: true, solo: false, start: 0, end: total, seed: 3, params: { source: guard, keep: 'subject', threshold: 0, feather: 0, expand: 0.2, mix: 1, size: 0.2 }, auto: {}, locks: [] });
+      st.edit((p) => (p.effects = fx));
+    }, guard);
+  await setFx(null);
+  await settle();
+  const i = await S(() => Math.floor(window.__moshpit.store.render.frames.length * 0.8));
+  const moshed = await diffFromClean(i);
+  await setFx('luma');
+  await settle();
+  const guarded = await diffFromClean(i);
+  await setFx('person');
+  await settle();
+  const person = await diffFromClean(i);
+  if (!(moshed > 12 && guarded < moshed * 0.4 && person < moshed * 0.4)) throw new Error(`moshed ${moshed.toFixed(1)}, guarded ${guarded.toFixed(1)}, people ${person.toFixed(1)}`);
+  // the editor for it
+  await S(() => (window.__moshpit.store.ui.selectedEffect = 'gg'));
+  await page.locator('.tabs button', { hasText: 'Effects' }).click();
+  await page.locator('.sh', { hasText: 'Subject' }).waitFor();
+});
+
+await step('flow paint: paint a stroke on the player and it moves the picture', async () => {
+  await S(() => {
+    const st = window.__moshpit.store;
+    const total = st.totalFrames;
+    st.edit((p) => (p.effects = [{ id: 'fp', type: 'flowPaint', enabled: true, solo: false, start: 0, end: total, seed: 1, params: { strength: 2, follow: 0, residual: 0, refresh: 0, turbulence: 0 }, auto: {}, locks: [] }]));
+    st.ui.selectedEffect = 'fp';
+  });
+  await page.locator('.tabs button', { hasText: 'Effects' }).click();
+  await page.getByRole('button', { name: 'Paint on the player' }).click();
+  await page.locator('.paintlayer').waitFor();
+  const box = await page.locator('.player canvas:not(.hidden)').first().boundingBox();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.5);
+  await page.mouse.down();
+  for (let k = 1; k <= 10; k++) await page.mouse.move(box.x + box.width * (0.2 + k * 0.06), box.y + box.height * 0.5);
+  await page.mouse.up();
+  const strokes = await S(() => window.__moshpit.store.project.effects[0].data?.strokes);
+  if (!strokes?.length || strokes[0].pts.length < 5 || strokes[0].tool !== 'push') throw new Error('no stroke: ' + JSON.stringify(strokes));
+  await page.waitForFunction(() => document.querySelectorAll('.paintlayer .arrow').length > 5);
+  await page.keyboard.press('Escape');
+  await settle();
+  const i = await S(() => Math.floor(window.__moshpit.store.render.frames.length * 0.6));
+  if (!((await diffFromClean(i)) > 8)) throw new Error('painted flow did not change the picture');
 });
 
 await step('light theme + new project + undo', async () => {

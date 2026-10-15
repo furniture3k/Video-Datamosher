@@ -120,7 +120,7 @@
     }
     if (mod) return;
     if (e.key === 'Escape') {
-      if (store.ui.trackPick || store.ui.eyedropper) ((store.ui.trackPick = null), (store.ui.eyedropper = false));
+      if (store.ui.trackPick || store.ui.eyedropper || store.ui.paintEffect) ((store.ui.trackPick = null), (store.ui.eyedropper = false), (store.ui.paintEffect = null));
       else if (store.ui.dialog) store.ui.dialog = null;
       else if (store.ui.tool !== 'select') store.ui.tool = 'select';
       else if (store.ui.selectedClips.length || store.ui.selectedTransition) {

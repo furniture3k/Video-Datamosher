@@ -160,7 +160,7 @@
         type="select"
         label="Output size"
         value={o.width}
-        options={[{ value: 0, label: `Same as mosh (${mosh.w}px)` }, ...[480, 640, 854, 1280, 1920, 2560, 3840].map((w) => ({ value: w, label: ({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w] ? `${({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w]} (${w}px)` : `${w}px wide` }))]}
+        options={[{ value: 0, label: `Same as mosh (${mosh.w}px)` }, ...[...new Set([480, 640, 720, 854, 1080, 1280, 1920, 2560, 3840, ...(o.width ? [o.width] : [])])].sort((a, b) => a - b).map((w) => ({ value: w, label: ({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w] ? `${({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w]} (${w}px)` : `${w}px wide` }))]}
         help="Rescale the final video. Use 'Nearest' scaling for crisp, chunky pixel-art upscales of a low-res mosh."
         onchange={(v: number) => (o.width = v)}
       />
