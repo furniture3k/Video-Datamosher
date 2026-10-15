@@ -2,6 +2,7 @@
 import type { BitstreamEffect, ParamDef } from './types';
 import type { Frame } from '../types';
 import { bool, copy, inRange, isMotion, num, posOf, rangeRuns, str, tOf, frameSize } from './util';
+import { beatHits, beatParams, framesAtHits } from '../audiofx';
 
 /** Shared setting of the effects that repeat or insert frames. */
 export const TIMING: ParamDef = {
@@ -106,9 +107,11 @@ export const bloom: BitstreamEffect = {
         { value: 'strongest', label: 'Strongest motion', hint: 'The frame with the most motion data under the bar. Usually the most dramatic bloom.' },
         { value: 'every', label: 'Every Nth frame', hint: 'A bloom every N motion frames, for rhythmic or slow-motion melts.' },
         { value: 'random', label: 'Random frames', hint: 'Motion frames bloom by chance. Unpredictable bursts.' },
+        { value: 'beats', label: 'On the beat', hint: 'A bloom on each beat of the music, lasting until the next one. Needs music on the timeline.' },
       ],
       help: 'Which motion frame (or frames) gets repeated.',
     },
+    ...beatParams((p) => p.target === 'beats'),
     { show: (p) => p.target === 'every', key: 'interval', label: 'Every Nth', type: 'int', min: 1, max: 300, default: 12, intensity: 'down', help: 'Bloom every N motion frames. With "Fill" each bloom lasts until the next one, so 2–4 gives a slow, stepped melt.' },
     { show: (p) => p.target === 'random', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, intensity: 'up', help: 'Chance that each motion frame blooms.' },
     {
@@ -135,6 +138,7 @@ export const bloom: BitstreamEffect = {
     if (target === 'first') hits = motion.slice(0, 1);
     else if (target === 'strongest') hits = motion.length ? [motion.reduce((a, f) => (frameSize(f) > frameSize(a) ? f : a))] : [];
     else if (target === 'every') hits = motion.filter((f, k) => k % Math.max(1, Math.round(num(e, 'interval', tOf(f, e)))) === 0);
+    else if (target === 'beats') hits = [...framesAtHits(frames, e, beatHits(e, ctx.audio), isMotion)];
     else hits = motion.filter((f) => ctx.rng.chance(num(e, 'probability', tOf(f, e))));
     const hit = new Set(hits);
     const out: Frame[] = [];
@@ -179,19 +183,23 @@ export const stutter: BitstreamEffect = {
         { value: 'repeat', label: 'All the way', hint: 'Loops one after another for the whole length of the bar.' },
         { value: 'once', label: 'Once', hint: 'A single loop at the start of the bar.' },
         { value: 'every', label: 'Every N frames', hint: 'A new loop starts every N frames (rhythmic pulses).' },
+        { value: 'beats', label: 'On the beat', hint: 'A new loop starts on each beat of the music. Needs music on the timeline.' },
       ],
       help: 'When loops are triggered inside the bar.',
     },
+    ...beatParams((p) => p.mode === 'beats'),
     { key: 'group', label: 'Group size', type: 'int', min: 2, max: 60, default: 6, unit: 'frames', help: 'How many frames are in each loop. Small groups jitter, big groups rock slowly.' },
     { key: 'loops', label: 'Loops', type: 'int', min: 1, max: 30, default: 3, intensity: 'up', help: 'How many times each group plays (1 = no repeat).' },
     { show: (p) => p.mode === 'every', key: 'every', label: 'Repeat every', type: 'int', min: 1, max: 300, default: 24, intensity: 'down', unit: 'frames', help: 'Start a new loop every N frames. 24 at 24 fps = one pulse per second.' },
     { key: 'pingpong', label: 'Ping-pong', type: 'bool', default: false, help: 'Every other loop plays backwards, so motion rocks to and fro instead of jumping.' },
     TIMING,
   ],
-  apply(frames, e) {
+  apply(frames, e, ctx) {
     const out: Frame[] = [];
     let sinceTrigger = Infinity;
     let i = 0;
+    const hits = str(e, 'mode') === 'beats' ? beatHits(e, ctx.audio) : [];
+    let nextHit = 0;
     while (i < frames.length) {
       const f = frames[i];
       if (!inRange(f, e)) {
@@ -203,7 +211,12 @@ export const stutter: BitstreamEffect = {
       const t = tOf(f, e);
       const mode = str(e, 'mode');
       const every = Math.max(1, Math.round(num(e, 'every', t)));
-      const trigger = sinceTrigger === Infinity || mode === 'repeat' || (mode === 'every' && sinceTrigger >= every);
+      let onBeat = false;
+      if (mode === 'beats') {
+        // every beat at or before this frame that hasn't fired yet fires now
+        while (nextHit < hits.length && hits[nextHit] <= posOf(f)) ((nextHit++), (onBeat = true));
+      }
+      const trigger = mode === 'beats' ? onBeat : sinceTrigger === Infinity || mode === 'repeat' || (mode === 'every' && sinceTrigger >= every);
       if (!trigger) {
         out.push(f);
         sinceTrigger++;
@@ -309,9 +322,11 @@ export const drop: BitstreamEffect = {
       options: [
         { value: 'every', label: 'Every Nth', hint: 'A regular pattern of drops.' },
         { value: 'probability', label: 'Random chance', hint: 'Frames are dropped by chance.' },
+        { value: 'beats', label: 'On the beat', hint: 'A frame is dropped on each beat, so the picture skips in time with the music.' },
       ],
       help: 'How frames are picked for dropping.',
     },
+    ...beatParams((p) => p.mode === 'beats'),
     { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 2, max: 30, default: 3, intensity: 'down', help: 'Drop every Nth frame. 2 drops every other frame.' },
     { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, intensity: 'up', help: 'Chance each frame is dropped.' },
     {
@@ -344,10 +359,12 @@ export const drop: BitstreamEffect = {
       out.push(f);
       if (isMotion(f)) lastMotion = f;
     };
+    const mode = str(e, 'mode');
+    const onBeat = mode === 'beats' ? framesAtHits(frames, e, beatHits(e, ctx.audio), (f) => str(e, 'types') !== 'motion' || isMotion(f)) : null;
     frames.forEach((f, i) => {
       if (i === 0 || !inRange(f, e) || (str(e, 'types') === 'motion' && !isMotion(f))) return void push(f);
       const t = tOf(f, e);
-      const del = str(e, 'mode') === 'every' ? ++n % Math.max(2, Math.round(num(e, 'every', t))) === 0 : ctx.rng.chance(num(e, 'probability', t));
+      const del = onBeat ? onBeat.has(f) : mode === 'every' ? ++n % Math.max(2, Math.round(num(e, 'every', t))) === 0 : ctx.rng.chance(num(e, 'probability', t));
       if (!del) return void push(f);
       if (fit && lastMotion) out.push(copy(lastMotion, 'dup', posOf(f)));
     });
@@ -472,6 +489,19 @@ export const byteGlitch: BitstreamEffect = {
     { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 100, step: 0.5, default: 3, intensity: 'up', help: 'Corruption operations per frame. 1–5 is usually plenty; high values can break frames completely.', chaos: [1, 12], log: true },
     { key: 'probability', label: 'Frame chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, intensity: 'up', help: 'Chance each frame gets glitched.' },
     {
+      key: 'gate',
+      label: 'When',
+      type: 'select',
+      default: 'always',
+      options: [
+        { value: 'always', label: 'All the time', hint: 'Anywhere under the bar (with the Frame chance).' },
+        { value: 'beats', label: 'On the beat', hint: 'Only for a few frames from each beat of the music, so the damage hits in time. Needs music on the timeline.' },
+      ],
+      help: 'Glitch all the time, or only on the beat.',
+    },
+    ...beatParams((p) => p.gate === 'beats'),
+    { show: (p) => p.gate === 'beats', key: 'beatHold', label: 'Hold', type: 'int', min: 1, max: 48, default: 3, intensity: 'up', unit: 'frames', help: 'How many frames from each beat get glitched.' },
+    {
       key: 'target',
       label: 'Target frames',
       type: 'select',
@@ -491,8 +521,15 @@ export const byteGlitch: BitstreamEffect = {
   ],
   apply(frames, e, ctx) {
     const rng = ctx.rng;
+    const hits = str(e, 'gate') === 'beats' ? beatHits(e, ctx.audio) : null;
+    const hold = Math.max(1, Math.round(Number(e.params.beatHold ?? 3)));
+    const gated = (pos: number) => {
+      if (!hits) return true;
+      for (const h of hits) if (pos >= h && pos < h + hold) return true;
+      return false;
+    };
     return frames.map((f, i) => {
-      if (i === 0 || !inRange(f, e)) return f;
+      if (i === 0 || !inRange(f, e) || !gated(posOf(f))) return f;
       const target = str(e, 'target');
       if (target === 'motion' && !isMotion(f)) return f;
       if (target === 'keys' && f.type !== 'I') return f;

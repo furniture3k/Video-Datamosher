@@ -296,6 +296,79 @@ await step('export: Made for presets', async () => {
   await S(() => (window.__moshpit.store.ui.guides = null));
 });
 
+await step('beats: import music, BPM, grid, beat-triggered and audio-reactive effects, auto-edit', async () => {
+  // a 120 BPM click track (accent every 4th beat), made in the page and imported as music
+  await S(async () => {
+    const sr = 44100;
+    const secs = 8;
+    const n = sr * secs;
+    const pcm = new Int16Array(n * 2);
+    let seed = 1;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+    for (let b = 0; b * 0.5 < secs; b++) {
+      const s0 = Math.round((0.25 + b * 0.5) * sr);
+      for (let i = 0; i < 2000 && s0 + i < n; i++) {
+        let v = rnd() * Math.exp(-i / 300) * 0.6;
+        if (b % 4 === 0) v += Math.sin((2 * Math.PI * 60 * i) / sr) * Math.exp(-i / 1500) * 0.4;
+        pcm[(s0 + i) * 2] = pcm[(s0 + i) * 2 + 1] = Math.round(v * 32767);
+      }
+    }
+    const head = new DataView(new ArrayBuffer(44));
+    const str = (o, t) => [...t].forEach((c, i) => head.setUint8(o + i, c.charCodeAt(0)));
+    str(0, 'RIFF'); head.setUint32(4, 36 + pcm.byteLength, true); str(8, 'WAVEfmt '); head.setUint32(16, 16, true); head.setUint16(20, 1, true); head.setUint16(22, 2, true);
+    head.setUint32(24, sr, true); head.setUint32(28, sr * 4, true); head.setUint16(32, 4, true); head.setUint16(34, 16, true); str(36, 'data'); head.setUint32(40, pcm.byteLength, true);
+    const file = new File([head.buffer, pcm.buffer], 'clicks.wav', { type: 'audio/wav' });
+    await window.__moshpit.media.addFiles([file], { track: 'a1', start: 0 });
+  });
+  await idle();
+  await page.locator('.tabs button', { hasText: 'Audio' }).click();
+  await page.getByRole('button', { name: 'Analyse' }).click();
+  await page.waitForFunction(() => /^1(19|20|21)$/.test(document.querySelector('.bpm')?.textContent?.trim() ?? ''), null, { timeout: 60000 });
+  await page.locator('.field', { hasText: 'Beat grid' }).locator('input, button, [role=switch]').first().click();
+  await page.locator('.ruler .beat').first().waitFor({ timeout: 20000 });
+  // a Bloom on the beat and a glitch whose amount follows the bass
+  await S(() => {
+    const st = window.__moshpit.store;
+    const total = st.totalFrames;
+    st.edit((p) => {
+      p.effects = [
+        { id: 'kb', type: 'kill', enabled: true, solo: false, start: 0, end: total, seed: 1, params: { mode: 'all', replace: 'prev' }, auto: {}, locks: [] },
+        { id: 'bb', type: 'bloom', enabled: true, solo: false, start: 0, end: total, seed: 2, params: { target: 'beats', beatOn: 'beats', beatEvery: 1, length: 'fill', timing: 'fit' }, auto: {}, locks: [] },
+        { id: 'gb', type: 'glitch', enabled: true, solo: false, start: 0, end: total, seed: 3, params: { mode: 'flip', amount: 2, probability: 1, target: 'all', gate: 'always' }, auto: { amount: { kind: 'audio', track: 'auto', band: 'low', min: 0, max: 6, attack: 0, release: 3, threshold: 0.1 } }, locks: [] },
+      ];
+    });
+  });
+  await settle();
+  const dupAtBeats = await S(() => {
+    const r = window.__moshpit.store.render;
+    // repeats show a frame somewhere other than where it came from (Byte Glitch retags them)
+    return r.frames.filter((f) => (f.at ?? f.src) !== f.src).length;
+  });
+  if (!dupAtBeats) throw new Error('beat-triggered Bloom made no repeats');
+  // the automation editor shows the Audio mode
+  await page.locator('.tabs button', { hasText: 'Effects' }).click();
+  await S(() => (window.__moshpit.store.ui.selectedEffect = 'gb'));
+  await page.locator('.ae .seg button.on', { hasText: 'Audio' }).waitFor({ timeout: 10000 }).catch(async () => {
+    await page.locator('.pc').filter({ hasText: 'Amount' }).getByTitle(/Automate/).click();
+    await page.locator('.ae .seg button.on', { hasText: 'Audio' }).waitFor({ timeout: 10000 });
+  });
+  // auto-edit to the beat: cuts land on beats
+  await page.locator('.tabs button', { hasText: 'Audio' }).click();
+  await page.getByRole('button', { name: /Auto-edit to the beat/ }).click();
+  await page.getByRole('button', { name: 'Cut to the beat' }).click({ timeout: 60000 });
+  await page.waitForFunction(() => !window.__moshpit.store.ui.dialog, null, { timeout: 30000 });
+  const ok = await S(() => {
+    const st = window.__moshpit.store;
+    const fps = st.project.encoder.fps;
+    const starts = window.__moshpit.timeline.layoutVideo(st.project).slice(1).map((pl) => pl.start);
+    // 120 BPM from 0.25 s, every 2 beats: a cut every second
+    return starts.length >= 5 && starts.every((t) => Math.abs(((t - 0.25) % 1 + 1) % 1) * fps <= 1.01 || Math.abs((((t - 0.25) % 1) + 1) % 1 - 1) * fps <= 1.01);
+  });
+  if (!ok) throw new Error('auto-edit cuts are not on the beat: ' + JSON.stringify(await S(() => window.__moshpit.timeline.layoutVideo(window.__moshpit.store.project).map((pl) => pl.start))));
+  await settle();
+  await page.locator('.field', { hasText: 'Beat grid' }).locator('input, button, [role=switch]').first().click();
+});
+
 await step('light theme + new project + undo', async () => {
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Light theme/ }).click();

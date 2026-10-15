@@ -13,6 +13,7 @@
   import Toasts from './components/Toasts.svelte';
   import PresetsDialog from './dialogs/PresetsDialog.svelte';
   import SnapshotsDialog from './dialogs/SnapshotsDialog.svelte';
+  import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
   import { takeSnapshot } from './lib/snapshots.svelte';
   import ExportDialog from './dialogs/ExportDialog.svelte';
   import VariationsDialog from './dialogs/VariationsDialog.svelte';
@@ -348,6 +349,7 @@
 
 {#if store.ui.dialog === 'presets'}<PresetsDialog />{/if}
 {#if store.ui.dialog === 'snapshots'}<SnapshotsDialog />{/if}
+{#if store.ui.dialog === 'beatEdit'}<BeatEditDialog />{/if}
 {#if store.ui.dialog === 'export'}<ExportDialog />{/if}
 {#if store.ui.dialog === 'variations'}<VariationsDialog />{/if}
 {#if store.ui.dialog === 'help'}<HelpDialog />{/if}

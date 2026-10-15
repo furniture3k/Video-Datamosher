@@ -1,5 +1,6 @@
 import type { EffectInstance, Frame, ParamValue } from '../types';
 import type { Rng } from '../rng';
+import type { AudioFeatures } from '../beats';
 
 export type ParamDef = (
   | {
@@ -45,6 +46,8 @@ export interface EffectContext {
   rng: Rng;
   /** original prepared frames, indexed by src */
   source: Frame[];
+  /** the analysed music, for beat-triggered effects (missing: no music on the timeline) */
+  audio?: AudioFeatures;
 }
 
 export interface BitstreamEffect {

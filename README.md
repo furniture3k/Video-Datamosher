@@ -118,7 +118,10 @@ The same app works on phones and tablets. The player stays at the top, and a tab
 ## Controls
 
 - **Effect lanes.** Each mosh effect is a bar you can move and resize; it snaps to cuts, the playhead and other effects. The output lane shows every frame of the result, coloured by what happened to it.
-- **Automation.** Any number or switch can follow a drawn curve or an LFO over the effect's range.
+- **Automation.** Any number or switch can follow a drawn curve, an LFO, or **the music**: the bass, mids, highs, loudness, every hit or every beat, with attack, release and a threshold. A glitch can hit harder on the kick drum and a warp swell with the chorus.
+- **On the beat.** Bloom, Stutter Loop, Frame Drop and Byte Glitch can fire on every beat, every bar or every hit of the music (and every Nth one). moshpit finds the tempo, the beats and the first beat of each bar itself.
+- **Beat grid.** The Audio tab shows the BPM and can draw the beats on the ruler (bars taller); clips, marks and effect bars snap to them.
+- **Auto-edit to the beat.** Pick clips and a song and moshpit cuts them on every Nth beat or bar, with melts on the bars and blooms where the music drops.
 - **Randomize, Nudge, Variations.** Roll a new stack, nudge the current settings, or compare a grid of options side by side. Locked settings and pinned effects are left alone.
 - **Breeding.** In Variations, tick the ones you like and **Breed** them: the children mix their parents' effects and settings. Keep going for as many generations as you like, and step **Back** to an earlier one.
 - **Chaos dial.** One knob in the top bar pushes every effect calmer or wilder without touching your settings: 0 % is calm, 100 % is as you made it, 200 % is destroyed. Drag it, scroll it, or press <kbd>Q</kbd> / <kbd>Shift</kbd> <kbd>Q</kbd>.

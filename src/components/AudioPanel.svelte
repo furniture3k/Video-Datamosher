@@ -5,16 +5,44 @@
   import { addAudioTrack, removeTrack } from '../lib/edit';
   import { audioSources } from '../engine/timeline';
   import { CLIP_AUDIO, type AudioSettings, type Track } from '../engine/types';
+  import { audioKey } from '../engine/audiofx';
+  import { beatInfo, refreshBeats, setBeatGrid } from '../lib/beatinfo.svelte';
   const a = $derived(store.project.audio);
   const set = <K extends keyof AudioSettings>(k: K) => (v: AudioSettings[K]) => store.edit((p) => (p.audio[k] = v), 'au' + k);
   const tracks = $derived(store.project.tracks.filter((t) => t.kind === 'audio'));
   const srcs = $derived(audioSources(store.project));
   const count = (t: Track) => (t.id === CLIP_AUDIO ? store.project.clips.filter((c) => c.track === 'v1').length : store.project.clips.filter((c) => c.track === t.id).length);
   const setTr = <K extends keyof Track>(t: Track, k: K) => (v: Track[K]) => store.edit(() => (t[k] = v), 'tr' + k + t.id);
+  const beatKeyNow = $derived(audioKey(store.project, store.project.beatSource));
+  const beatName = $derived(beatKeyNow === 'mix' ? 'everything' : (tracks.find((t) => t.id === beatKeyNow)?.name ?? beatKeyNow));
 </script>
 
 <div class="col">
-  <div class="label">Mixer</div>
+  <div class="label">Beats</div>
+  <div class="beats">
+    <div class="row">
+      <span class="bpm mono">{beatInfo.status === 'ready' ? Math.round(beatInfo.bpm) : '—'}</span>
+      <span class="small muted grow">
+        {#if beatInfo.status === 'working'}listening…{:else if beatInfo.status === 'ready'}BPM from {beatName}{beatInfo.confidence < 0.2 ? ' (no steady beat)' : ''}{:else if beatInfo.status === 'none'}no beat in {beatName}{:else}BPM{/if}
+      </span>
+      <button class="ghost" onclick={() => refreshBeats()} disabled={!srcs.length || beatInfo.status === 'working'} title="Listen to the music again">Analyse</button>
+    </div>
+    <Field
+      type="select"
+      label="Music"
+      value={store.project.beatSource ?? 'auto'}
+      options={[{ value: 'auto', label: `Automatic (${tracks.find((t) => t.id === audioKey(store.project, undefined))?.name ?? 'everything'})` }, { value: 'mix', label: 'Everything' }, ...tracks.map((t) => ({ value: t.id, label: t.name }))]}
+      help="Where beats come from for effects set to 'On the beat', the beat grid and auto-edit. Automatic uses the first audio track with music on it."
+      onchange={(v: string) => {
+        store.edit((p) => (v === 'auto' ? delete p.beatSource : (p.beatSource = v)));
+        refreshBeats();
+      }}
+    />
+    <Field type="bool" label="Beat grid" value={beatInfo.grid} help="Show the beats on the timeline ruler (the first beat of each bar taller). Clips, marks and effect bars snap to them." onchange={(v: boolean) => setBeatGrid(v)} />
+    <button onclick={() => (store.ui.dialog = 'beatEdit')} disabled={!srcs.length || !store.project.media.some((m) => m.hasVideo)}><Icon name="music" />Auto-edit to the beat…</button>
+  </div>
+
+  <div class="label sect">Mixer</div>
   {#if !srcs.length}
     <div class="small muted">Nothing audible yet. Drop music or sound files onto an audio track, or unmute clips.</div>
   {/if}
@@ -89,6 +117,17 @@
   }
   .add {
     align-self: flex-start;
+  }
+  .beats {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bpm {
+    font-size: 20px;
+    font-weight: 600;
+    min-width: 44px;
+    color: var(--accent);
   }
   .sect {
     margin-top: 14px;

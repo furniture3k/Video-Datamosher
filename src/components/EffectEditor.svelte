@@ -8,6 +8,9 @@
   import type { EffectInstance } from '../engine/types';
   import { layoutVideo } from '../engine/timeline';
   import { markedRange } from '../lib/edit';
+  import { usesBeats } from '../engine/audiofx';
+  import { audioSources } from '../engine/timeline';
+  import { beatInfo } from '../lib/beatinfo.svelte';
 
   let { effect }: { effect: EffectInstance } = $props();
   const def = $derived(EFFECTS[effect.type]);
@@ -38,6 +41,8 @@
     });
   }
   const info = $derived(showInfo || store.ui.tips);
+  const hasSound = $derived(audioSources(store.project).length > 0);
+
 </script>
 
 <div class="editor" style="--c:{def.color}">
@@ -54,6 +59,11 @@
     <button class="icon ghost" title="Randomize unlocked settings" aria-label="Randomize settings" onclick={randomize}><Icon name="dice" size={14} /></button>
   </div>
   {#if info}<p class="desc small muted">{def.description}</p>{/if}
+  {#if usesBeats(effect) && !hasSound}
+    <p class="small warn">Set to the beat, but there is no music on the timeline yet: drop a song on an audio track.</p>
+  {:else if usesBeats(effect) && beatInfo.status === 'ready'}
+    <p class="small faint">Following {Math.round(beatInfo.bpm)} BPM. Change the music under Audio → Beats.</p>
+  {/if}
 
   <section>
     <div class="sh">
@@ -120,6 +130,10 @@
 </div>
 
 <style>
+  .warn {
+    color: var(--warn);
+    margin: 0;
+  }
   .editor {
     display: flex;
     flex-direction: column;

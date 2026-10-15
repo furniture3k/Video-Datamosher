@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Audio-reactive automation**: any setting can follow the bass, mids, highs, loudness, hits or
+  beats of the music, with attack, release and threshold.
+- **Beat triggers**: Bloom, Stutter Loop, Frame Drop and Byte Glitch can fire on beats, bars or hits.
+- **Beat detection** (tempo, beats, downbeats, onsets) runs locally; BPM readout, beat grid on the
+  ruler and snapping to beats.
+- **Auto-edit to the beat**: cuts clips to the music with melts on bars and blooms on drops.
+
 - **Chaos dial**: one knob that pushes every effect calmer or wilder (<kbd>Q</kbd> / <kbd>Shift Q</kbd>).
 - **Breed variations**: pick favourites in Variations and breed them, generation after generation.
 - **Snapshots**: named versions you can restore or A/B against the current mosh; automatic ones

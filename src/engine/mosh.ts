@@ -7,6 +7,7 @@ import { hashSeed, makeRng } from './rng';
 import type { EffectInstance, Frame, Project } from './types';
 import { transitionEffects } from './timeline';
 import { withChaos } from './chaos';
+import { bakeAudio, type MoshAudio } from './audiofx';
 
 export interface Prepared {
   info: AviInfo;
@@ -52,12 +53,12 @@ export function allEffects(project: Project): EffectInstance[] {
 
 const bitstreamEffects = (project: Project) => activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'bitstream');
 
-function applyOne(frames: Frame[], inst: EffectInstance, prep: Prepared, project: Project, cuts: number[]): Frame[] {
-  const e = withChaos(inst, project.chaos);
+function applyOne(frames: Frame[], inst: EffectInstance, prep: Prepared, project: Project, cuts: number[], audio?: MoshAudio): Frame[] {
+  const e = bakeAudio(withChaos(inst, project.chaos), audio, project);
   const rng = makeRng(hashSeed(project.globalSeed, e.seed, e.id));
   const def = EFFECTS[e.type];
   if (def.kind !== 'bitstream') return frames;
-  const out = def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames });
+  const out = def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames, audio: audio?.sources[audio.beatKey] });
   return def.retimes && e.params.timing !== 'stretch' ? fitRange(frames, out, e) : out;
 }
 
@@ -132,9 +133,9 @@ function finishFrames(frames: Frame[], prep: Prepared): Frame[] {
   return frames;
 }
 
-export function applyBitstream(prep: Prepared, project: Project, cuts: number[]): Frame[] {
+export function applyBitstream(prep: Prepared, project: Project, cuts: number[], audio?: MoshAudio): Frame[] {
   let frames = prep.frames.slice();
-  for (const e of bitstreamEffects(project)) frames = applyOne(frames, e, prep, project, cuts);
+  for (const e of bitstreamEffects(project)) frames = applyOne(frames, e, prep, project, cuts, audio);
   return finishFrames(frames, prep);
 }
 
@@ -145,7 +146,7 @@ export const EDITS_BYTES = new Set(['glitch']);
  * applyBitstream for disk-backed frames: before each effect that edits bytes, `load` gets the
  * frames it may touch (those in its range) so their full payloads can be read in. Same result.
  */
-export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts: number[], load: (frames: Frame[]) => Promise<Map<Frame, Frame>>): Promise<Frame[]> {
+export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts: number[], load: (frames: Frame[]) => Promise<Map<Frame, Frame>>, audio?: MoshAudio): Promise<Frame[]> {
   let frames = prep.frames.slice();
   for (const e of bitstreamEffects(project)) {
     if (EDITS_BYTES.has(e.type)) {
@@ -156,7 +157,7 @@ export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts:
         frames = frames.map((f) => loaded.get(f) ?? f);
       }
     }
-    frames = applyOne(frames, e, prep, project, cuts);
+    frames = applyOne(frames, e, prep, project, cuts, audio);
   }
   return finishFrames(frames, prep);
 }

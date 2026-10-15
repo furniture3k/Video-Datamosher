@@ -226,9 +226,18 @@ export interface DecoderSettings {
 export type AutoInterp = 'linear' | 'smooth' | 'step';
 export type LfoShape = 'sine' | 'triangle' | 'square' | 'saw' | 'random' | 'noise';
 
+export type AudioBand = 'low' | 'mid' | 'high' | 'full' | 'onset' | 'beat';
+
 export type Automation =
   | { kind: 'curve'; points: [number, number][]; interp: AutoInterp }
-  | { kind: 'lfo'; shape: LfoShape; rate: number; min: number; max: number; phase: number };
+  | { kind: 'lfo'; shape: LfoShape; rate: number; min: number; max: number; phase: number }
+  /**
+   * follows the music: `track` is 'auto' (the music track), 'mix' (everything) or an audio track
+   * id; attack / release in frames, threshold 0..1
+   */
+  | { kind: 'audio'; track: string; band: AudioBand; min: number; max: number; attack: number; release: number; threshold: number }
+  /** one value per frame of the effect's range (audio automation, worked out at render time) */
+  | { kind: 'samples'; values: number[]; min: number };
 
 export type ParamValue = number | boolean | string;
 
@@ -274,6 +283,8 @@ export interface Project {
   markers?: Marker[];
   /** the Chaos dial: 0 calm .. 1 as authored .. 2 destroyed */
   chaos?: number;
+  /** where beats come from for beat-triggered effects: 'auto' (the music track), 'mix' or a track id */
+  beatSource?: string;
 }
 
 export const defaultEncoder = (): EncoderSettings => ({

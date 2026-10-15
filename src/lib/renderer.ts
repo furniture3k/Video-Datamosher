@@ -7,7 +7,9 @@ import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { type TextOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
-import { cutFrames, segments, timelineDuration, mediaOf, type Segment } from '../engine/timeline';
+import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, type Segment } from '../engine/timeline';
+import { analyzeAudio, type AudioFeatures } from '../engine/beats';
+import { audioKey, audioKeysNeeded, type MoshAudio } from '../engine/audiofx';
 import { splitJpegs } from '../engine/jpeg';
 import { buildAudio, wav, wavParts, SAMPLE_RATE } from '../engine/audio';
 import { zip } from '../engine/zip';
@@ -206,7 +208,9 @@ export function cutsOf(project: Project): number[] {
 }
 
 /** Identity of everything that changes the moshed picture. */
-export const renderKey = (p: Project) => JSON.stringify({ c: p.clips.map(({ label: _l, ...c }) => c), v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
+export const renderKey = (p: Project) => JSON.stringify({
+  // effects that follow the music change when the sound does
+  au: audioKeysNeeded(p).length ? { tr: p.tracks.filter((t) => t.kind === 'audio').map((t) => [t.id, t.muted, t.solo, t.volume]), bs: p.beatSource } : 0, c: p.clips.map(({ label: _l, ...c }) => c), v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
@@ -216,7 +220,9 @@ export async function renderPreview(project: Project, width: number, progress?: 
   check(signal);
   const cuts = cutsOf(project);
   progress?.('Moshing', 0);
-  const frames = applyBitstream(prep, project, cuts);
+  const audio = await moshAudioFor(project);
+  check(signal);
+  const frames = applyBitstream(prep, project, cuts, audio);
   check(signal);
   // Frames before the first change decode exactly as last time: only decode what changed.
   const dkey = JSON.stringify({ d: project.decoder, w: width });
@@ -236,7 +242,7 @@ export async function renderPreview(project: Project, width: number, progress?: 
   } else jpegs = await decode(project, blob, 4, frames.length, 'Decoding', progress);
   check(signal);
   lastDecode = { key: dkey, frames, jpegs };
-  const runner = new PostRunner(project, 0.85);
+  const runner = new PostRunner(project, 0.85, false, audio);
   const post = runner.active;
   try {
     if (post) jpegs = await runner.run(jpegs, frames, 0, (p) => progress?.('Pixel effects', p), signal);
@@ -284,6 +290,51 @@ export async function timelineAudio(project: Project): Promise<Buses> {
   }
   audioCache.set(key, buses);
   return buses;
+}
+
+// ---------------------------------------------------------------- listening to the music
+
+const featureCache = new Map<string, Promise<AudioFeatures | null>>();
+
+/** The project with only one audio source audible ('mix': everything as it is). */
+function onlySource(project: Project, key: string): Project {
+  if (key === 'mix') return project;
+  return { ...project, tracks: project.tracks.map((t) => (t.kind !== 'audio' ? t : { ...t, muted: t.id !== key, solo: false })) };
+}
+
+/** Analysed sound of one source ('mix' or an audio track id) over the whole timeline. */
+export function audioFeatures(project: Project, key: string): Promise<AudioFeatures | null> {
+  const p = onlySource(project, key);
+  const fps = project.encoder.fps;
+  const frames = timelineFrames(project, fps);
+  const ck = JSON.stringify({ key, s: audioSources(p).map((s) => [s.clip.id, s.clip.mediaId, s.start, s.len, s.clip.in, s.clip.out, s.clip.speed, s.clip.reverse, s.gain, s.fadeIn, s.fadeOut]), fps, frames });
+  let hit = featureCache.get(ck);
+  if (!hit) {
+    hit = (async () => {
+      const { mosh, clean } = await timelineAudio(p);
+      const a = mosh ?? clean;
+      if (!a) return null;
+      const b = mosh && clean ? clean : null;
+      const sum = b ? a.map((v, i) => Math.max(-32768, Math.min(32767, v + (b[i] ?? 0)))) : a;
+      return analyzeAudio(sum, fps, frames);
+    })();
+    hit.catch(() => featureCache.delete(ck));
+    featureCache.set(ck, hit);
+    if (featureCache.size > 12) featureCache.delete(featureCache.keys().next().value!);
+  }
+  return hit;
+}
+
+/** Everything a render needs from the music (undefined when no effect listens to it). */
+export async function moshAudioFor(project: Project): Promise<MoshAudio | undefined> {
+  const keys = audioKeysNeeded(project);
+  if (!keys.length) return undefined;
+  const sources: Record<string, AudioFeatures> = {};
+  for (const k of keys) {
+    const f = await audioFeatures(project, k);
+    if (f) sources[k] = f;
+  }
+  return { sources, beatKey: audioKey(project, project.beatSource) };
 }
 
 /** Final sound for a list of output frames, as WAV bytes (or null when silent). */
@@ -440,7 +491,8 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     // the recipe rides along in the file, so anyone can load the mosh from the video
     o = { ...o, comment: o.comment ?? (await encodeRecipe(project, prep.frames.length)) };
     progress('Moshing', 0);
-    const frames = disk ? await applyBitstreamDisk(prep, project, cutsOf(project), loadFrames) : applyBitstream(prep, project, cutsOf(project));
+    const audioFx = await moshAudioFor(project);
+    const frames = disk ? await applyBitstreamDisk(prep, project, cutsOf(project), loadFrames, audioFx) : applyBitstream(prep, project, cutsOf(project), audioFx);
     const avi = disk ? null : writeMoshedBlob(prep, frames);
     if (disk) await assembleAvi(ffmpeg.file!('mosh.avi'), prep, frames);
     check(signal);
@@ -484,7 +536,7 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     }
 
     const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
-    const runner = new PostRunner(project, 0.95, true);
+    const runner = new PostRunner(project, 0.95, true, audioFx);
     const post = runner.active;
     const n = hi - lo;
 

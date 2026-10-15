@@ -32,7 +32,7 @@ export function chaosValue(d: NumDef, v: number, c: number): number {
 
 function chaosAuto(d: NumDef, a: Automation, c: number): Automation {
   if (a.kind === 'curve') return { ...a, points: a.points.map(([t, v]) => [t, chaosValue(d, v, c)] as [number, number]) };
-  if (a.kind === 'lfo') return { ...a, min: chaosValue(d, a.min, c), max: chaosValue(d, a.max, c) };
+  if (a.kind === 'lfo' || a.kind === 'audio') return { ...a, min: chaosValue(d, a.min, c), max: chaosValue(d, a.max, c) };
   return a;
 }
 
