@@ -78,7 +78,7 @@
     result = null;
     signal = { cancelled: false };
     try {
-      const r = await exportVideo($state.snapshot(store.project) as Project, { ...$state.snapshot(o), range: onlyRange ? marked : null }, (s, p) => ((stage = s), (progress = p)), signal);
+      const r = await exportVideo($state.snapshot(store.project) as Project, { ...($state.snapshot(o) as ExportOptions), range: onlyRange ? marked : null }, (s, p) => ((stage = s), (progress = p)), signal);
       if (isDesktop) {
         result = { file: r.file ?? (await blobToDisk(r.blob!, r.name)), name: r.name, size: r.size, type: r.type };
         running = false;
@@ -125,8 +125,9 @@
       <div class="small muted">{sp.note}{#if sizedKbps} Video bitrate {sizedKbps} kbit/s to stay under {sp.maxMB} MB.{/if}</div>
       {#if wrongShape}
         <div class="small warn row">
-          <span class="grow">{sp.name} wants {sp.aspect}; this project is {store.project.encoder.aspect === 'auto' ? 'the shape of its first clip' : store.project.encoder.aspect}. It will be exported as it is.</span>
-          <button onclick={fitShape} disabled={running}>Make it {sp.aspect}</button>
+          <span class="grow">{sp.name} wants {sp.aspect}; this project is {store.project.encoder.aspect === 'auto' ? 'the shape of its first clip' : store.project.encoder.aspect}.{o.reframeTo === sp.aspect ? ' It will be reframed to follow the action.' : ' It will be exported as it is.'}</span>
+          {#if o.reframeTo !== sp.aspect}<button onclick={() => (o.reframeTo = sp!.aspect!)} disabled={running} title="Crop to {sp.aspect} on export, following the movement">Reframe</button>{/if}
+          <button onclick={fitShape} disabled={running} title="Change the project itself to {sp.aspect}">Make it {sp.aspect}</button>
         </div>
       {/if}
       {#if tooLong}
@@ -216,7 +217,34 @@
       />
       <Field type="bool" label="Loop forever" value={o.loop} help="Play the GIF on repeat." onchange={(v: boolean) => (o.loop = v)} />
     {/if}
-    {#if marked && o.format !== 'avi'}
+    {#if o.format !== 'avi'}
+      <Field
+        type="select"
+        label="Shape"
+        value={o.reframeTo ?? ''}
+        options={[{ value: '', label: 'As the project' }, ...['9:16', '4:5', '1:1', '16:9', '21:9'].map((a) => ({ value: a, label: `${a} (reframe)` }))]}
+        help="Export in another shape: the picture is cropped, and the crop slides to follow where the movement is."
+        onchange={(v: string) => (o.reframeTo = v || undefined)}
+      />
+    {/if}
+    {#if o.format === 'mp4' || o.format === 'webm' || o.format === 'gif'}
+      <Field
+        type="select"
+        label="Loop"
+        value={o.loopMode ?? 'off'}
+        options={[
+          { value: 'off', label: 'Off' },
+          { value: 'crossfade', label: 'Seamless (crossfade)', hint: 'The end fades into the start, so the video loops without a jump. It gets a little shorter.' },
+          { value: 'melt', label: 'Seamless (melt)', hint: 'The start melts out of the end picture, datamosh style, so the loop flows on.' },
+        ]}
+        help="For GIFs, Reels and anything that plays on repeat."
+        onchange={(v: 'off' | 'crossfade' | 'melt') => (o.loopMode = v)}
+      />
+      {#if o.loopMode && o.loopMode !== 'off'}
+        <Field label="Seam" unit="s" min={0.1} max={3} step={0.05} value={o.loopSeconds ?? 0.5} help="How long the end blends or melts into the start." onchange={(v: number) => (o.loopSeconds = v)} />
+      {/if}
+    {/if}
+    {#if marked && o.format !== 'avi' && (!o.loopMode || o.loopMode === 'off')}
       <Field type="bool" label="Only the In–Out range" value={onlyRange} help="Export just the part marked with I and O ({tc(marked[0], store.fps)} → {tc(marked[1], store.fps)}). The mosh is still worked out from the start, so it looks exactly as it does in the full video." onchange={(v: boolean) => (onlyRange = v)} />
     {/if}
     {#if o.format !== 'gif' && o.format !== 'png' && hasAudio}

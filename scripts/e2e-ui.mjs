@@ -531,6 +531,98 @@ await step('NLE: make a compound, edit inside, close re-renders it', async () =>
   await settle();
 });
 
+await step('analysis: track an object, title follows, stabilize', async () => {
+  // a clip with a test pattern sliding right across black, made in the page's own FFmpeg
+  await S(async () => {
+    const { ffmpeg, media } = window.__moshpit;
+    const r = await ffmpeg.run(['-f', 'lavfi', '-i', 'color=c=black:s=320x240:r=24:d=3', '-f', 'lavfi', '-i', 'testsrc2=s=60x60:r=24:d=3', '-filter_complex', "[0][1]overlay=x='40+t*60':y=90", '-t', '3', '-pix_fmt', 'yuv420p', 'slide.mp4'], { outputs: ['slide.mp4'] });
+    await media.addFiles([new File([r.out['slide.mp4']], 'slide.mp4', { type: 'video/mp4' })], { track: 'v1', index: 0 });
+  });
+  await idle();
+  const id = await S(() => window.__moshpit.store.project.clips.find((c) => c.track === 'v1' && window.__moshpit.store.project.media.find((m) => m.id === c.mediaId)?.source.name === 'slide.mp4').id);
+  await S((id) => ((window.__moshpit.store.ui.selectedClips = [id]), window.__moshpit.store.seek(0.02)), id);
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  // the button arms the player; the box itself is given in picture coordinates
+  await page.getByRole('button', { name: 'Track an object' }).click();
+  await page.locator('.picknote').waitFor();
+  await page.keyboard.press('Escape');
+  const box = await S((id) => {
+    const p = window.__moshpit.store.project;
+    const c = p.clips.find((x) => x.id === id);
+    const r = window.__moshpit.motion.pictureRect(c, p);
+    const uv = (x, y) => [(r.x + (x / 320) * r.w) / r.W, (r.y + (y / 240) * r.h) / r.H];
+    return [...uv(40, 90), ...uv(100, 150)];
+  }, id);
+  await S(({ id, box }) => window.__moshpit.motion.trackClip(id, box), { id, box });
+  const pts = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).paths?.[0]?.pts, id);
+  if (!pts || pts.length < 60) throw new Error('track too short: ' + (pts?.length ?? 0));
+  // the pattern slides 60 px/s of 320: centre x goes from ~70/320 to ~240/320
+  const first = pts[0][1];
+  const last = pts.at(-1)[1];
+  if (!(first < 0.3 && last > 0.65)) throw new Error(`track went ${first} → ${last}`);
+  await page.locator('.pathrow').getByRole('button', { name: 'Title follows' }).click();
+  const tx = await S(() => window.__moshpit.store.project.texts.at(-1));
+  if (!tx.follow?.length) throw new Error('title does not follow');
+  // (the new title is selected now: back to the clip)
+  await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
+  await page.getByRole('button', { name: 'Stabilize', exact: true }).click();
+  await page.waitForFunction((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).stab, id, { timeout: 60000 });
+  await settle();
+});
+
+await step('captions: listen (fake recogniser), add, subtitles', async () => {
+  // something to listen to (the fake recogniser below ignores what it hears)
+  await S(async () => {
+    const { ffmpeg, media } = window.__moshpit;
+    const r = await ffmpeg.run(['-f', 'lavfi', '-i', 'sine=d=2', 'tone.wav'], { outputs: ['tone.wav'] });
+    await media.addFiles([new File([r.out['tone.wav']], 'tone.wav', { type: 'audio/wav' })], { track: 'a1', start: 0 });
+  });
+  await idle();
+  await S(() => window.__moshpit.captions.setTranscriber(async () => [{ t0: 0.1, t1: 0.4, text: 'Hello' }, { t0: 0.4, t1: 0.8, text: 'mosh.' }, { t0: 1.5, t1: 1.9, text: 'Again' }]));
+  await page.locator('.menu-wrap > button').click();
+  await page.getByRole('button', { name: /Auto captions/ }).click();
+  await page.locator('.modal select').filter({ has: page.locator('option[value="karaoke"]') }).selectOption('karaoke');
+  await page.getByRole('button', { name: 'Listen', exact: true }).click();
+  await page.getByRole('button', { name: 'Add captions' }).click();
+  const caps = await S(() => window.__moshpit.store.project.texts.filter((t) => t.caption).map((t) => [t.text, t.words?.length]));
+  if (JSON.stringify(caps) !== JSON.stringify([['Hello mosh.', 2], ['Again', 1]])) throw new Error('captions: ' + JSON.stringify(caps));
+  await page.locator('.menu-wrap > button').click();
+  await page.getByRole('button', { name: /Auto captions/ }).click();
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: '.srt' }).click();
+  if (!(await dl).suggestedFilename().endsWith('.srt')) throw new Error('no .srt');
+  await page.keyboard.press('Escape');
+  await S(() => window.__moshpit.captions.setTranscriber(null));
+});
+
+await step('export: 9:16 reframe with a melt loop', async () => {
+  await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
+  await settle();
+  await page.keyboard.press('e');
+  await page.locator('.modal .fmt', { hasText: 'MP4' }).click();
+  await page.locator('.modal .field', { hasText: 'Shape' }).locator('select').selectOption('9:16');
+  await page.locator('.modal .field', { hasText: 'Loop' }).locator('select').selectOption('melt');
+  await page.locator('.modal .field', { hasText: 'Output size' }).locator('select').selectOption('480');
+  await page.getByRole('button', { name: 'Export MP4' }).click();
+  await page.locator('.modal .done video').waitFor({ timeout: 300000 });
+  // (headless Chromium can't decode H.264, so read the file with the app's own FFmpeg)
+  const dims = await S(async () => {
+    const blob = await (await fetch(document.querySelector('.modal .done video').src)).blob();
+    const r = await window.__moshpit.ffmpeg.run(['-i', '/m/x.mp4'], { mounts: { 'x.mp4': blob } });
+    const v = /Video: .*?(\d{2,5})x(\d{2,5})/.exec(r.log);
+    const d = /Duration: (\d+):(\d+):([\d.]+)/.exec(r.log);
+    return [+v[1], +v[2], +d[1] * 3600 + +d[2] * 60 + +d[3]];
+  });
+  if (!(dims[0] < dims[1])) throw new Error('not portrait: ' + JSON.stringify(dims));
+  const want = await S(() => window.__moshpit.store.duration);
+  if (Math.abs(dims[2] - want) > 0.3) throw new Error(`loop export length ${dims[2]} vs timeline ${want}`);
+  await S(() => {
+    // don't leave reframing / looping on for the next exports
+    localStorage.removeItem('moshpit:exportOpts');
+  });
+  await page.keyboard.press('Escape');
+});
+
 await step('light theme + new project + undo', async () => {
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Light theme/ }).click();

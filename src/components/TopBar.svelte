@@ -88,6 +88,7 @@
         <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
         <button class="ghost" onclick={() => (store.ui.dialog = 'share')}><Icon name="link" />Share code…</button>
         <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'bake')}><Icon name="film" />Bake the mosh into a clip…</button>
+        <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'captions')}><Icon name="text" />Auto captions…</button>
         <hr />
         <button class="ghost" onclick={() => loadExample()}><Icon name="gen" />Load example</button>
         <button

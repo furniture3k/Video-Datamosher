@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Object tracking** (titles and clips can follow), **stabilization**.
+- **Auto captions** with Whisper on the device; clean, bold, karaoke and melting styles; .srt / .vtt.
+- **Auto-reframe** on export (the crop follows the action) and **seamless loops** (crossfade or melt).
+
 - **Keyframes** for position, zoom, rotation and opacity, rendered with FFmpeg expressions.
 - **Speed ramps** (speed up, slow down, slow-mo, rush, montage), with the sound following.
 - **Chroma key** with an eyedropper, softness and spill removal.

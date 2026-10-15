@@ -16,6 +16,7 @@
   import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
   import BakeDialog from './dialogs/BakeDialog.svelte';
   import CompoundDialog from './dialogs/CompoundDialog.svelte';
+  import CaptionsDialog from './dialogs/CaptionsDialog.svelte';
   import { takeSnapshot } from './lib/snapshots.svelte';
   import ExportDialog from './dialogs/ExportDialog.svelte';
   import VariationsDialog from './dialogs/VariationsDialog.svelte';
@@ -119,7 +120,8 @@
     }
     if (mod) return;
     if (e.key === 'Escape') {
-      if (store.ui.dialog) store.ui.dialog = null;
+      if (store.ui.trackPick || store.ui.eyedropper) ((store.ui.trackPick = null), (store.ui.eyedropper = false));
+      else if (store.ui.dialog) store.ui.dialog = null;
       else if (store.ui.tool !== 'select') store.ui.tool = 'select';
       else if (store.ui.selectedClips.length || store.ui.selectedTransition) {
         store.ui.selectedClips = [];
@@ -359,6 +361,7 @@
 {#if store.ui.dialog === 'beatEdit'}<BeatEditDialog />{/if}
 {#if store.ui.dialog === 'bake'}<BakeDialog />{/if}
 {#if store.ui.dialog === 'compound'}<CompoundDialog />{/if}
+{#if store.ui.dialog === 'captions'}<CaptionsDialog />{/if}
 {#if store.ui.dialog === 'export'}<ExportDialog />{/if}
 {#if store.ui.dialog === 'variations'}<VariationsDialog />{/if}
 {#if store.ui.dialog === 'help'}<HelpDialog />{/if}

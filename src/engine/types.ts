@@ -184,6 +184,10 @@ export interface Clip {
   ramp?: Ramp;
   /** chroma key (upper video tracks) */
   key?: ChromaKey;
+  /** tracked objects: [source seconds, centre x 0..1, centre y 0..1] */
+  paths?: { id: string; name: string; pts: [number, number, number][] }[];
+  /** stabilization: corrections over source seconds (shift as shares of the frame, rotation in °), and the zoom that hides the edges */
+  stab?: { x: [number, number][]; y: [number, number][]; r: [number, number][]; zoom: number };
 }
 
 /** A marker on the timeline ruler. */
@@ -228,6 +232,14 @@ export interface TextClip {
   fade: number;
   /** burn into the video before moshing so the text melts too */
   moshed: boolean;
+  /** made by auto captions */
+  caption?: boolean;
+  /** word timings (seconds from the title's start), for word-by-word highlighting */
+  words?: { t0: number; t1: number; text: string }[];
+  /** colour of the word being spoken */
+  highlight?: string;
+  /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
+  follow?: [number, number, number][];
 }
 
 export type Aspect = 'auto' | '16:9' | '4:3' | '1:1' | '9:16' | '4:5' | '21:9';

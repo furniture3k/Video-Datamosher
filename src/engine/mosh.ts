@@ -194,3 +194,25 @@ export function traceGeneration(prev: Frame[], out: Frame[]): Frame[] {
   const at = (k: number) => prev[Math.max(0, Math.min(prev.length - 1, k))];
   return out.map((f) => ({ ...f, src: at(f.src).src, at: posOf(at(posOf(f))), tag: f.tag === 'orig' ? at(f.src).tag : f.tag }));
 }
+
+/**
+ * Seamless "melt" loop: the video's start melts out of its own end. The stream given to the
+ * decoder is [a keyframe with headers] + [the end of the video] + [the whole video with its
+ * keyframes in the first `k` frames turned into motion]; the first `lead` decoded frames are
+ * then dropped, so the start of the output continues from the end's picture.
+ */
+export function loopMelt(prep: Prepared, frames: Frame[], k: number): { frames: Frame[]; lead: number } {
+  const n = frames.length;
+  k = Math.max(1, Math.min(n - 2, Math.round(k)));
+  // the end of the video, from the keyframe it builds on
+  let from = n - k;
+  while (from > 0 && frames[from].type !== 'I') from--;
+  const pre = [prep.frames[0], ...frames.slice(from)];
+  let lastMotion: Frame | undefined = [...pre].reverse().find(isMotion);
+  const body = frames.map((f, i) => {
+    if (i < k && f.type === 'I' && lastMotion) return copy(lastMotion, 'replaced', posOf(f));
+    if (isMotion(f)) lastMotion = f;
+    return f;
+  });
+  return { frames: [...pre, ...body], lead: pre.length };
+}

@@ -7,6 +7,7 @@
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
+  import { trackClip } from '../lib/motion.svelte';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
@@ -422,6 +423,41 @@
     (mosh ? canvas : editCanvas).toBlob((b) => b && download(b, `${store.project.name.replace(/[^\w-]+/g, '_')}_${mosh ? 'frame' + store.ui.playhead : 't' + store.ui.time.toFixed(2)}.png`), 'image/png');
   }
 
+  /** Pointer position as a share of the picture on screen (whichever canvas is shown). */
+  function pictureUV(e: { clientX: number; clientY: number }): [number, number] {
+    const shown = mosh ? canvas : editCanvas;
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    return [(e.clientX - (rc.left + (rc.width - shown.width * k) / 2)) / (shown.width * k), (e.clientY - (rc.top + (rc.height - shown.height * k) / 2)) / (shown.height * k)];
+  }
+  /** The box being drawn around something to track, in stage pixels. */
+  let trackRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+  function drawTrackBox(e: PointerEvent) {
+    const id = store.ui.trackPick;
+    if (!id) return;
+    const sr = wrap.getBoundingClientRect();
+    const a = pictureUV(e);
+    const x0 = e.clientX - sr.left;
+    const y0 = e.clientY - sr.top;
+    trackRect = { x: x0, y: y0, w: 0, h: 0 };
+    const move = (ev: PointerEvent) => {
+      const x1 = ev.clientX - sr.left;
+      const y1 = ev.clientY - sr.top;
+      trackRect = { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      const b = pictureUV(ev);
+      trackRect = null;
+      store.ui.trackPick = null;
+      if (Math.abs(b[0] - a[0]) < 0.01 || Math.abs(b[1] - a[1]) < 0.01) return store.toast('Drag a box around the thing to follow.', 'error');
+      trackClip(id, [a[0], a[1], b[0], b[1]]).catch((err) => store.toast('Tracking failed: ' + (err as Error).message, 'error'));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
   /** Eyedropper: the colour under the pointer in the live edit picture (drawn without keys). */
   function pickKeyColour(e: PointerEvent) {
     const id = store.selectedClip?.id;
@@ -480,11 +516,12 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stage"
-    class:picking={store.ui.eyedropper}
+    class:picking={store.ui.eyedropper || !!store.ui.trackPick}
     bind:this={wrap}
     onpointerdown={(e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
       if (store.ui.eyedropper) return pickKeyColour(e);
+      if (store.ui.trackPick) return drawTrackBox(e);
       if (store.ui.compare === 'split') {
         draggingSplit = true;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -499,6 +536,12 @@
     {/if}
     <canvas bind:this={canvas} class:hidden={!mosh} class:split={store.ui.compare === 'split'}></canvas>
     <canvas bind:this={editCanvas} class="edit" class:hidden={mosh || !hasTimeline}></canvas>
+    {#if trackRect}
+      <div class="trackbox" style="left:{trackRect.x}px;top:{trackRect.y}px;width:{trackRect.w}px;height:{trackRect.h}px"></div>
+    {/if}
+    {#if store.ui.trackPick && !trackRect}
+      <div class="stage-note mono picknote">drag a box around what to follow</div>
+    {/if}
     {#if store.ui.scopes && hasTimeline}
       <Scopes source={() => (mosh ? canvas : editCanvas)} />
     {/if}
@@ -658,6 +701,17 @@
   .guides .gt {
     fill: rgba(255, 255, 255, 0.8);
     font-family: var(--mono, monospace);
+  }
+  .trackbox {
+    position: absolute;
+    border: 1.5px solid var(--accent);
+    background: rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .picknote {
+    top: auto;
+    bottom: 8px;
   }
   .stage.picking {
     cursor: crosshair;

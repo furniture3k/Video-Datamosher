@@ -3,6 +3,8 @@ import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, 
 import { findRecipe } from './recipe';
 import { hasKeys, keysExpr, rampSetpts, type Keys } from './keys';
 import { lutFile } from './lut';
+import { reframeFilter, type ReframePath } from './reframe';
+import { linearExpr } from './track';
 import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
@@ -103,6 +105,20 @@ function gradeFilters(g: Grade): string[] {
   return f;
 }
 
+/**
+ * Stabilization: zoom in a little, then rotate and shift each frame by its correction (source
+ * time `t + inPoint`), cropping back to the original size.
+ */
+function stabFilters(s: NonNullable<Clip['stab']>, inPoint: number): string[] {
+  const t = `(t+${r3(inPoint)})`;
+  const z = Math.max(1, Math.min(1.5, s.zoom));
+  return [
+    `scale=trunc(iw*${r3(z)}/2)*2:trunc(ih*${r3(z)}/2)*2`,
+    `rotate=a='(${linearExpr(s.r, t)})*PI/180':c=black`,
+    `crop=w='trunc(iw/${r3(z)}/2)*2':h='trunc(ih/${r3(z)}/2)*2':x='(iw-ow)/2-(${linearExpr(s.x, t)})*iw':y='(ih-oh)/2-(${linearExpr(s.y, t)})*ih'`,
+  ];
+}
+
 /** Chroma key on an RGBA picture: the colour goes transparent, its spill is pulled from the edges. */
 function keyFilters(k: ChromaKey): string[] {
   const hex = k.color.replace('#', '').padEnd(6, '0').slice(0, 6);
@@ -159,14 +175,18 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   const T = transformOf(c);
   const G = gradeOf(c);
   const op = Math.max(0, Math.min(1, c.opacity ?? 1));
-  const moving = hasKeys(c.keys, ['x', 'y', 'zoom', 'rotate']);
+  // zoom / rotation keys need the full perspective transform; position alone moves with overlay
+  const moving = hasKeys(c.keys, ['zoom', 'rotate']);
+  const sliding = !moving && hasKeys(c.keys, ['x', 'y']);
   const fading = hasKeys(c.keys, ['opacity']);
   const ramp = !c.freeze && c.ramp?.length ? c.ramp : null;
-  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G) || moving || fading;
+  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G) || moving || sliding || fading;
   const bg = layer ? 'black@0' : 'black';
   const f: string[] = [];
   if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(Math.max(c.in + 0.04, c.out))}`);
   f.push('setpts=PTS-STARTPTS');
+  // stabilization works in source time, so it comes before any speed change
+  if (c.stab && !c.freeze) f.push(...stabFilters(c.stab, c.in));
   if (c.freeze) f.push('trim=end_frame=1', 'loop=loop=-1:size=1', `setpts=N/${fps}/TB`);
   else if (ramp) f.push(`setpts='${rampSetpts(ramp, c.out - c.in)}'`);
   else if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
@@ -194,7 +214,7 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   if (moving) {
     f.push(...keyedTransform(c.keys!, T, w, h, fps, offset, bg));
     stmts.push(`[${src}]${f.join(',')}[${cur}]`);
-  } else if (T.zoom !== 1 || T.x || T.y || T.rotate) {
+  } else if (T.zoom !== 1 || T.x || T.y || T.rotate || sliding) {
     f.push(`scale=${even(w * T.zoom)}:${even(h * T.zoom)}:flags=bicubic`);
     if (T.rotate) {
       const a = r3((T.rotate * Math.PI) / 180);
@@ -202,7 +222,10 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
     }
     stmts.push(`[${src}]${f.join(',')}[${tag}fg]`);
     stmts.push(`color=c=${bg}:s=${w}x${h}:r=${fps},format=rgba[${tag}bg]`);
-    stmts.push(`[${tag}bg][${tag}fg]overlay=x=(W-w)/2+${r3(T.x * w)}:y=(H-h)/2+${r3(T.y * h)}:shortest=1:format=auto,setsar=1[${cur}]`);
+    const tt = `(t+${r3(offset)})`;
+    const ox = c.keys?.x?.length ? `(${keysExpr(c.keys.x, tt)})*${w}` : `${r3(T.x * w)}`;
+    const oy = c.keys?.y?.length ? `(${keysExpr(c.keys.y, tt)})*${h}` : `${r3(T.y * h)}`;
+    stmts.push(`[${tag}bg][${tag}fg]overlay=x='(W-w)/2+${ox}':y='(H-h)/2+${oy}':shortest=1:format=auto,setsar=1[${cur}]`);
   } else stmts.push(`[${src}]${f.join(',')}[${cur}]`);
   const g: string[] = [];
   if (fading) {
@@ -531,6 +554,17 @@ export interface ExportOptions {
   maxMB?: number;
   /** worked out from maxMB and the length when exporting (kbit/s) */
   videoKbps?: number;
+  /** export in another shape than the project: the crop follows the action */
+  reframeTo?: string;
+  /** worked out when exporting: the crop path, and where this piece starts (s) */
+  reframe?: ReframePath;
+  timeOffset?: number;
+  /** seamless loop: the end crossfades or melts into the start */
+  loopMode?: 'off' | 'crossfade' | 'melt';
+  /** how long the loop seam lasts (s) */
+  loopSeconds?: number;
+  /** worked out when exporting: frames in the video and frames overlapped */
+  crossfade?: { frames: number; overlap: number };
 }
 
 /**
@@ -566,23 +600,45 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
   const withAudio = !!audioWav && o.audio && o.format !== 'gif';
   if (withAudio) a.push('-i', audioWav!);
   const scale = o.width > 0 ? `scale=${even(o.width)}:-2:flags=${o.scaler}` : '';
+  // auto-reframe crop (its clock continues across chunks), then the output size
+  const crop = o.reframe ? reframeFilter(o.reframe, o.timeOffset ?? 0) : '';
+  const xf = o.crossfade && o.crossfade.overlap > 0 && o.crossfade.frames > o.crossfade.overlap * 2 ? o.crossfade : null;
   if (o.format === 'gif') {
-    const pre = [`fps=${o.gifFps}`, scale].filter(Boolean).join(',');
+    const pre = [crop, `fps=${o.gifFps}`, scale].filter(Boolean).join(',');
     const dither = o.gifDither === 'bayer' ? 'dither=bayer:bayer_scale=3' : `dither=${o.gifDither}`;
-    a.push('-filter_complex', `[0:v]${pre},split[a][b];[a]palettegen=max_colors=${o.gifColors}:stats_mode=diff[p];[b][p]paletteuse=${dither}`);
+    const src = xf ? `${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')};[lv]` : '[0:v]';
+    a.push('-filter_complex', `${src}${pre},split[a][b];[a]palettegen=max_colors=${o.gifColors}:stats_mode=diff[p];[b][p]paletteuse=${dither}`);
     a.push('-loop', o.loop ? '0' : '-1', out);
     return a;
   }
   if (o.format === 'png') {
-    if (scale) a.push('-vf', scale);
+    const vf = [crop, scale].filter(Boolean).join(',');
+    if (vf) a.push('-vf', vf);
     a.push('-fps_mode', 'passthrough', '-f', 'image2', out);
     return a;
   }
-  a.push('-map', '0:v');
-  if (withAudio) a.push('-map', '1:a');
-  if (scale) a.push('-vf', `${scale},format=yuv420p`);
-  else a.push('-pix_fmt', 'yuv420p');
+  const chain = [crop, scale, 'format=yuv420p'].filter(Boolean).join(',');
+  if (xf) {
+    // the end crossfades into the start, so the file loops without a jump
+    const g = [`${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')}`, `[lv]${chain}[v]`];
+    if (withAudio) g.push(loopAudioFilter('[1:a]', xf.overlap / fps, '[aout]'));
+    a.push('-filter_complex', g.join(';'), '-map', '[v]');
+    if (withAudio) a.push('-map', '[aout]');
+  } else {
+    a.push('-map', '0:v');
+    if (withAudio) a.push('-map', '1:a');
+    a.push('-vf', chain);
+  }
   a.push('-r', String(fps));
+  a.push(...encodeArgs(o, withAudio));
+  if (withAudio) a.push('-shortest');
+  a.push(...commentArgs(o.comment), out);
+  return a;
+}
+
+/** Codec arguments of an MP4 / WebM export. */
+function encodeArgs(o: ExportOptions, withAudio: boolean): string[] {
+  const a: string[] = [];
   const sized = o.videoKbps && o.videoKbps > 0 ? ['-b:v', `${o.videoKbps}k`, '-maxrate', `${Math.round(o.videoKbps * 1.1)}k`, '-bufsize', `${o.videoKbps * 2}k`] : null;
   const abr = sized ? '128k' : '192k';
   if (o.format === 'mp4') {
@@ -596,9 +652,29 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
     a.push('-c:v', 'libvpx', '-crf', String(Math.min(63, Math.max(4, o.crf - 4))), '-b:v', '12M', '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
     if (withAudio) a.push('-c:a', 'libvorbis', '-q:a', '6');
   }
-  if (withAudio) a.push('-shortest');
-  a.push(...commentArgs(o.comment), out);
   return a;
+}
+
+/**
+ * Crossfade loop: the first `overlap` frames are taken off the start and faded in over the last
+ * `overlap` frames, so the video ends on exactly the picture it starts after.
+ */
+export function loopFilter(input: string, frames: number, overlap: number, fps: number, out: string): string {
+  const d = r3(overlap / fps);
+  const off = r3((frames - 2 * overlap) / fps);
+  return `${input}split[lpa][lpb];[lpa]trim=start_frame=${overlap},setpts=PTS-STARTPTS[lpbody];[lpb]trim=end_frame=${overlap},setpts=PTS-STARTPTS[lphead];[lpbody][lphead]xfade=transition=fade:duration=${d}:offset=${off}${out}`;
+}
+
+export function loopAudioFilter(input: string, seconds: number, out: string): string {
+  const d = r3(seconds);
+  return `${input}asplit[lqa][lqb];[lqa]atrim=start=${d},asetpts=PTS-STARTPTS[lqbody];[lqb]atrim=end=${d},asetpts=PTS-STARTPTS[lqhead];[lqbody][lqhead]acrossfade=d=${d}${out}`;
+}
+
+/** A finished (joined) MP4 / WebM made into a crossfade loop: one more encode. */
+export function loopPassArgs(o: ExportOptions, input: string, frames: number, overlap: number, fps: number, withAudio: boolean, out: string): string[] {
+  const g = [loopFilter('[0:v]', frames, overlap, fps, '[v]')];
+  if (withAudio) g.push(loopAudioFilter('[0:a]', overlap / fps, '[aout]'));
+  return ['-i', input, '-filter_complex', g.join(';'), '-map', '[v]', ...(withAudio ? ['-map', '[aout]'] : []), '-r', String(fps), '-pix_fmt', 'yuv420p', ...encodeArgs(o, withAudio), ...commentArgs(o.comment), out];
 }
 
 /** Parse "ffmpeg -i" log output into basic media info. */

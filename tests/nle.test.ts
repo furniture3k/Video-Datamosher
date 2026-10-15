@@ -117,6 +117,38 @@ d('native ffmpeg renders', () => {
     expect(mean(fr[47], 32, 64)).toBeGreaterThan(mean(fr[47], 0, 32) + 40);
   });
 
+  it('position-only keys slide the picture (overlay path)', () => {
+    const dir = tmpdir();
+    sources(dir);
+    const c = { ...makeClip(media('white'), 'v2'), start: 0, out: 2, transform: { zoom: 0.4 }, keys: { x: [[0, -0.3], [2, 0.3]] as KeyPoint[] } };
+    const base = { ...makeClip(media('black'), 'v1'), out: 2 };
+    const fr = render(dir, project([base, c], [media('white'), media('black')]));
+    expect(mean(fr[0], 0, 32)).toBeGreaterThan(mean(fr[0], 32, 64) + 40);
+    expect(mean(fr[47], 32, 64)).toBeGreaterThan(mean(fr[47], 0, 32) + 40);
+    const seg = segments(project([base, c], [media('white'), media('black')]), fps, true)[0];
+    expect(segmentArgs(project([base, c], [media('white'), media('black')]), seg, 320, 'o.avi', (m) => m.id).join(' ')).not.toContain('perspective');
+  });
+
+  it('stabilization shifts the picture by its correction', () => {
+    const dir = tmpdir();
+    ff(dir, ['-f', 'lavfi', '-i', 'color=c=black:s=320x240:r=24:d=2,drawbox=x=150:y=0:w=20:h=240:color=white:t=fill', '-pix_fmt', 'yuv420p', 'bar.mp4']);
+    const c = { ...makeClip(media('bar', 2), 'v1'), out: 1, stab: { x: [[0, 0.15]] as [number, number][], y: [[0, 0]] as [number, number][], r: [[0, 0]] as [number, number][], zoom: 1.6 } };
+    const fr = render(dir, project([c], [media('bar', 2)]));
+    // the bar (centre column 32 of 64) moves right by a quarter of the frame, magnified by the zoom
+    // centre of the bright bar (its brightness-weighted mean column, + half a column for pixel centres)
+    const col = (px: Uint8Array) => {
+      let sum = 0;
+      let wsum = 0;
+      for (let x = 0; x < 64; x++) {
+        const m = Math.max(0, mean(px, x, x + 1) - 60);
+        sum += m * (x + 0.5);
+        wsum += m;
+      }
+      return sum / wsum;
+    };
+    expect(Math.abs(col(fr[5]) - (32 + 0.15 * 1.6 * 64))).toBeLessThanOrEqual(1);
+  });
+
   it('keyframed rotation and opacity', () => {
     const dir = tmpdir();
     sources(dir);

@@ -7,6 +7,7 @@ import { proxyKey } from './renderer';
 import { drawTexts } from './text';
 import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
 import { keyedValue } from '../engine/keys';
+import { linearAt } from '../engine/track';
 import { lutApplier } from '../engine/lut';
 import { lutNow } from './luts.svelte';
 import { gradeCurve, gradeMatrix } from '../engine/args';
@@ -318,6 +319,18 @@ export class EditPreview {
         target.rect(w * T.cropL, h * T.cropT, w * Math.max(0, 1 - T.cropL - T.cropR), h * Math.max(0, 1 - T.cropT - T.cropB));
         target.clip();
       }
+    }
+    if (c.stab && !c.freeze) {
+      // stabilization: zoom in, then shift and turn by the correction at this source time
+      const st = sourceTime(c, local);
+      const z = Math.max(1, Math.min(1.5, c.stab.zoom));
+      target.beginPath();
+      target.rect(x, y, dw, dh);
+      target.clip();
+      target.translate(x + dw / 2 + linearAt(c.stab.x, st) * dw * z, y + dh / 2 + linearAt(c.stab.y, st) * dh * z);
+      target.rotate((linearAt(c.stab.r, st) * Math.PI) / 180);
+      target.scale(z, z);
+      target.translate(-(x + dw / 2), -(y + dh / 2));
     }
     try {
       target.drawImage(img, x, y, dw, dh);

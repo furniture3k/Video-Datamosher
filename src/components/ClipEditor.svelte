@@ -8,6 +8,7 @@
   import { hasKeys, keyedValue, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
@@ -121,6 +122,12 @@
       else delete x.ramp;
     }, 'ramp' + cid);
   }
+
+  // ---- motion: stabilization and tracking
+  let stabStrength = $state(20);
+  const canAnalyse = $derived(!!c && media?.source.kind === 'file' && !media.source.isImage && !!media.hasVideo && !c.freeze);
+  /** clips on the tracks above that could follow a tracked object */
+  const followers = $derived(c ? store.project.clips.filter((x) => isOverlayTrack(x.track) && x.id !== c.id && mediaOf(store.project, x.mediaId)?.source.kind !== 'adjust') : []);
 
   // ---- chroma key
   const KEY_DEFAULT: ChromaKey = { color: '#00ff00', similarity: 0.25, blend: 0.08, spill: true };
@@ -341,6 +348,31 @@
       <Field label="Crop bottom" min={0} max={0.95} step={0.005} value={T.cropB} help="Cuts away this share of the bottom edge." onchange={setTf('cropB')} />
       {/if}
 
+      {#if canAnalyse}
+        <div class="row sect"><span class="label grow">Motion</span>{#if motionJob.running}<span class="small faint">{motionJob.stage}…</span>{/if}</div>
+        <Field label="Stabilize strength" min={4} max={60} step={1} value={stabStrength} help="How smooth the camera should end up: bigger values iron out slower wobbles too (and zoom in more)." onchange={(v: number) => (stabStrength = v)} />
+        <div class="row btns">
+          <button class="small" disabled={motionJob.running} onclick={() => stabilizeClip(c.id, stabStrength)} title="Measure the camera shake and smooth it out">{c.stab ? 'Stabilize again' : 'Stabilize'}</button>
+          {#if c.stab}<button class="small ghost" onclick={() => editKeys((x) => (x.stab = undefined))}>Remove ({Math.round((c.stab.zoom - 1) * 100)}% zoom)</button>{/if}
+        </div>
+        <div class="row btns">
+          <button class="small" class:on={store.ui.trackPick === c.id} disabled={motionJob.running} onclick={() => (store.ui.trackPick = store.ui.trackPick === c.id ? null : c.id)} title="Then drag a box on the player around what to follow">Track an object</button>
+        </div>
+        {#each c.paths ?? [] as path (path.id)}
+          <div class="pathrow">
+            <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>
+            <button class="small" onclick={() => titleFollows(c.id, path.id)} title="Add a title that moves with it">Title follows</button>
+            {#if followers.length}
+              <select class="small" aria-label="Clip that follows" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) clipFollows(c.id, path.id, v); (e.target as HTMLSelectElement).value = ''; }}>
+                <option value="">Clip follows…</option>
+                {#each followers as f}<option value={f.id}>{mediaOf(store.project, f.mediaId)?.source.name}</option>{/each}
+              </select>
+            {/if}
+            <button class="icon ghost" aria-label="Delete track" title="Delete track" onclick={() => editKeys((x) => (x.paths = x.paths?.filter((y) => y.id !== path.id)))}><Icon name="x" size={12} /></button>
+          </div>
+        {/each}
+      {/if}
+
       {#if isUpper && !isAdjust}
         <div class="row sect"><span class="label grow">Chroma key</span></div>
         <Field type="bool" label="Key out a colour" value={!!c.key} help="Green or blue screen: the colour becomes see-through and the tracks below show through it." onchange={(v: boolean) => editKeys((x) => (x.key = v ? (x.key ?? KEY_DEFAULT) : undefined))} />
@@ -462,6 +494,15 @@
   .keyc,
   .ramp {
     gap: 8px;
+  }
+  .pathrow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pathrow select {
+    height: 24px;
+    max-width: 120px;
   }
   .lutrow {
     display: flex;

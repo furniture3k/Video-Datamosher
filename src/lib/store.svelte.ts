@@ -63,6 +63,8 @@ class Store {
     compareSnap: null as string | null,
     /** clicking the player picks a chroma-key colour for the selected clip */
     eyedropper: false,
+    /** id of the clip to track: the next box drawn on the player is followed through it */
+    trackPick: null as string | null,
     /** scopes panel under the player */
     scopes: false,
     /** safe-zone guides drawn over the player (social export presets) */
@@ -70,7 +72,7 @@ class Store {
     split: 0.5,
     zoom: 1,
     autoRender: localGet('autoRender', true),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,

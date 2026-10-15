@@ -3,8 +3,8 @@
 
 export const KEY_PROPS = ['x', 'y', 'zoom', 'rotate', 'opacity'] as const;
 export type KeyProp = (typeof KEY_PROPS)[number];
-/** [clip-local time in seconds, value] */
-export type KeyPoint = [number, number];
+/** [clip-local time in seconds, value], optionally 0 = straight line to the next key (no easing) */
+export type KeyPoint = [number, number] | [number, number, 0];
 export type Keys = Partial<Record<KeyProp, KeyPoint[]>>;
 
 const ease = (u: number) => u * u * (3 - 2 * u);
@@ -19,7 +19,10 @@ export function evalKeys(pts: KeyPoint[], t: number): number {
   for (let i = 0; i < p.length - 1; i++) {
     const [t0, v0] = p[i];
     const [t1, v1] = p[i + 1];
-    if (t < t1) return v0 + (v1 - v0) * ease(t1 > t0 ? (t - t0) / (t1 - t0) : 1);
+    if (t < t1) {
+      const u = t1 > t0 ? (t - t0) / (t1 - t0) : 1;
+      return v0 + (v1 - v0) * (p[i][2] === 0 ? u : ease(u));
+    }
   }
   return p[p.length - 1][1];
 }
@@ -34,7 +37,8 @@ export function keysExpr(pts: KeyPoint[], T: string): string {
     const [t1, v1] = p[i + 1];
     const d = Math.max(1e-6, t1 - t0);
     const u = `((${T}-${n6(t0)})/${n6(d)})`;
-    e = `if(lt(${T},${n6(t1)}),${n6(v0)}+${n6(v1 - v0)}*${u}*${u}*(3-2*${u}),${e})`;
+    const shaped = p[i][2] === 0 ? u : `${u}*${u}*(3-2*${u})`;
+    e = `if(lt(${T},${n6(t1)}),${n6(v0)}+${n6(v1 - v0)}*${shaped},${e})`;
   }
   return `if(lt(${T},${n6(p[0][0])}),${n6(p[0][1])},${e})`;
 }
