@@ -633,6 +633,26 @@ await step('export: 9:16 reframe with a melt loop', async () => {
   await page.keyboard.press('Escape');
 });
 
+await step('export: crossfade loop keeps its sound', async () => {
+  await page.keyboard.press('e');
+  await page.locator('.modal .fmt', { hasText: 'MP4' }).click();
+  await page.locator('.modal .field', { hasText: 'Loop' }).locator('select').selectOption('crossfade');
+  await page.locator('.modal .field', { hasText: 'Output size' }).locator('select').selectOption('480');
+  await page.getByRole('button', { name: 'Export MP4' }).click();
+  await page.locator('.modal .done video').waitFor({ timeout: 300000 });
+  const info = await S(async () => {
+    const blob = await (await fetch(document.querySelector('.modal .done video').src)).blob();
+    const r = await window.__moshpit.ffmpeg.run(['-i', '/m/x.mp4'], { mounts: { 'x.mp4': blob } });
+    const d = /Duration: (\d+):(\d+):([\d.]+)/.exec(r.log);
+    return { audio: /Audio: /.test(r.log), secs: +d[1] * 3600 + +d[2] * 60 + +d[3], hasSound: window.__moshpit.store.project.media.some((m) => m.hasAudio) };
+  });
+  const want = await S(() => window.__moshpit.store.duration);
+  if (info.hasSound && !info.audio) throw new Error('crossfade loop lost its audio');
+  if (!(info.secs < want && info.secs > want - 1.5)) throw new Error(`crossfade loop length ${info.secs} vs timeline ${want}`);
+  await S(() => localStorage.removeItem('moshpit:exportOpts'));
+  await page.keyboard.press('Escape');
+});
+
 /** Mean difference (0..255) between frame `i` of the render and the clean footage at the same place. */
 const diffFromClean = (i) =>
   S(async (i) => {
