@@ -97,6 +97,7 @@ export function nudgeSelected(frames: number) {
 
 /** Insert (F9): the clip goes in at the playhead; the main track splits there and moves along. */
 export function insertEdit(m: MediaItem) {
+  if (m.source.kind === 'adjust') return void placeOnTop(m);
   if (!m.hasVideo) return void addToTimeline(m, { track: musicTrack(), start: store.ui.time });
   const t = store.ui.time;
   const c = makeClip(m, VIDEO_TRACK);
@@ -111,6 +112,7 @@ export function insertEdit(m: MediaItem) {
 
 /** Overwrite (F10): the clip replaces whatever is on the main track from the playhead on. */
 export function overwriteEdit(m: MediaItem) {
+  if (m.source.kind === 'adjust') return void placeOnTop(m);
   if (!m.hasVideo) return void addToTimeline(m, { track: musicTrack(), start: store.ui.time });
   const t = store.ui.time;
   const c = makeClip(m, VIDEO_TRACK);
@@ -131,15 +133,16 @@ export function overwriteEdit(m: MediaItem) {
 }
 
 /** Place on top (F12): on the lowest upper video track that is free at the playhead (a new one if needed). */
-export function placeOnTop(m: MediaItem) {
+/** Put media on the first free video track above the main one, at `at` (default the playhead). */
+export function placeOnTop(m: MediaItem, at?: { track: string; start: number }) {
   if (!m.hasVideo) return void addToTimeline(m, { track: musicTrack(), start: store.ui.time });
-  const t = store.ui.time;
+  const t = at?.start ?? store.ui.time;
   const c = makeClip(m, 'v2');
   if (m.source.kind === 'file' && m.source.isImage) c.out = 3;
   const len = clipLen(c);
   const free = (p: Project, id: string) => !p.clips.some((x) => x.track === id && x.start < t + len - 1e-3 && clipEnd(x) > t + 1e-3);
   store.editTimeline((p) => {
-    let track = videoTracks(p).find((id) => free(p, id));
+    let track = at && free(p, at.track) ? at.track : videoTracks(p).find((id) => free(p, id));
     if (!track) track = addVideoTrackTo(p);
     c.track = track;
     c.start = t;
@@ -150,6 +153,7 @@ export function placeOnTop(m: MediaItem) {
 
 /** Append (Shift+F12): at the end of the main track. */
 export function appendEdit(m: MediaItem) {
+  if (m.source.kind === 'adjust') return void placeOnTop(m);
   addToTimeline(m, m.hasVideo ? { track: VIDEO_TRACK, index: Infinity } : 'auto');
 }
 

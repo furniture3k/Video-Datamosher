@@ -3,7 +3,11 @@
   import { evalAutomation } from '../engine/automation';
   import { hashSeed } from '../engine/rng';
   import type { ParamDef } from '../engine/effects';
-  import type { Automation, EffectInstance } from '../engine/types';
+  import type { Automation, EffectInstance, Project } from '../engine/types';
+  import { audioFeatures } from '../lib/renderer';
+  import { audioKey } from '../engine/audiofx';
+  import { audioEnvelope } from '../engine/beats';
+  import { beatInputs } from '../lib/beatinfo.svelte';
 
   let { effect: fx, def }: { effect: EffectInstance; def: ParamDef } = $props();
   const a = $derived(fx.auto[def.key]);
@@ -16,14 +20,47 @@
   function setAuto(fn: (a: Automation) => void, k: string | null = key) {
     store.edit(() => fn(fx.auto[def.key]), k);
   }
-  function switchKind(kind: 'curve' | 'lfo') {
+  function switchKind(kind: 'curve' | 'lfo' | 'audio') {
     store.edit(() => {
       fx.auto[def.key] =
         kind === 'curve'
           ? { kind: 'curve', interp: 'smooth', points: [[0, lo], [1, hi]] }
-          : { kind: 'lfo', shape: 'sine', rate: 2, min: lo, max: hi, phase: 0 };
+          : kind === 'lfo'
+            ? { kind: 'lfo', shape: 'sine', rate: 2, min: lo, max: hi, phase: 0 }
+            : { kind: 'audio', track: 'auto', band: 'low', min: lo, max: hi, attack: 0, release: 4, threshold: 0.1 };
     });
   }
+
+  // ---- audio: the real envelope of the music under the effect's bar
+  let env = $state.raw<Float32Array | null>(null);
+  let envNote = $state('');
+  const audioDeps = $derived(a?.kind === 'audio' ? JSON.stringify([a.track, a.band, a.attack, a.release, a.threshold, fx.start, fx.end, beatInputs(store.project)]) : '');
+  $effect(() => {
+    if (!audioDeps || a?.kind !== 'audio') {
+      env = null;
+      return;
+    }
+    const au = $state.snapshot(a) as Extract<Automation, { kind: 'audio' }>;
+    const p = $state.snapshot(store.project) as Project;
+    const [s, e] = [fx.start, fx.end];
+    envNote = 'listening…';
+    audioFeatures(p, audioKey(p, au.track)).then(
+      (f) => {
+        env = f ? audioEnvelope(f, au, s, e) : null;
+        envNote = f ? '' : 'No sound on that track yet: drop music on the timeline.';
+      },
+      () => (envNote = 'Could not read the sound.'),
+    );
+  });
+  const audioTracks = $derived(store.project.tracks.filter((t) => t.kind === 'audio'));
+  const BANDS: [string, string][] = [
+    ['low', 'Bass'],
+    ['mid', 'Mids'],
+    ['high', 'Highs'],
+    ['full', 'Loudness'],
+    ['onset', 'Hits'],
+    ['beat', 'Beats'],
+  ];
   function shape(name: string) {
     const pts: Record<string, [number, number][]> = {
       up: [[0, lo], [1, hi]],
@@ -40,6 +77,7 @@
   // draw
   $effect(() => {
     const au = a;
+    void env;
     void JSON.stringify(au);
     void store.ui.theme;
     if (!canvas || !au) return;
@@ -61,10 +99,11 @@
     }
     const yOf = (v: number) => H - 4 - ((v - lo) / (hi - lo || 1)) * (H - 8);
     ctx.strokeStyle = css('--accent');
-    ctx.lineWidth = 2;
+    ctx.lineWidth = au.kind === 'audio' ? 1 : 2;
     ctx.beginPath();
+    const ev = env;
     for (let i = 0; i <= w; i++) {
-      const v = evalAutomation(au, i / w, hashSeed(fx.seed, def.key));
+      const v = au.kind === 'audio' ? au.min + (au.max - au.min) * (ev?.length ? ev[Math.min(ev.length - 1, Math.round((i / w) * (ev.length - 1)))] : 0) : evalAutomation(au, i / w, hashSeed(fx.seed, def.key));
       if (i === 0) ctx.moveTo(i, yOf(v));
       else ctx.lineTo(i, yOf(v));
     }
@@ -138,6 +177,7 @@
       <div class="seg">
         <button class:on={a.kind === 'curve'} onclick={() => switchKind('curve')}>Curve</button>
         <button class:on={a.kind === 'lfo'} onclick={() => switchKind('lfo')}>LFO</button>
+        <button class:on={a.kind === 'audio'} onclick={() => switchKind('audio')} title="Follow the music: bass, loudness, hits or beats">Audio</button>
       </div>
       {#if a.kind === 'curve'}
         <select value={a.interp} onchange={(e) => setAuto((x) => x.kind === 'curve' && (x.interp = (e.target as HTMLSelectElement).value as never), null)}>
@@ -145,13 +185,17 @@
           <option value="linear">Linear</option>
           <option value="step">Steps</option>
         </select>
-      {:else}
+      {:else if a.kind === 'lfo'}
         <select value={a.shape} onchange={(e) => setAuto((x) => x.kind === 'lfo' && (x.shape = (e.target as HTMLSelectElement).value as never), null)}>
           {#each ['sine', 'triangle', 'square', 'saw', 'random', 'noise'] as s}<option value={s}>{s}</option>{/each}
         </select>
+      {:else if a.kind === 'audio'}
+        <select value={a.band} aria-label="Follow" onchange={(e) => setAuto((x) => x.kind === 'audio' && (x.band = (e.target as HTMLSelectElement).value as never), null)}>
+          {#each BANDS as [v, l]}<option value={v}>{l}</option>{/each}
+        </select>
       {/if}
     </div>
-    <canvas bind:this={canvas} style="height:{H}px" onpointerdown={down} onpointermove={move} onpointerup={() => (dragIdx = -1)} oncontextmenu={ctxmenu}></canvas>
+    <canvas bind:this={canvas} style="height:{H}px" class:audio={a.kind === 'audio'} onpointerdown={down} onpointermove={move} onpointerup={() => (dragIdx = -1)} oncontextmenu={ctxmenu}></canvas>
     {#if a.kind === 'curve'}
       <div class="row shapes small">
         <span class="faint grow">click adds a point, right-click removes</span>
@@ -159,12 +203,28 @@
           <button class="mini" title={n} onclick={() => shape(n)}>{g}</button>
         {/each}
       </div>
-    {:else}
+    {:else if a.kind === 'lfo'}
       <div class="grid small">
         <label>Cycles <input type="number" min="0.1" max="64" step="0.1" value={a.rate} onchange={(e) => setAuto((x) => x.kind === 'lfo' && (x.rate = +(e.target as HTMLInputElement).value))} /></label>
         <label>Phase <input type="number" min="0" max="1" step="0.05" value={a.phase} onchange={(e) => setAuto((x) => x.kind === 'lfo' && (x.phase = +(e.target as HTMLInputElement).value))} /></label>
         <label>Min <input type="number" min={lo} max={hi} step="any" value={a.min} onchange={(e) => setAuto((x) => x.kind === 'lfo' && (x.min = +(e.target as HTMLInputElement).value))} /></label>
         <label>Max <input type="number" min={lo} max={hi} step="any" value={a.max} onchange={(e) => setAuto((x) => x.kind === 'lfo' && (x.max = +(e.target as HTMLInputElement).value))} /></label>
+      </div>
+    {:else if a.kind === 'audio'}
+      {#if envNote}<div class="small faint">{envNote}</div>{/if}
+      <div class="grid small">
+        <label class="wide">Listen to
+          <select value={a.track} onchange={(e) => setAuto((x) => x.kind === 'audio' && (x.track = (e.target as HTMLSelectElement).value), null)}>
+            <option value="auto">The music</option>
+            <option value="mix">Everything</option>
+            {#each audioTracks as t}<option value={t.id}>{t.name}</option>{/each}
+          </select>
+        </label>
+        <label title="Quiet value: what the setting is when the music is quiet">Quiet <input type="number" min={lo} max={hi} step="any" value={a.min} onchange={(e) => setAuto((x) => x.kind === 'audio' && (x.min = +(e.target as HTMLInputElement).value))} /></label>
+        <label title="Loud value: what the setting reaches on the loudest parts">Loud <input type="number" min={lo} max={hi} step="any" value={a.max} onchange={(e) => setAuto((x) => x.kind === 'audio' && (x.max = +(e.target as HTMLInputElement).value))} /></label>
+        <label title="Frames to rise (0 = instant)">Attack <input type="number" min="0" max="48" step="1" value={a.attack} onchange={(e) => setAuto((x) => x.kind === 'audio' && (x.attack = +(e.target as HTMLInputElement).value))} /></label>
+        <label title="Frames to fall back after a hit">Release <input type="number" min="0" max="96" step="1" value={a.release} onchange={(e) => setAuto((x) => x.kind === 'audio' && (x.release = +(e.target as HTMLInputElement).value))} /></label>
+        <label class="wide" title="Ignore sound quieter than this">Threshold <input type="range" min="0" max="0.95" step="0.01" value={a.threshold} oninput={(e) => setAuto((x) => x.kind === 'audio' && (x.threshold = +(e.target as HTMLInputElement).value))} /></label>
       </div>
     {/if}
   </div>
@@ -216,5 +276,16 @@
   }
   .shapes {
     gap: 2px;
+  }
+  .grid .wide {
+    grid-column: 1 / -1;
+  }
+  .grid .wide select,
+  .grid .wide input[type='range'] {
+    flex: 1;
+    width: auto;
+  }
+  canvas.audio {
+    cursor: default;
   }
 </style>

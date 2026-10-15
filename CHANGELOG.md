@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.3.0
+
+- **Subject Guard**: keep people (on-device segmentation), a tracked object, bright/dark parts or
+  a colour clean while the rest moshes, or the other way round. Presets: Melt the World, Ghost Walker.
+- **Flow Paint**: paint push / swirl / pinch / bulge strokes on the player; the picture flows along them.
+- **Vector Edit**: rewrites the real motion vectors inside the Xvid frames (amplify, turn, swap,
+  drift, jitter, quantise, paint). See `docs/mv-spike.md`.
+
+- **Object tracking** (titles and clips can follow), **stabilization**.
+- **Auto captions** with Whisper on the device; clean, bold, karaoke and melting styles; .srt / .vtt.
+- **Auto-reframe** on export (the crop follows the action) and **seamless loops** (crossfade or melt).
+
+- **Keyframes** for position, zoom, rotation and opacity, rendered with FFmpeg expressions.
+- **Speed ramps** (speed up, slow down, slow-mo, rush, montage), with the sound following.
+- **Chroma key** with an eyedropper, softness and spill removal.
+- **LUT import** (.cube) with an amount per clip; **adjustment layers**.
+- **Compound clips**: fold clips into one, edit inside, mosh inside.
+- **Scopes**: waveform, RGB parade, vectorscope, histogram (<kbd>Shift S</kbd>).
+
+- **Frame Sequencer**: a step pattern of Bloom, Echo, Reverse, Melt and Glitch moves (<kbd>G</kbd>).
+- **Databend** (compressed bytes) and **Raw Bend** (pixels): echo, reverb, phaser, bitcrush,
+  reverse and amplify, the Audacity trick built in.
+- **Generations**: mosh the mosh again, up to 8 times, with loss per generation.
+- **Bake the mosh into a clip**, to add to the library or replace the timeline with.
+- **Motion packs** for Motion Transfer: Drift, Fall, Vortex, Tunnel, Implode, Shake, Ripple, Life.
+
+- **Audio-reactive automation**: any setting can follow the bass, mids, highs, loudness, hits or
+  beats of the music, with attack, release and threshold.
+- **Beat triggers**: Bloom, Stutter Loop, Frame Drop and Byte Glitch can fire on beats, bars or hits.
+- **Beat detection** (tempo, beats, downbeats, onsets) runs locally; BPM readout, beat grid on the
+  ruler and snapping to beats.
+- **Auto-edit to the beat**: cuts clips to the music with melts on bars and blooms on drops.
+
+- **Chaos dial**: one knob that pushes every effect calmer or wilder (<kbd>Q</kbd> / <kbd>Shift Q</kbd>).
+- **Breed variations**: pick favourites in Variations and breed them, generation after generation.
+- **Snapshots**: named versions you can restore or A/B against the current mosh; automatic ones
+  before anything replaces your stack.
+- **Recipes inside exports**: videos, GIFs and PNG zips carry their mosh recipe, and dropping
+  one into moshpit offers to apply it.
+- **Made for** export presets (TikTok / Reels / Shorts, Instagram, YouTube, X, Discord, GIF) with
+  size targets, length and shape warnings, and safe-zone guides.
+
 ## 1.2.0
 
 - **Timeline and playhead in sync.** Effects keep their length by default, so output frame N is

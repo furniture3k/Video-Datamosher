@@ -12,6 +12,8 @@
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
+  import { SOCIAL_PRESETS, bitrateFor } from '../engine/social';
+  import { EFFECTS } from '../engine/effects';
 
   const marked = markedRange();
   let onlyRange = $state(!!marked);
@@ -23,7 +25,7 @@
   let result = $state<{ url?: string; file?: string; savedTo?: string; name: string; size: number; type: string } | null>(null);
   let error = $state('');
   let signal = { cancelled: false };
-  const hasPixel = $derived(store.project.effects.some((e) => e.enabled && ['vectorWarp', 'chroma', 'pixelSort'].includes(e.type)));
+  const hasPixel = $derived(store.project.effects.some((e) => e.enabled && EFFECTS[e.type]?.kind === 'pixel'));
   const hasAudio = $derived(audioSources(store.project).length > 0);
   const mosh = $derived(outputSize(store.project, store.project.encoder.width));
   const outW = $derived(o.width ? even(o.width) : mosh.w);
@@ -31,6 +33,34 @@
   const duration = $derived(store.duration);
   const pixels = $derived(mosh.w * mosh.h * duration * store.project.encoder.fps);
   const heavy = $derived(pixels > 1920 * 1080 * 24 * 90 || (outW >= 2560 && duration > 20));
+  let social = $state(localGet<string>('exportSocial', ''));
+  const sp = $derived(SOCIAL_PRESETS.find((p) => p.id === social) ?? null);
+  const span = $derived(onlyRange && marked ? marked[1] - marked[0] : duration);
+  const tooLong = $derived(!!sp?.maxSec && span > sp.maxSec + 0.05);
+  const wrongShape = $derived(!!sp?.aspect && store.project.encoder.aspect !== sp.aspect);
+  const sizedKbps = $derived(o.maxMB && (o.format === 'mp4' || o.format === 'webm') ? bitrateFor(o.maxMB, span, o.audio && hasAudio) : 0);
+  function useSocial(id: string) {
+    social = id;
+    localSet('exportSocial', id);
+    const p = SOCIAL_PRESETS.find((x) => x.id === id);
+    if (!p) {
+      o.maxMB = undefined;
+      return;
+    }
+    Object.assign(o, p.opts);
+    // GIFs can't aim at a size: the limit is shown as a warning instead
+    o.maxMB = p.opts.format === 'gif' ? undefined : p.maxMB;
+    store.ui.guides = p.guides ?? null;
+  }
+  function fitShape() {
+    if (!sp?.aspect) return;
+    const aspect = sp.aspect;
+    store.edit((p) => {
+      p.encoder.aspect = aspect;
+      for (const c of p.clips) if (c.track === 'v1' && c.fit === 'fit') c.fit = 'fill';
+    });
+    store.toast(`The project is now ${aspect}. Clips on the main track fill the frame; adjust their position in the Clip tab.`, 'ok', 6000);
+  }
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
   const FORMATS = [
@@ -48,7 +78,7 @@
     result = null;
     signal = { cancelled: false };
     try {
-      const r = await exportVideo($state.snapshot(store.project) as Project, { ...$state.snapshot(o), range: onlyRange ? marked : null }, (s, p) => ((stage = s), (progress = p)), signal);
+      const r = await exportVideo($state.snapshot(store.project) as Project, { ...($state.snapshot(o) as ExportOptions), range: onlyRange ? marked : null }, (s, p) => ((stage = s), (progress = p)), signal);
       if (isDesktop) {
         result = { file: r.file ?? (await blobToDisk(r.blob!, r.name)), name: r.name, size: r.size, type: r.type };
         running = false;
@@ -84,16 +114,42 @@
 
 <Modal title="Export" onclose={() => (running ? cancel() : null, (store.ui.dialog = null))}>
   <div class="col">
+    <label class="row social">
+      <span class="label">Made for</span>
+      <select value={social} onchange={(e) => useSocial((e.target as HTMLSelectElement).value)} disabled={running}>
+        <option value="">Custom settings</option>
+        {#each SOCIAL_PRESETS as p}<option value={p.id}>{p.name}</option>{/each}
+      </select>
+    </label>
+    {#if sp}
+      <div class="small muted">{sp.note}{#if sizedKbps} Video bitrate {sizedKbps} kbit/s to stay under {sp.maxMB} MB.{/if}</div>
+      {#if wrongShape}
+        <div class="small warn row">
+          <span class="grow">{sp.name} wants {sp.aspect}; this project is {store.project.encoder.aspect === 'auto' ? 'the shape of its first clip' : store.project.encoder.aspect}.{o.reframeTo === sp.aspect ? ' It will be reframed to follow the action.' : ' It will be exported as it is.'}</span>
+          {#if o.reframeTo !== sp.aspect}<button onclick={() => (o.reframeTo = sp!.aspect!)} disabled={running} title="Crop to {sp.aspect} on export, following the movement">Reframe</button>{/if}
+          <button onclick={fitShape} disabled={running} title="Change the project itself to {sp.aspect}">Make it {sp.aspect}</button>
+        </div>
+      {/if}
+      {#if tooLong}
+        <div class="small warn">This is {fmt(span)} long; {sp.name} takes up to {fmt(sp.maxSec!)}. Mark an In–Out range (I and O) to export a part.</div>
+      {/if}
+      {#if sp.guides}
+        <label class="row small"><input type="checkbox" checked={store.ui.guides === sp.guides} onchange={(e) => (store.ui.guides = (e.target as HTMLInputElement).checked ? sp!.guides! : null)} />Show the app's safe zones in the player</label>
+      {/if}
+      {#if sp.opts.format === 'gif' && sp.maxMB}
+        <div class="small faint">GIFs can't be aimed at a size. If it comes out over {sp.maxMB} MB, lower the colours, frame rate or size.</div>
+      {/if}
+    {/if}
     <div class="formats">
       {#each FORMATS as f}
-        <button class="fmt" class:on={o.format === f.id} onclick={() => (o.format = f.id)} disabled={running}>
+        <button class="fmt" class:on={o.format === f.id} onclick={() => ((o.format = f.id), sp && sp.opts.format !== f.id && useSocial(''))} disabled={running}>
           <b>{f.label}</b><span class="small muted">{f.desc}</span>
         </button>
       {/each}
     </div>
 
     <div class="small muted">
-      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if o.width && o.format !== 'avi'}, saved at {outW}×{outH}{o.width > mosh.w ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Pixel effects (Vector Warp, Chroma, Pixel Sort) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
+      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if o.width && o.format !== 'avi'}, saved at {outW}×{outH}{o.width > mosh.w ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Picture effects (Vector Warp, Chroma, Pixel Sort, Raw Bend) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
     </div>
     {#if heavy && !isDesktop}
       <div class="small warn">This is a big render for a browser ({Math.round(pixels / 1e6)} megapixel-frames). Expect it to take a while; keep this tab in front. Lower the mosh resolution or use "Ultra fast" to speed it up.</div>
@@ -104,7 +160,7 @@
         type="select"
         label="Output size"
         value={o.width}
-        options={[{ value: 0, label: `Same as mosh (${mosh.w}px)` }, ...[480, 640, 854, 1280, 1920, 2560, 3840].map((w) => ({ value: w, label: ({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w] ? `${({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w]} (${w}px)` : `${w}px wide` }))]}
+        options={[{ value: 0, label: `Same as mosh (${mosh.w}px)` }, ...[...new Set([480, 640, 720, 854, 1080, 1280, 1920, 2560, 3840, ...(o.width ? [o.width] : [])])].sort((a, b) => a - b).map((w) => ({ value: w, label: ({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w] ? `${({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w]} (${w}px)` : `${w}px wide` }))]}
         help="Rescale the final video. Use 'Nearest' scaling for crisp, chunky pixel-art upscales of a low-res mosh."
         onchange={(v: number) => (o.width = v)}
       />
@@ -124,7 +180,9 @@
       {/if}
     {/if}
     {#if o.format === 'mp4' || o.format === 'webm'}
-      <Field label="Quality (CRF)" min={0} max={40} step={1} value={o.crf} help="Lower = better quality and bigger file. 18 is visually lossless." onchange={(v: number) => (o.crf = v)} />
+      {#if !o.maxMB}
+        <Field label="Quality (CRF)" min={0} max={40} step={1} value={o.crf} help="Lower = better quality and bigger file. 18 is visually lossless." onchange={(v: number) => (o.crf = v)} />
+      {/if}
       {#if o.format === 'mp4'}
         <Field
           type="select"
@@ -159,7 +217,34 @@
       />
       <Field type="bool" label="Loop forever" value={o.loop} help="Play the GIF on repeat." onchange={(v: boolean) => (o.loop = v)} />
     {/if}
-    {#if marked && o.format !== 'avi'}
+    {#if o.format !== 'avi'}
+      <Field
+        type="select"
+        label="Shape"
+        value={o.reframeTo ?? ''}
+        options={[{ value: '', label: 'As the project' }, ...['9:16', '4:5', '1:1', '16:9', '21:9'].map((a) => ({ value: a, label: `${a} (reframe)` }))]}
+        help="Export in another shape: the picture is cropped, and the crop slides to follow where the movement is."
+        onchange={(v: string) => (o.reframeTo = v || undefined)}
+      />
+    {/if}
+    {#if o.format === 'mp4' || o.format === 'webm' || o.format === 'gif'}
+      <Field
+        type="select"
+        label="Loop"
+        value={o.loopMode ?? 'off'}
+        options={[
+          { value: 'off', label: 'Off' },
+          { value: 'crossfade', label: 'Seamless (crossfade)', hint: 'The end fades into the start, so the video loops without a jump. It gets a little shorter.' },
+          { value: 'melt', label: 'Seamless (melt)', hint: 'The start melts out of the end picture, datamosh style, so the loop flows on.' },
+        ]}
+        help="For GIFs, Reels and anything that plays on repeat."
+        onchange={(v: 'off' | 'crossfade' | 'melt') => (o.loopMode = v)}
+      />
+      {#if o.loopMode && o.loopMode !== 'off'}
+        <Field label="Seam" unit="s" min={0.1} max={3} step={0.05} value={o.loopSeconds ?? 0.5} help="How long the end blends or melts into the start." onchange={(v: number) => (o.loopSeconds = v)} />
+      {/if}
+    {/if}
+    {#if marked && o.format !== 'avi' && (!o.loopMode || o.loopMode === 'off')}
       <Field type="bool" label="Only the In–Out range" value={onlyRange} help="Export just the part marked with I and O ({tc(marked[0], store.fps)} → {tc(marked[1], store.fps)}). The mosh is still worked out from the start, so it looks exactly as it does in the full video." onchange={(v: boolean) => (onlyRange = v)} />
     {/if}
     {#if o.format !== 'gif' && o.format !== 'png' && hasAudio}
@@ -233,6 +318,13 @@
     background: var(--surface-3);
     box-shadow: inset 0 -2px 0 var(--accent);
     color: var(--text);
+  }
+  .social select {
+    flex: 1;
+  }
+  .warn.row {
+    gap: 8px;
+    align-items: center;
   }
   .prog {
     display: flex;

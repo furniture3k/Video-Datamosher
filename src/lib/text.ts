@@ -16,8 +16,26 @@ export function textAlpha(tx: TextClip, t: number): number {
   return Math.max(0, Math.min(1, (t - tx.start) / f, (tx.start + tx.duration - t) / f));
 }
 
-export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number, h: number, alpha: number) {
+/** Where a title sits at timeline time t (following a tracked object if it has one). */
+export function textPos(tx: TextClip, t: number): [number, number] {
+  if (!tx.follow?.length) return [tx.x, tx.y];
+  const f = tx.follow;
+  if (t <= f[0][0]) return [f[0][1], f[0][2]];
+  for (let i = 0; i < f.length - 1; i++) {
+    const [a, ax, ay] = f[i];
+    const [b, bx, by] = f[i + 1];
+    if (t <= b) {
+      const u = b > a ? (t - a) / (b - a) : 1;
+      return [ax + (bx - ax) * u, ay + (by - ay) * u];
+    }
+  }
+  const l = f[f.length - 1];
+  return [l[1], l[2]];
+}
+
+export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number, h: number, alpha: number, t = tx.start) {
   if (alpha <= 0 || !tx.text.trim()) return;
+  const [px, py] = textPos(tx, t);
   const size = Math.max(4, tx.size * h);
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -26,8 +44,8 @@ export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number,
   ctx.textBaseline = 'middle';
   const lines = tx.text.split('\n');
   const lh = size * 1.2;
-  const cx = tx.x * w;
-  const cy = tx.y * h - ((lines.length - 1) * lh) / 2;
+  const cx = px * w;
+  const cy = py * h - ((lines.length - 1) * lh) / 2;
   if (tx.box) {
     const widths = lines.map((l) => ctx.measureText(l).width);
     const bw = Math.max(...widths) + size * 0.8;
@@ -42,7 +60,22 @@ export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number,
     ctx.shadowOffsetY = size * 0.05;
   }
   ctx.fillStyle = tx.color;
-  lines.forEach((l, i) => ctx.fillText(l, cx, cy + i * lh));
+  // word highlighting only while the words still match the text (an edited caption draws as typed)
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (tx.words?.length && tx.highlight && lines.length === 1 && norm(tx.words.map((w) => w.text).join(' ')) === norm(tx.text)) {
+    // word by word: the word being spoken lights up
+    const local = t - tx.start;
+    const space = ctx.measureText(' ').width;
+    const widths = tx.words.map((wd) => ctx.measureText(wd.text).width);
+    const total = widths.reduce((a, b) => a + b, 0) + space * (tx.words.length - 1);
+    let x = tx.align === 'left' ? cx : tx.align === 'right' ? cx - total : cx - total / 2;
+    ctx.textAlign = 'left';
+    tx.words.forEach((wd, i) => {
+      ctx.fillStyle = local >= wd.t0 && local < wd.t1 + 0.05 ? tx.highlight! : tx.color;
+      ctx.fillText(wd.text, x, cy);
+      x += widths[i] + space;
+    });
+  } else lines.forEach((l, i) => ctx.fillText(l, cx, cy + i * lh));
   ctx.restore();
 }
 
@@ -51,6 +84,6 @@ export function drawTexts(ctx: CanvasRenderingContext2D, texts: TextClip[], t: n
   for (const tx of texts) {
     if (which === 'clean' && tx.moshed) continue;
     if (which === 'moshed' && !tx.moshed) continue;
-    drawText(ctx, tx, w, h, textAlpha(tx, t));
+    drawText(ctx, tx, w, h, textAlpha(tx, t), t);
   }
 }

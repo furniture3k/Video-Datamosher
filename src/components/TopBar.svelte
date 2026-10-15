@@ -5,6 +5,8 @@
   import { loadExample } from '../lib/media';
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
+  import ChaosDial from './ChaosDial.svelte';
+  import { closeCompound } from '../lib/compound.svelte';
   import { newProject } from '../engine/types';
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
   let loadInput: HTMLInputElement;
@@ -14,7 +16,7 @@
 
 <svelte:window onclick={() => (menuOpen = false)} />
 
-<header>
+<header class:nested={store.seqStack.length > 0}>
   <div class="brand" title="moshpit">
     <span class="tally" class:busy={store.status.busy}></span>
     <span class="word mono">moshpit</span>
@@ -27,6 +29,13 @@
     onchange={(e) => store.edit((p) => (p.name = (e.target as HTMLInputElement).value))}
   />
 
+  {#if store.seqStack.length}
+    <div class="crumbs" role="navigation" aria-label="Compound clips" title="Editing inside {store.seqStack.map((s) => s.name).join(' › ')}">
+      <span class="small faint">Main ›</span>
+      <span class="small cur">{store.seqStack.map((s) => s.name).join(' › ')}</span>
+      <button class="small primary" onclick={() => closeCompound()} title="Close compound: it's rendered again and you're back in the timeline above">Done</button>
+    </div>
+  {/if}
   <div class="sep"></div>
   <button class="icon ghost" title="Undo  Ctrl+Z" aria-label="Undo" disabled={!store.historySize.undo} onclick={() => store.undo()}><Icon name="undo" /></button>
   <button class="icon ghost" title="Redo  Ctrl+Shift+Z" aria-label="Redo" disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" /></button>
@@ -48,6 +57,8 @@
     </div>
     <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  U"><Icon name="nudge" /><span class="lbl">Nudge</span></button>
     <button class="ghost" onclick={() => (store.ui.dialog = 'variations')} disabled={!hasClips} title="Compare several variations side by side  V"><Icon name="grid" /><span class="lbl">Variations</span></button>
+    <ChaosDial />
+    <button class="ghost" onclick={() => (store.ui.dialog = 'snapshots')} title="Snapshots: saved versions to restore or compare  Ctrl+Shift+S saves one"><Icon name="history" /><span class="lbl">Snapshots</span></button>
   </nav>
 
   <label class="seed" title="Every random choice comes from this number. Same seed, same result.">
@@ -76,6 +87,8 @@
         <button class="ghost" onclick={saveProjectFile}><Icon name="save" />Save project<span class="kbd">Ctrl S</span></button>
         <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
         <button class="ghost" onclick={() => (store.ui.dialog = 'share')}><Icon name="link" />Share code…</button>
+        <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'bake')}><Icon name="film" />Bake the mosh into a clip…</button>
+        <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'captions')}><Icon name="text" />Auto captions…</button>
         <hr />
         <button class="ghost" onclick={() => loadExample()}><Icon name="gen" />Load example</button>
         <button
@@ -161,6 +174,32 @@
   .name:focus {
     border-color: var(--line-2);
     color: var(--text);
+  }
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    border: 1px solid var(--accent);
+    border-radius: var(--r);
+    height: 28px;
+  }
+  .crumbs .cur {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 160px;
+  }
+  .crumbs span {
+    white-space: nowrap;
+  }
+  /* inside a compound the breadcrumb needs the room: tools show icons only */
+  header.nested .tools .lbl {
+    display: none;
+  }
+  .crumbs button {
+    height: 22px;
   }
   .sep {
     width: 1px;

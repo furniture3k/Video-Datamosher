@@ -34,4 +34,7 @@ import * as glmod from './lib/gl';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { flow, gl: glmod });
 import * as timeline from './engine/timeline';
 import * as media from './lib/media';
-Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline, media });
+import * as captions from './lib/captions.svelte';
+import * as motion from './lib/motion.svelte';
+import * as segment from './lib/segment';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline, media, captions, motion, segment });

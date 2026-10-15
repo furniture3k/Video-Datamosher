@@ -4,10 +4,15 @@
   import { randomizeEffect } from '../engine/presets';
   import { makeRng, randomSeed } from '../engine/rng';
   import ParamControl from './ParamControl.svelte';
+  import SequencerGrid from './SequencerGrid.svelte';
   import Icon from './Icon.svelte';
   import type { EffectInstance } from '../engine/types';
   import { layoutVideo } from '../engine/timeline';
   import { markedRange } from '../lib/edit';
+  import { usesBeats } from '../engine/audiofx';
+  import { audioSources, mediaOf } from '../engine/timeline';
+  import { FLOW_TOOLS } from '../engine/flowfield';
+  import { beatInfo } from '../lib/beatinfo.svelte';
 
   let { effect }: { effect: EffectInstance } = $props();
   const def = $derived(EFFECTS[effect.type]);
@@ -38,6 +43,11 @@
     });
   }
   const info = $derived(showInfo || store.ui.tips);
+  const hasSound = $derived(audioSources(store.project).length > 0);
+  /** tracked objects in the project, for Subject Guard */
+  const trackedPaths = $derived(store.project.clips.flatMap((c) => (c.paths ?? []).map((p) => ({ clipId: c.id, pathId: p.id, name: `${mediaOf(store.project, c.mediaId)?.source.name ?? 'clip'} · ${p.name}` }))));
+  const strokeCount = $derived(((effect.data?.strokes as unknown[]) ?? []).length);
+
 </script>
 
 <div class="editor" style="--c:{def.color}">
@@ -54,6 +64,11 @@
     <button class="icon ghost" title="Randomize unlocked settings" aria-label="Randomize settings" onclick={randomize}><Icon name="dice" size={14} /></button>
   </div>
   {#if info}<p class="desc small muted">{def.description}</p>{/if}
+  {#if usesBeats(effect) && !hasSound}
+    <p class="small warn">Set to the beat, but there is no music on the timeline yet: drop a song on an audio track.</p>
+  {:else if usesBeats(effect) && beatInfo.status === 'ready'}
+    <p class="small faint">Following {Math.round(beatInfo.bpm)} BPM. Change the music under Audio → Beats.</p>
+  {/if}
 
   <section>
     <div class="sh">
@@ -90,6 +105,52 @@
     <div class="small faint">{((effect.end - effect.start) / store.fps).toFixed(2)} s long. Drag the bar's ends on the timeline to change it.</div>
   </section>
 
+  {#if effect.type === 'mask'}
+    <section>
+      <div class="sh"><span class="label">Subject</span></div>
+      {#if effect.params.source === 'track'}
+        {#if trackedPaths.length}
+          <select class="full" value={effect.data?.pathId ?? ''} aria-label="Tracked object" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; const tp = trackedPaths.find((x) => x.pathId === v); store.edit(() => (effect.data = { ...(effect.data ?? {}), clipId: tp?.clipId, pathId: tp?.pathId })); }}>
+            <option value="">Pick a tracked object…</option>
+            {#each trackedPaths as tp}<option value={tp.pathId}>{tp.name}</option>{/each}
+          </select>
+        {:else}
+          <p class="small warn">No tracked objects yet: select a clip, open the Clip tab and use Track an object.</p>
+        {/if}
+      {:else if effect.params.source === 'chroma'}
+        <label class="row small">Colour <input type="color" value={String(effect.data?.color ?? '#00ff00')} oninput={(e) => store.edit(() => (effect.data = { ...(effect.data ?? {}), color: (e.target as HTMLInputElement).value }), 'guardcol' + effect.id)} /></label>
+      {:else if effect.params.source === 'person'}
+        <p class="small faint">The people model (a few MB) is downloaded the first time and runs on this device. Shows in the Mosh view.</p>
+      {/if}
+    </section>
+  {/if}
+  {#if effect.type === 'flowPaint' || effect.type === 'mvedit'}
+    <section>
+      <div class="sh"><span class="label">Brush</span>
+        <button class="tiny" class:on={store.ui.paintEffect === effect.id} onclick={() => (store.ui.paintEffect = store.ui.paintEffect === effect.id ? null : effect.id)} title="Paint strokes on the player">{store.ui.paintEffect === effect.id ? 'Painting…' : 'Paint on the player'}</button>
+      </div>
+      <div class="tools">
+        {#each FLOW_TOOLS as t}
+          <button class="tiny" class:on={store.ui.brush.tool === t.id} title={t.hint} onclick={() => (store.ui.brush.tool = t.id)}>{t.name}</button>
+        {/each}
+      </div>
+      <label class="row small">Size <input type="range" min="0.02" max="0.4" step="0.01" bind:value={store.ui.brush.radius} /></label>
+      <label class="row small">Flow <input type="range" min="0.002" max="0.04" step="0.001" bind:value={store.ui.brush.strength} /></label>
+      <div class="row">
+        <span class="small faint grow">{strokeCount} stroke{strokeCount === 1 ? '' : 's'}</span>
+        <button class="tiny" disabled={!strokeCount} onclick={() => store.edit(() => (effect.data = { ...(effect.data ?? {}), strokes: ((effect.data?.strokes as unknown[]) ?? []).slice(0, -1) }))}>Undo stroke</button>
+        <button class="tiny" disabled={!strokeCount} onclick={() => store.edit(() => (effect.data = { ...(effect.data ?? {}), strokes: [] }))}>Clear</button>
+      </div>
+    </section>
+  {/if}
+
+  {#if effect.type === 'sequence'}
+    <section>
+      <div class="sh"><span class="label">Pattern</span></div>
+      <SequencerGrid {effect} />
+    </section>
+  {/if}
+
   <section>
     <div class="sh"><span class="label">Settings</span></div>
     {#each params as p (p.key)}
@@ -120,6 +181,19 @@
 </div>
 
 <style>
+  .tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-bottom: 4px;
+  }
+  .full {
+    width: 100%;
+  }
+  .warn {
+    color: var(--warn);
+    margin: 0;
+  }
   .editor {
     display: flex;
     flex-direction: column;

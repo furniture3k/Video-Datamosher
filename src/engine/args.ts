@@ -1,6 +1,11 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
-import { clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
-import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
+import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
+import { findRecipe } from './recipe';
+import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
+import { lutFile } from './lut';
+import { reframeFilter, type ReframePath } from './reframe';
+import { linearExpr } from './track';
+import { BLEND_TRANSITIONS, audioSources, clipLen, sourceTime, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
   { id: 'mandelbrot', name: 'Mandelbrot zoom', spec: (w, h, r) => `mandelbrot=s=${w}x${h}:r=${r}` },
@@ -43,6 +48,7 @@ export function clipInputArgs(c: Clip, m: MediaItem, fps: number, path: PathFn =
     const g = GENERATORS.find((x) => x.id === (m.source as { generator: string }).generator) ?? GENERATORS[0];
     return ['-f', 'lavfi', '-t', String(r3(c.out)), '-i', g.spec(even(m.width), even(m.height), fps)];
   }
+  if (m.source.kind === 'adjust') return ['-f', 'lavfi', '-t', String(dur), '-i', `color=c=black@0:s=16x16:r=${fps}`];
   if (m.source.isImage) return ['-loop', '1', '-framerate', String(fps), '-t', String(dur), '-i', path(m)];
   // a freeze frame only needs its first frame
   return ['-ss', String(r3(c.in)), '-t', String(c.freeze ? 0.5 : dur), '-i', path(m)];
@@ -94,12 +100,76 @@ function gradeFilters(g: Grade): string[] {
     const k = ['rr', 'rg', 'rb', 'gr', 'gg', 'gb', 'br', 'bg', 'bb'];
     f.push('colorchannelmixer=' + k.map((n, i) => `${n}=${m[i]}`).join(':'));
   }
+  // the LUT file is written next to the job with the amount baked in (see lutFile)
+  if (g.lut && (g.lutAmount ?? 1) > 0) f.push(`lut3d=file=${lutFile(g.lut, g.lutAmount ?? 1)}:interp=tetrahedral`);
   return f;
+}
+
+/**
+ * Stabilization: zoom in a little, then rotate and shift each frame by its correction (source
+ * time `t + inPoint`), cropping back to the original size.
+ */
+function stabFilters(s: NonNullable<Clip['stab']>, inPoint: number): string[] {
+  const t = `(t+${r3(inPoint)})`;
+  const z = Math.max(1, Math.min(1.5, s.zoom));
+  return [
+    `scale=trunc(iw*${r3(z)}/2)*2:trunc(ih*${r3(z)}/2)*2`,
+    `rotate=a='(${linearExpr(s.r, t)})*PI/180':c=black`,
+    `crop=w='trunc(iw/${r3(z)}/2)*2':h='trunc(ih/${r3(z)}/2)*2':x='(iw-ow)/2-(${linearExpr(s.x, t)})*iw':y='(ih-oh)/2-(${linearExpr(s.y, t)})*ih'`,
+  ];
+}
+
+/** Chroma key on an RGBA picture: the colour goes transparent, its spill is pulled from the edges. */
+function keyFilters(k: ChromaKey): string[] {
+  const hex = k.color.replace('#', '').padEnd(6, '0').slice(0, 6);
+  const f = [`colorkey=0x${hex}:${r3(Math.max(0.01, k.similarity))}:${r3(k.blend)}`];
+  if (k.spill) {
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    if (g >= b && g >= r) f.push('despill=type=green');
+    else if (b >= g && b >= r) f.push('despill=type=blue');
+  }
+  return f;
+}
+
+/**
+ * Animated position / zoom / rotation on a w×h picture: FFmpeg's perspective filter, fed for
+ * every frame the source point that lands on each corner. A 2px border of the background is
+ * added first so whatever comes into view from outside the picture is background.
+ */
+function keyedTransform(keys: Keys, T: { zoom: number; x: number; y: number; rotate: number }, w: number, h: number, fps: number, offset: number, bg: string): string[] {
+  const W = w + 4;
+  const H = h + 4;
+  const t = `(in/${fps}+${r3(offset)})`;
+  const val = (k: 'zoom' | 'x' | 'y' | 'rotate', fallback: number) => (keys[k]?.length ? `(${keysExpr(keys[k]!, t)})` : `(${r3(fallback)})`);
+  const z = `max(0.01,${val('zoom', T.zoom)})`;
+  const dx = `${val('x', T.x)}*${w}`;
+  const dy = `${val('y', T.y)}*${h}`;
+  const a = `${val('rotate', T.rotate)}*PI/180`;
+  const corner = (qx: number, qy: number): [string, string] => {
+    const ux = `((${qx}-${W / 2}-${dx})/${z})`;
+    const uy = `((${qy}-${H / 2}-${dy})/${z})`;
+    return [`${W / 2}+cos(${a})*${ux}+sin(${a})*${uy}`, `${H / 2}-sin(${a})*${ux}+cos(${a})*${uy}`];
+  };
+  const c = [corner(0, 0), corner(W, 0), corner(0, H), corner(W, H)];
+  // quoted, so the commas inside the expressions don't split the filter graph
+  const opts = c.flatMap(([x, y], i) => [`x${i}='${x}'`, `y${i}='${y}'`]);
+  return [`pad=${W}:${H}:2:2:color=${bg}`, `perspective=${opts.join(':')}:interpolation=linear:sense=source:eval=frame`, `crop=${w}:${h}:2:2`];
 }
 
 /** A clip cut down to part of itself: local seconds a..b of it. */
 export function windowClip(c: Clip, a: number, b: number): Clip {
   if (c.freeze) return { ...c, out: c.in + (b - a) };
+  if (c.ramp?.length) {
+    // the piece of the source under [a, b], with the matching piece of the ramp
+    const len = clipLen(c);
+    const x0 = Math.max(0, Math.min(1, a / len));
+    const x1 = Math.max(x0 + 1e-6, Math.min(1, b / len));
+    let ramp = c.ramp;
+    if (x1 < 1) ramp = splitRamp(ramp, x1)[0];
+    if (x0 > 0) ramp = splitRamp(ramp, x0 / x1)[1];
+    const [s0, s1] = [sourceTime(c, a), sourceTime(c, b)];
+    return { ...c, in: Math.min(s0, s1), out: Math.max(s0, s1), ramp };
+  }
   if (c.reverse) return { ...c, in: c.out - b * c.speed, out: c.out - a * c.speed };
   return { ...c, in: c.in + a * c.speed, out: c.in + b * c.speed };
 }
@@ -116,15 +186,24 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   const T = transformOf(c);
   const G = gradeOf(c);
   const op = Math.max(0, Math.min(1, c.opacity ?? 1));
-  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G);
+  // zoom / rotation keys need the full perspective transform; position alone moves with overlay
+  const moving = hasKeys(c.keys, ['zoom', 'rotate']);
+  const sliding = !moving && hasKeys(c.keys, ['x', 'y']);
+  const fading = hasKeys(c.keys, ['opacity']);
+  const ramp = !c.freeze && c.ramp?.length ? c.ramp : null;
+  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G) || moving || sliding || fading;
   const bg = layer ? 'black@0' : 'black';
   const f: string[] = [];
   if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(Math.max(c.in + 0.04, c.out))}`);
   f.push('setpts=PTS-STARTPTS');
+  // stabilization works in source time, so it comes before any speed change
+  if (c.stab && !c.freeze) f.push(...stabFilters(c.stab, c.in));
   if (c.freeze) f.push('trim=end_frame=1', 'loop=loop=-1:size=1', `setpts=N/${fps}/TB`);
+  else if (ramp) f.push(`setpts='${rampSetpts(ramp, c.out - c.in)}'`);
   else if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
   f.push(`fps=${fps}`);
   if (rgba) f.push('format=rgba');
+  if (layer && c.key) f.push(...keyFilters(c.key));
   // grade the picture itself (not the letterbox bars added next)
   f.push(...gradeFilters(G));
   f.push(scaleChain(c, w, h, layer), 'setsar=1');
@@ -143,7 +222,10 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   if (T.flipV) f.push('vflip');
   const stmts: string[] = [];
   let cur = `${tag}p`;
-  if (T.zoom !== 1 || T.x || T.y || T.rotate) {
+  if (moving) {
+    f.push(...keyedTransform(c.keys!, T, w, h, fps, offset, bg));
+    stmts.push(`[${src}]${f.join(',')}[${cur}]`);
+  } else if (T.zoom !== 1 || T.x || T.y || T.rotate || sliding) {
     f.push(`scale=${even(w * T.zoom)}:${even(h * T.zoom)}:flags=bicubic`);
     if (T.rotate) {
       const a = r3((T.rotate * Math.PI) / 180);
@@ -151,10 +233,16 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
     }
     stmts.push(`[${src}]${f.join(',')}[${tag}fg]`);
     stmts.push(`color=c=${bg}:s=${w}x${h}:r=${fps},format=rgba[${tag}bg]`);
-    stmts.push(`[${tag}bg][${tag}fg]overlay=x=(W-w)/2+${r3(T.x * w)}:y=(H-h)/2+${r3(T.y * h)}:shortest=1:format=auto,setsar=1[${cur}]`);
+    const tt = `(t+${r3(offset)})`;
+    const ox = c.keys?.x?.length ? `(${keysExpr(c.keys.x, tt)})*${w}` : `${r3(T.x * w)}`;
+    const oy = c.keys?.y?.length ? `(${keysExpr(c.keys.y, tt)})*${h}` : `${r3(T.y * h)}`;
+    stmts.push(`[${tag}bg][${tag}fg]overlay=x='(W-w)/2+${ox}':y='(H-h)/2+${oy}':shortest=1:format=auto,setsar=1[${cur}]`);
   } else stmts.push(`[${src}]${f.join(',')}[${cur}]`);
   const g: string[] = [];
-  if (op < 1) g.push(layer ? `colorchannelmixer=aa=${r3(op)}` : `colorchannelmixer=rr=${r3(op)}:gg=${r3(op)}:bb=${r3(op)}`);
+  if (fading) {
+    const e = `clip(${keysExpr(c.keys!.opacity!, `(T+${r3(offset)})`)},0,1)`;
+    g.push(layer ? `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*${e}'` : `geq=r='r(X,Y)*${e}':g='g(X,Y)*${e}':b='b(X,Y)*${e}':a='alpha(X,Y)'`);
+  } else if (op < 1) g.push(layer ? `colorchannelmixer=aa=${r3(op)}` : `colorchannelmixer=rr=${r3(op)}:gg=${r3(op)}:bb=${r3(op)}`);
   const alpha = layer ? ':alpha=1' : '';
   const fi = Math.min(c.vfadeIn ?? 0, fullLen / 2);
   const fo = Math.min(c.vfadeOut ?? 0, fullLen / 2);
@@ -221,9 +309,29 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     const a = Math.max(l.start, t0);
     const b = Math.min(l.end, t1);
     if (b - a < 0.5 / fps) return;
+    const lay = `${tag}l${k}`;
+    if (l.media.source.kind === 'adjust') {
+      // an adjustment layer re-grades everything below it while it's on screen
+      const next = `${tag}y${k}`;
+      const G = gradeOf(l.clip);
+      const ga = r3(a - t0);
+      const gb = r3(b - t0);
+      const op = Math.max(0, Math.min(1, l.clip.opacity ?? 1));
+      const fx = ['format=rgba', ...gradeFilters(G)];
+      if (op < 1) fx.push(`colorchannelmixer=aa=${r3(op)}`);
+      const len = clipLen(l.clip);
+      const fi = Math.min(l.clip.vfadeIn ?? 0, len / 2);
+      const fo = Math.min(l.clip.vfadeOut ?? 0, len / 2);
+      if (fi > 0.01) fx.push(`fade=t=in:st=${r3(l.start - t0)}:d=${r3(fi)}:alpha=1`);
+      if (fo > 0.01) fx.push(`fade=t=out:st=${r3(l.start + len - fo - t0)}:d=${r3(fo)}:alpha=1`);
+      filter.push(`[${acc}]split[${lay}a][${lay}b]`);
+      filter.push(`[${lay}b]${fx.join(',')}[${lay}c]`);
+      filter.push(`[${lay}a][${lay}c]overlay=0:0:enable='between(t,${ga},${gb})':format=auto,format=yuv420p[${next}]`);
+      acc = next;
+      return;
+    }
     const sub = windowClip(l.clip, a - l.start, b - l.start);
     const src = input(clipInputArgs(sub, l.media, fps, path));
-    const lay = `${tag}l${k}`;
     filter.push(...clipGraph(sub, l.media, fps, w, h, src, `${lay}r`, `${tag}L${k}`, true, a - l.start, clipLen(l.clip)));
     const at = r3(a - t0);
     filter.push(`[${lay}r]setpts=PTS+${at}/TB[${lay}]`);
@@ -347,7 +455,8 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
 
 /** Everything about a clip's picture besides its timing. */
 function clipLook(c: Clip) {
-  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0 };
+  // everything clipGraph draws from, so a change re-prepares the segment
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab };
 }
 
 /**
@@ -408,7 +517,9 @@ export function audioMixArgs(project: Project, total: number, path: PathFn = inp
     const len = r3(Math.min(s.len, total - s.start));
     const f: string[] = ['asetpts=PTS-STARTPTS'];
     if (s.clip.reverse) f.push('areverse');
-    f.push(...tempo(s.clip.speed));
+    // a ramped clip's sound is stretched in time with the picture (samples dropped or repeated)
+    if (!s.clip.freeze && s.clip.ramp?.length) f.push(`asetpts='${rampSetpts(s.clip.ramp, s.clip.out - s.clip.in)}'`, 'aresample=async=1000:first_pts=0');
+    else f.push(...tempo(s.clip.speed));
     f.push('aresample=44100', 'aformat=sample_fmts=fltp:channel_layouts=stereo', 'apad', `atrim=end=${len}`);
     if (Math.abs(s.gain - 1) > 1e-4) f.push(`volume=${r3(s.gain)}`);
     const fi = Math.min(s.fadeIn, len / 2);
@@ -449,7 +560,33 @@ export interface ExportOptions {
   audio: boolean;
   /** only this part of the timeline (seconds), e.g. the In–Out range */
   range?: [number, number] | null;
+  /** written into the file's metadata (the mosh recipe, so the video can be remixed) */
+  comment?: string;
+  /** keep the file under this size (MB): the encoder targets a bitrate instead of a quality */
+  maxMB?: number;
+  /** worked out from maxMB and the length when exporting (kbit/s) */
+  videoKbps?: number;
+  /** export in another shape than the project: the crop follows the action */
+  reframeTo?: string;
+  /** worked out when exporting: the crop path, and where this piece starts (s) */
+  reframe?: ReframePath;
+  timeOffset?: number;
+  /** seamless loop: the end crossfades or melts into the start */
+  loopMode?: 'off' | 'crossfade' | 'melt';
+  /** how long the loop seam lasts (s) */
+  loopSeconds?: number;
+  /** worked out when exporting: frames in the video and frames overlapped */
+  crossfade?: { frames: number; overlap: number };
 }
+
+/**
+ * ffmpeg's log cuts long metadata short, so a recipe seen in the log is read in full by
+ * writing the file's metadata out with these arguments.
+ */
+export const metadataArgs = (input: string, out: string) => ['-i', input, '-f', 'ffmetadata', out];
+
+/** ffmpeg arguments that store `comment` in the output's metadata. */
+export const commentArgs = (comment?: string) => (comment ? ['-metadata', `comment=${comment}`] : []);
 
 export const defaultExport = (): ExportOptions => ({
   format: 'mp4',
@@ -475,38 +612,91 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
   const withAudio = !!audioWav && o.audio && o.format !== 'gif';
   if (withAudio) a.push('-i', audioWav!);
   const scale = o.width > 0 ? `scale=${even(o.width)}:-2:flags=${o.scaler}` : '';
+  // auto-reframe crop (its clock continues across chunks), then the output size
+  const crop = o.reframe ? reframeFilter(o.reframe, o.timeOffset ?? 0) : '';
+  const xf = o.crossfade && o.crossfade.overlap > 0 && o.crossfade.frames > o.crossfade.overlap * 2 ? o.crossfade : null;
   if (o.format === 'gif') {
-    const pre = [`fps=${o.gifFps}`, scale].filter(Boolean).join(',');
+    const pre = [crop, `fps=${o.gifFps}`, scale].filter(Boolean).join(',');
     const dither = o.gifDither === 'bayer' ? 'dither=bayer:bayer_scale=3' : `dither=${o.gifDither}`;
-    a.push('-filter_complex', `[0:v]${pre},split[a][b];[a]palettegen=max_colors=${o.gifColors}:stats_mode=diff[p];[b][p]paletteuse=${dither}`);
+    const src = xf ? `${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')};[lv]` : '[0:v]';
+    a.push('-filter_complex', `${src}${pre},split[a][b];[a]palettegen=max_colors=${o.gifColors}:stats_mode=diff[p];[b][p]paletteuse=${dither}`);
     a.push('-loop', o.loop ? '0' : '-1', out);
     return a;
   }
   if (o.format === 'png') {
-    if (scale) a.push('-vf', scale);
+    const vf = [crop, scale].filter(Boolean).join(',');
+    if (vf) a.push('-vf', vf);
     a.push('-fps_mode', 'passthrough', '-f', 'image2', out);
     return a;
   }
-  a.push('-map', '0:v');
-  if (withAudio) a.push('-map', '1:a');
-  if (scale) a.push('-vf', `${scale},format=yuv420p`);
-  else a.push('-pix_fmt', 'yuv420p');
+  const chain = [crop, scale, 'format=yuv420p'].filter(Boolean).join(',');
+  if (xf) {
+    // the end crossfades into the start, so the file loops without a jump
+    const g = [`${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')}`, `[lv]${chain}[v]`];
+    if (withAudio) g.push(loopAudioFilter('[1:a]', xf.frames / fps, xf.overlap / fps, '[aout]'));
+    a.push('-filter_complex', g.join(';'), '-map', '[v]');
+    if (withAudio) a.push('-map', '[aout]');
+  } else {
+    a.push('-map', '0:v');
+    if (withAudio) a.push('-map', '1:a');
+    a.push('-vf', chain);
+  }
   a.push('-r', String(fps));
+  a.push(...encodeArgs(o, withAudio));
+  if (withAudio) a.push('-shortest');
+  a.push(...commentArgs(o.comment), out);
+  return a;
+}
+
+/** Codec arguments of an MP4 / WebM export. */
+function encodeArgs(o: ExportOptions, withAudio: boolean): string[] {
+  const a: string[] = [];
+  const sized = o.videoKbps && o.videoKbps > 0 ? ['-b:v', `${o.videoKbps}k`, '-maxrate', `${Math.round(o.videoKbps * 1.1)}k`, '-bufsize', `${o.videoKbps * 2}k`] : null;
+  const abr = sized ? '128k' : '192k';
   if (o.format === 'mp4') {
-    a.push('-c:v', 'libx264', '-preset', o.preset, '-crf', String(o.crf), '-movflags', '+faststart');
-    if (withAudio) a.push('-c:a', 'aac', '-b:a', '192k');
+    a.push('-c:v', 'libx264', '-preset', o.preset, ...(sized ?? ['-crf', String(o.crf)]), '-movflags', '+faststart');
+    if (withAudio) a.push('-c:a', 'aac', '-b:a', abr);
+  } else if (sized) {
+    a.push('-c:v', 'libvpx', ...sized, '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
+    if (withAudio) a.push('-c:a', 'libvorbis', '-b:a', abr);
   } else {
     // VP8: the VP9 encoder in ffmpeg.wasm crashes, VP8 is solid
     a.push('-c:v', 'libvpx', '-crf', String(Math.min(63, Math.max(4, o.crf - 4))), '-b:v', '12M', '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
     if (withAudio) a.push('-c:a', 'libvorbis', '-q:a', '6');
   }
-  if (withAudio) a.push('-shortest');
-  a.push(out);
   return a;
 }
 
+/**
+ * Crossfade loop: the first `overlap` frames are taken off the start and faded in over the last
+ * `overlap` frames, so the video ends on exactly the picture it starts after.
+ */
+export function loopFilter(input: string, frames: number, overlap: number, fps: number, out: string): string {
+  const d = r3(overlap / fps);
+  const off = r3((frames - 2 * overlap) / fps);
+  return `${input}split[lpa][lpb];[lpa]trim=start_frame=${overlap},setpts=PTS-STARTPTS[lpbody];[lpb]trim=end_frame=${overlap},setpts=PTS-STARTPTS[lphead];[lpbody][lphead]xfade=transition=fade:duration=${d}:offset=${off}${out}`;
+}
+
+/**
+ * The sound of a crossfade loop (`total` seconds long, `seconds` of overlap). Built from afade +
+ * adelay + amix rather than acrossfade: acrossfade fed from asplit outputs nothing in FFmpeg 6.1
+ * and older (ffmpeg.wasm included).
+ */
+export function loopAudioFilter(input: string, total: number, seconds: number, out: string): string {
+  const d = r3(seconds);
+  const st = r3(Math.max(0, total - 2 * seconds));
+  return `${input}asplit[lqa][lqb];[lqa]atrim=start=${d},asetpts=PTS-STARTPTS,afade=t=out:st=${st}:d=${d}[lqbody];[lqb]atrim=end=${d},asetpts=PTS-STARTPTS,afade=t=in:d=${d},adelay=${Math.round(st * 1000)}:all=1[lqhead];[lqbody][lqhead]amix=inputs=2:normalize=0:duration=first${out}`;
+}
+
+/** A finished (joined) MP4 / WebM made into a crossfade loop: one more encode. */
+export function loopPassArgs(o: ExportOptions, input: string, frames: number, overlap: number, fps: number, withAudio: boolean, out: string): string[] {
+  const g = [loopFilter('[0:v]', frames, overlap, fps, '[v]')];
+  if (withAudio) g.push(loopAudioFilter('[0:a]', frames / fps, overlap / fps, '[aout]'));
+  return ['-i', input, '-filter_complex', g.join(';'), '-map', '[v]', ...(withAudio ? ['-map', '[aout]'] : []), '-r', String(fps), '-pix_fmt', 'yuv420p', ...encodeArgs(o, withAudio), ...commentArgs(o.comment), out];
+}
+
 /** Parse "ffmpeg -i" log output into basic media info. */
-export function parseProbe(log: string): { duration: number; width: number; height: number; fps: number; hasAudio: boolean; hasVideo: boolean } {
+export function parseProbe(log: string): { duration: number; width: number; height: number; fps: number; hasAudio: boolean; hasVideo: boolean; recipe: string | null } {
   const dur = /Duration: (\d+):(\d+):([\d.]+)/.exec(log);
   const duration = dur ? +dur[1] * 3600 + +dur[2] * 60 + +dur[3] : 0;
   const vid = /Stream #.*Video: .*?(\d{2,5})x(\d{2,5})/.exec(log);
@@ -523,5 +713,14 @@ export function parseProbe(log: string): { duration: number; width: number; heig
     fps: fpsM ? +fpsM[1] : 30,
     hasAudio: /Stream #.*Audio:/.test(log),
     hasVideo: !!vid,
+    recipe: findRecipe(log),
   };
 }
+
+/** Generation loss: decode a moshed AVI and encode it again (settings `enc`) for another pass. */
+export function regenArgs(project: Pick<Project, 'decoder' | 'encoder' | 'clips' | 'media' | 'texts'>, enc: EncoderSettings, input: string, out: string): string[] {
+  return [...decoderInputArgs(project.decoder), '-i', input, '-an', '-pix_fmt', 'yuv420p', ...encoderArgs(enc, keyTimes(project as Project)), '-f', 'avi', out];
+}
+
+/** Settings for generation g (2, 3…): quality crushed a little more each time. */
+export const generationEncoder = (enc: EncoderSettings, g: number): EncoderSettings => ({ ...enc, quality: Math.min(31, enc.quality + (g - 1) * (enc.genCrush ?? 2)) });

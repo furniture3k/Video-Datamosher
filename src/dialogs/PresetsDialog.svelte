@@ -5,6 +5,7 @@
   import { PRESETS, applyPreset, presetFromProject, type Preset } from '../engine/presets';
   import { EFFECTS } from '../engine/effects';
   import { userPresets } from '../lib/projectio.svelte';
+  import { takeSnapshot } from '../lib/snapshots.svelte';
   import Icon from '../components/Icon.svelte';
   import type { Project } from '../engine/types';
 
@@ -16,6 +17,7 @@
       store.toast('Add a clip first.', 'error');
       return;
     }
+    if (mode === 'replace' && store.project.effects.length) takeSnapshot('Before preset ' + p.name, true);
     store.set(applyPreset($state.snapshot(store.project) as Project, p, store.totalFrames, store.cuts, mode));
     store.ui.dialog = null;
   }

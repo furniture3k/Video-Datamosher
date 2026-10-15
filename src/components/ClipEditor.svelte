@@ -5,6 +5,11 @@
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type TextClip, type Transform, type TransitionType } from '../engine/types';
   import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead } from '../lib/edit';
+  import { hasKeys, keyedValue, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
+  import { importLuts } from '../lib/luts.svelte';
+  import { openCompound, setMoshInside } from '../lib/compound.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows } from '../lib/motion.svelte';
+  import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
   const media = $derived(c ? mediaOf(store.project, c.mediaId) : undefined);
@@ -54,9 +59,107 @@
     if (layout) store.editTimeline(f, 'clip' + k + id);
     else store.edit(f, 'clip' + k + id);
   };
+  // ---- keyframes: values at the playhead, ◆ adds / removes a key there
+  const isAdjust = $derived(media?.source.kind === 'adjust');
+  const local = $derived(c ? Math.max(0, Math.min(clipLen(c), store.ui.time - placedStart)) : 0);
+  const near = (t: number) => Math.abs(t - local) < 0.5 / store.fps;
+  const keyed = (k: KeyProp) => (c?.keys?.[k]?.length ?? 0) > 0;
+  const keyHere = (k: KeyProp) => !!c?.keys?.[k]?.some(([t]) => near(t));
+  const staticOf = (k: KeyProp) => (k === 'opacity' ? (c?.opacity ?? 1) : T[k]);
+  const kv = (k: KeyProp) => keyedValue(c?.keys, k, local, staticOf(k));
+  function editKeys(fn: (x: Clip) => void, key: string | null = null) {
+    const id = c!.id;
+    store.edit((p) => {
+      const x = p.clips.find((y) => y.id === id);
+      if (x) fn(x);
+    }, key);
+  }
+  /** Set a property: on keyframed properties this sets (or adds) the key at the playhead. */
+  const setKeyed = (k: KeyProp) => (v: number) => {
+    if (!keyed(k)) return k === 'opacity' ? setC('opacity')(v) : setTf(k)(v);
+    const t = local;
+    editKeys((x) => {
+      const pts = (x.keys![k] ?? []).filter(([kt]) => !near(kt));
+      x.keys = { ...x.keys, [k]: [...pts, [t, v]].sort((a, b) => a[0] - b[0]) as KeyPoint[] };
+    }, 'kf' + k + c!.id + Math.round(t * 1000));
+  };
+  function toggleKey(k: KeyProp) {
+    const t = local;
+    const v = kv(k);
+    editKeys((x) => {
+      const pts = x.keys?.[k] ?? [];
+      const here = pts.some(([kt]) => near(kt));
+      const next = here ? pts.filter(([kt]) => !near(kt)) : [...pts, [t, v] as KeyPoint].sort((a, b) => a[0] - b[0]);
+      const keys = { ...(x.keys ?? {}), [k]: next };
+      if (!next.length) delete keys[k];
+      x.keys = Object.keys(keys).length ? keys : undefined;
+      // the last key's value stays as the plain setting
+      if (here && !next.length) {
+        if (k === 'opacity') x.opacity = v;
+        else x.transform = { ...(x.transform ?? {}), [k]: v };
+      }
+    });
+  }
+  /** Move the playhead to the clip's previous / next keyframe. */
+  function jumpKey(dir: 1 | -1) {
+    const times = [...new Set(Object.values(c?.keys ?? {}).flatMap((pts) => (pts ?? []).map(([t]) => t)))].sort((a, b) => a - b);
+    const next = dir > 0 ? times.find((t) => t > local + 1e-3) : [...times].reverse().find((t) => t < local - 1e-3);
+    if (next !== undefined) store.seek(placedStart + next);
+  }
+  const anyKeys = $derived(hasKeys(c?.keys));
+
+  // ---- speed ramp
+  // a ramp's slow and fast speeds are read back from the ramp itself
+  const rampSpeeds = $derived<[number, number]>(c?.ramp?.length ? [Math.min(...c.ramp.map((p) => p[1])), Math.max(...c.ramp.map((p) => p[1]))] : [0.3, 2.5]);
+  const rampPreset = $derived(c?.ramp?.length ? (RAMP_PRESETS.find((r) => JSON.stringify(r.make(rampSpeeds[0], rampSpeeds[1])) === JSON.stringify(c.ramp))?.id ?? 'custom') : 'none');
+  function setRamp(id: string, slow = rampSpeeds[0], fast = rampSpeeds[1]) {
+    const pr = RAMP_PRESETS.find((r) => r.id === id);
+    const cid = c!.id;
+    store.editTimeline((p) => {
+      const x = p.clips.find((y) => y.id === cid);
+      if (!x) return;
+      if (pr) x.ramp = pr.make(Math.min(slow, fast), Math.max(slow, fast));
+      else delete x.ramp;
+    }, 'ramp' + cid);
+  }
+
+  // ---- motion: stabilization and tracking
+  let stabStrength = $state(20);
+  const canAnalyse = $derived(!!c && media?.source.kind === 'file' && !media.source.isImage && !!media.hasVideo && !c.freeze);
+  /** clips on the tracks above that could follow a tracked object */
+  const followers = $derived(c ? store.project.clips.filter((x) => isOverlayTrack(x.track) && x.id !== c.id && mediaOf(store.project, x.mediaId)?.source.kind !== 'adjust') : []);
+
+  // ---- chroma key
+  const KEY_DEFAULT: ChromaKey = { color: '#00ff00', similarity: 0.25, blend: 0.08, spill: true };
+  const setKey = <K extends keyof ChromaKey>(k: K) => (v: ChromaKey[K]) => editKeys((x) => (x.key = { ...(x.key ?? KEY_DEFAULT), [k]: v }), 'key' + k + c!.id);
+
+  // ---- LUTs
+  let lutInput = $state<HTMLInputElement>();
+  async function pickLutFiles(files: FileList | null) {
+    if (!files?.length) return;
+    const ids = await importLuts([...files]);
+    if (ids[0]) setGrLut(ids[0]);
+  }
+  const setGrLut = (id: string) => {
+    const cid = c!.id;
+    store.edit((p) => {
+      const x = p.clips.find((y) => y.id === cid);
+      if (!x) return;
+      x.grade = { ...(x.grade ?? {}), lut: id || undefined };
+      if (!id) delete x.grade.lut;
+    });
+  };
+
   const setT = <K extends keyof TextClip>(k: K) => (v: TextClip[K]) => store.edit(() => (text![k] = v), 'text' + k + text!.id);
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`;
 </script>
+
+{#snippet kf(k: KeyProp)}
+  <div class="kfrow">
+    <button class="kf" class:on={keyHere(k)} class:has={keyed(k)} title={keyHere(k) ? 'Remove the keyframe at the playhead' : keyed(k) ? 'Add a keyframe at the playhead' : 'Animate: add a keyframe at the playhead, then move the playhead and change the value'} aria-label="Keyframe" onclick={() => toggleKey(k)}>◆</button>
+    {#if keyed(k)}<span class="small faint">{c?.keys?.[k]?.length} key{c?.keys?.[k]?.length === 1 ? '' : 's'} · animated</span>{/if}
+  </div>
+{/snippet}
 
 {#if trClip}
   {@const t = trClip.transition}
@@ -144,7 +247,13 @@
       {#if (isVideo || isUpper) && media.hasAudio && !c.muted && !c.freeze}<button class="small" onclick={() => detach(c.id)} title="Move this clip's sound to its own audio track"><Icon name="music" size={13} />Detach audio</button>{/if}
       <button class="small ghost" onclick={() => deleteSelected()}><Icon name="trash" size={13} />Delete</button>
     </div>
-    {#if isStill || c.freeze}
+    {#if media.source.kind === 'file' && media.source.compound}
+      <div class="row btns">
+        <button class="small primary" onclick={() => openCompound(media.id)}><Icon name="folder" size={13} />Edit inside</button>
+      </div>
+      <Field type="bool" label="Mosh inside" value={!!media.source.compound.moshInside} help="On: the compound's own mosh effects are rendered into it, so the clip is already moshed and can be moshed again out here (a melt of a melt). Off: its effects stay out of the clip." onchange={(v: boolean) => setMoshInside(media.id, v)} />
+    {/if}
+    {#if isStill || c.freeze || isAdjust}
       <Field label="Duration" unit="s" min={0.1} max={600} step={0.1} value={c.out - c.in} help={c.freeze ? 'How long the frozen frame is held.' : 'How long this still image lasts.'} onchange={(v: number) => setC('out', true)(c.in + v)} />
       {#if c.freeze && !isStill}
         <Field label="Frame" unit="s" min={0} max={media.duration} step={0.04} value={c.in} help="Which moment of the source is frozen." onchange={(v: number) => { const d = c.out - c.in; store.editTimeline((p) => { const x = p.clips.find((y) => y.id === c.id); if (x) (x.in = v), (x.out = v + d); }, 'frz' + c.id); }} />
@@ -156,15 +265,33 @@
     {#if !isVideo}
       <Field label="Position" unit="s" min={0} max={Math.max(60, store.duration + 30)} step={0.04} value={c.start} help="Where the clip sits on the timeline." onchange={setC('start')} />
     {/if}
-    {#if !c.freeze}
+    {#if !c.freeze && !isAdjust}
+      {#if !c.ramp}
       <Field label="Speed" unit="×" min={0.05} max={16} step={0.05} value={c.speed} help="Slow down or speed up the clip (the clip gets longer or shorter; later clips move). For moshing: slow clips have smaller motion, fast clips have bigger, wilder vectors." onchange={(v: number) => setC('speed', true)(Math.max(0.05, Math.min(16, v)))}>
         <div class="seg speeds">
           {#each [0.25, 0.5, 1, 2, 4] as sp}<button class:on={c.speed === sp} onclick={() => setC('speed', true)(sp)}>{sp}×</button>{/each}
         </div>
       </Field>
+      {/if}
       <Field type="bool" label="Reverse" value={c.reverse} help="Play the clip backwards." onchange={setC('reverse', true)} />
+      {#if isVideo && !isStill}
+        <Field
+          type="select"
+          label="Speed ramp"
+          value={rampPreset}
+          options={[{ value: 'none', label: 'None (steady speed)' }, ...RAMP_PRESETS.map((r) => ({ value: r.id, label: r.name })), ...(rampPreset === 'custom' ? [{ value: 'custom', label: 'Custom' }] : [])]}
+          help="Changes speed during the clip, from Slow to Fast. The clip's length follows. Slow parts give small, smeary motion vectors; fast parts give big, wild ones."
+          onchange={(v: string) => setRamp(v)}
+        />
+        {#if c.ramp}
+          <div class="row ramp">
+            <Field label="Slow" unit="×" type="number" min={0.05} max={4} step={0.05} value={rampSpeeds[0]} help="Slowest speed of the ramp." onchange={(v: number) => rampPreset !== 'custom' && setRamp(rampPreset, v, rampSpeeds[1])} />
+            <Field label="Fast" unit="×" type="number" min={0.25} max={16} step={0.05} value={rampSpeeds[1]} help="Fastest speed of the ramp." onchange={(v: number) => rampPreset !== 'custom' && setRamp(rampPreset, rampSpeeds[0], v)} />
+          </div>
+        {/if}
+      {/if}
     {/if}
-    {#if hasPicture}
+    {#if hasPicture && !isAdjust}
       <Field
         type="select"
         label="Fit to frame"
@@ -180,8 +307,8 @@
     {/if}
     {#if hasPicture}
       <div class="label sect">Picture</div>
-      <Field label="Opacity" min={0} max={1} step={0.01} value={c.opacity ?? 1} help={isUpper ? 'How see-through the clip is over the tracks below.' : 'Fades the picture toward black.'} onchange={(v: number) => setC('opacity')(v)} />
-      {#if isUpper}
+      <Field label="Opacity" min={0} max={1} step={0.01} value={kv('opacity')} help={isAdjust ? 'How strongly the adjustment applies.' : isUpper ? 'How see-through the clip is over the tracks below.' : 'Fades the picture toward black.'} onchange={setKeyed('opacity')}>{@render kf('opacity')}</Field>
+      {#if isUpper && !isAdjust}
         <Field
           type="select"
           label="Blend mode"
@@ -200,11 +327,19 @@
       <Field label="Fade in" unit="s" min={0} max={Math.min(10, clipLen(c) / 2)} step={0.05} value={c.vfadeIn ?? 0} help={isUpper ? 'The picture fades in from transparent. You can also drag the dot at the clip\'s top-left corner.' : 'The picture fades in from black. You can also drag the dot at the clip\'s top-left corner.'} onchange={(v: number) => setC('vfadeIn')(v)} />
       <Field label="Fade out" unit="s" min={0} max={Math.min(10, clipLen(c) / 2)} step={0.05} value={c.vfadeOut ?? 0} help={isUpper ? 'The picture fades out to transparent.' : 'The picture fades out to black.'} onchange={(v: number) => setC('vfadeOut')(v)} />
 
-      <div class="row sect"><span class="label grow">Transform</span>{#if !isIdentityTransform(T)}<button class="small ghost" onclick={() => resetC('transform')}><Icon name="reset" size={12} />Reset</button>{/if}</div>
-      <Field label="Zoom" unit="×" min={0.05} max={4} step={0.01} value={T.zoom} help="Scales the picture around its centre. Below 1 for picture-in-picture." onchange={setTf('zoom')} />
-      <Field label="Position X" min={-1} max={1} step={0.005} value={T.x} help="Moves the picture left (−) or right (+), as a share of the frame width." onchange={setTf('x')} />
-      <Field label="Position Y" min={-1} max={1} step={0.005} value={T.y} help="Moves the picture up (−) or down (+), as a share of the frame height." onchange={setTf('y')} />
-      <Field label="Rotation" unit="°" min={-180} max={180} step={0.5} value={T.rotate} help="Turns the picture clockwise (+) or anticlockwise (−)." onchange={setTf('rotate')} />
+      {#if !isAdjust}
+      <div class="row sect"><span class="label grow">Transform</span>
+        {#if anyKeys}
+          <button class="small ghost" title="Previous keyframe" onclick={() => jumpKey(-1)}>◀◆</button>
+          <button class="small ghost" title="Next keyframe" onclick={() => jumpKey(1)}>◆▶</button>
+          <button class="small ghost" title="Remove every keyframe of this clip" onclick={() => editKeys((x) => (x.keys = undefined))}>Clear keys</button>
+        {/if}
+        {#if !isIdentityTransform(T)}<button class="small ghost" onclick={() => resetC('transform')}><Icon name="reset" size={12} />Reset</button>{/if}
+      </div>
+      <Field label="Zoom" unit="×" min={0.05} max={4} step={0.01} value={kv('zoom')} help="Scales the picture around its centre. Below 1 for picture-in-picture." onchange={setKeyed('zoom')}>{@render kf('zoom')}</Field>
+      <Field label="Position X" min={-1} max={1} step={0.005} value={kv('x')} help="Moves the picture left (−) or right (+), as a share of the frame width." onchange={setKeyed('x')}>{@render kf('x')}</Field>
+      <Field label="Position Y" min={-1} max={1} step={0.005} value={kv('y')} help="Moves the picture up (−) or down (+), as a share of the frame height." onchange={setKeyed('y')}>{@render kf('y')}</Field>
+      <Field label="Rotation" unit="°" min={-180} max={180} step={0.5} value={kv('rotate')} help="Turns the picture clockwise (+) or anticlockwise (−)." onchange={setKeyed('rotate')}>{@render kf('rotate')}</Field>
       <div class="row">
         <Field type="bool" label="Flip horizontal" value={T.flipH} help="Mirror left to right." onchange={setTf('flipH')} />
         <Field type="bool" label="Flip vertical" value={T.flipV} help="Upside down." onchange={setTf('flipV')} />
@@ -213,6 +348,46 @@
       <Field label="Crop right" min={0} max={0.95} step={0.005} value={T.cropR} help="Cuts away this share of the right edge." onchange={setTf('cropR')} />
       <Field label="Crop top" min={0} max={0.95} step={0.005} value={T.cropT} help="Cuts away this share of the top edge." onchange={setTf('cropT')} />
       <Field label="Crop bottom" min={0} max={0.95} step={0.005} value={T.cropB} help="Cuts away this share of the bottom edge." onchange={setTf('cropB')} />
+      {/if}
+
+      {#if canAnalyse}
+        <div class="row sect"><span class="label grow">Motion</span>{#if motionJob.running}<span class="small faint">{motionJob.stage}…</span>{/if}</div>
+        <Field label="Stabilize strength" min={4} max={60} step={1} value={stabStrength} help="How smooth the camera should end up: bigger values iron out slower wobbles too (and zoom in more)." onchange={(v: number) => (stabStrength = v)} />
+        <div class="row btns">
+          <button class="small" disabled={motionJob.running} onclick={() => stabilizeClip(c.id, stabStrength)} title="Measure the camera shake and smooth it out">{c.stab ? 'Stabilize again' : 'Stabilize'}</button>
+          {#if c.stab}<button class="small ghost" onclick={() => editKeys((x) => (x.stab = undefined))}>Remove ({Math.round((c.stab.zoom - 1) * 100)}% zoom)</button>{/if}
+        </div>
+        <div class="row btns">
+          <button class="small" class:on={store.ui.trackPick === c.id} disabled={motionJob.running} onclick={() => (store.ui.trackPick = store.ui.trackPick === c.id ? null : c.id)} title="Then drag a box on the player around what to follow">Track an object</button>
+        </div>
+        {#each c.paths ?? [] as path (path.id)}
+          <div class="pathrow">
+            <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>
+            <button class="small" onclick={() => titleFollows(c.id, path.id)} title="Add a title that moves with it">Title follows</button>
+            {#if followers.length}
+              <select class="small" aria-label="Clip that follows" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) clipFollows(c.id, path.id, v); (e.target as HTMLSelectElement).value = ''; }}>
+                <option value="">Clip follows…</option>
+                {#each followers as f}<option value={f.id}>{mediaOf(store.project, f.mediaId)?.source.name}</option>{/each}
+              </select>
+            {/if}
+            <button class="icon ghost" aria-label="Delete track" title="Delete track" onclick={() => editKeys((x) => (x.paths = x.paths?.filter((y) => y.id !== path.id)))}><Icon name="x" size={12} /></button>
+          </div>
+        {/each}
+      {/if}
+
+      {#if isUpper && !isAdjust}
+        <div class="row sect"><span class="label grow">Chroma key</span></div>
+        <Field type="bool" label="Key out a colour" value={!!c.key} help="Green or blue screen: the colour becomes see-through and the tracks below show through it." onchange={(v: boolean) => editKeys((x) => (x.key = v ? (x.key ?? KEY_DEFAULT) : undefined))} />
+        {#if c.key}
+          <div class="row keyc">
+            <label class="row small grow">Colour <input type="color" value={c.key.color} oninput={(e) => setKey('color')((e.target as HTMLInputElement).value)} /></label>
+            <button class="small" class:on={store.ui.eyedropper} title="Click the screen colour in the player" onclick={() => (store.ui.eyedropper = !store.ui.eyedropper)}>Pick from player</button>
+          </div>
+          <Field label="Similarity" min={0.01} max={0.8} step={0.01} value={c.key.similarity} help="How close to the colour a pixel must be to disappear. Raise it until the screen is gone." onchange={setKey('similarity')} />
+          <Field label="Softness" min={0} max={0.5} step={0.01} value={c.key.blend} help="A soft edge between kept and removed pixels." onchange={setKey('blend')} />
+          <Field type="bool" label="Remove spill" value={c.key.spill} help="Takes the screen's colour cast off hair and edges." onchange={setKey('spill')} />
+        {/if}
+      {/if}
 
       <div class="row sect"><span class="label grow">Colour</span>{#if !isIdentityGrade(Gr)}<button class="small ghost" onclick={() => resetC('grade')}><Icon name="reset" size={12} />Reset</button>{/if}</div>
       <Field label="Brightness" min={-1} max={1} step={0.01} value={Gr.brightness} help="Lifts (+) or lowers (−) every level evenly." onchange={setGr('brightness')} />
@@ -220,6 +395,18 @@
       <Field label="Saturation" min={0} max={3} step={0.01} value={Gr.saturation} help="0 = black and white, 1 = unchanged, higher = more intense colour." onchange={setGr('saturation')} />
       <Field label="Gamma" min={0.2} max={5} step={0.01} value={Gr.gamma} help="Brightens (above 1) or darkens (below 1) the mid-tones while keeping black and white." onchange={setGr('gamma')} />
       <Field label="Hue" unit="°" min={-180} max={180} step={1} value={Gr.hue} help="Rotates every colour around the colour wheel." onchange={setGr('hue')} />
+      <div class="field lutrow">
+        <span class="lab" title="A look-up table (.cube) from a colourist, a camera maker or a film emulation pack, applied after the adjustments above.">LUT</span>
+        <select value={Gr.lut ?? ''} aria-label="LUT" onchange={(e) => setGrLut((e.target as HTMLSelectElement).value)}>
+          <option value="">None</option>
+          {#each store.project.luts ?? [] as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
+        </select>
+        <button class="small" onclick={() => lutInput?.click()}>Import .cube…</button>
+        <input bind:this={lutInput} type="file" accept=".cube" multiple hidden onchange={(e) => (pickLutFiles((e.target as HTMLInputElement).files), ((e.target as HTMLInputElement).value = ''))} />
+      </div>
+      {#if Gr.lut}
+        <Field label="LUT amount" min={0} max={1} step={0.01} value={Gr.lutAmount ?? 1} help="How much of the LUT's look is applied." onchange={setGr('lutAmount')} />
+      {/if}
       <p class="small faint">Colour, transform and fades are applied before moshing, so they smear with the melt.</p>
     {/if}
     {#if media.hasAudio && !c.freeze}
@@ -284,6 +471,49 @@
     border-radius: var(--r);
     padding: 6px 8px;
     resize: vertical;
+  }
+  .kfrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 2px;
+  }
+  .kf {
+    width: 20px;
+    height: 18px;
+    padding: 0;
+    font-size: 11px;
+    color: var(--text-3, var(--text-2));
+    background: none;
+    border-color: transparent;
+  }
+  .kf.has {
+    color: var(--text-2);
+  }
+  .kf.on {
+    color: var(--accent);
+  }
+  .keyc,
+  .ramp {
+    gap: 8px;
+  }
+  .pathrow {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .pathrow select {
+    height: 24px;
+    max-width: 120px;
+  }
+  .lutrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .lutrow select {
+    flex: 1;
+    min-width: 0;
   }
   .empty p {
     margin: 0 0 8px;

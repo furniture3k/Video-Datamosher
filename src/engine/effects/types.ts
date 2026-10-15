@@ -1,5 +1,6 @@
 import type { EffectInstance, Frame, ParamValue } from '../types';
 import type { Rng } from '../rng';
+import type { AudioFeatures } from '../beats';
 
 export type ParamDef = (
   | {
@@ -17,6 +18,8 @@ export type ParamDef = (
       chaos?: [number, number];
       /** UI hint: logarithmic slider */
       log?: boolean;
+      /** which way is "more destroyed" (the Chaos dial pushes values that way) */
+      intensity?: 'up' | 'down';
     }
   | { key: string; label: string; type: 'bool'; default: boolean; help: string; advanced?: boolean }
   | {
@@ -43,6 +46,10 @@ export interface EffectContext {
   rng: Rng;
   /** original prepared frames, indexed by src */
   source: Frame[];
+  /** the analysed music, for beat-triggered effects (missing: no music on the timeline) */
+  audio?: AudioFeatures;
+  /** frames of the motion packs in use, encoded like the timeline */
+  packs?: Record<string, Frame[]>;
 }
 
 export interface BitstreamEffect {

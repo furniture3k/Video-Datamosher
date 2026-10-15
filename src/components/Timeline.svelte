@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { compoundOf } from '../engine/compound';
+  import { makeCompound, openCompound } from '../lib/compound.svelte';
+  import { beatInfo, refreshBeats, beatInputs } from '../lib/beatinfo.svelte';
+  import { usesBeats } from '../engine/audiofx';
   import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
@@ -69,6 +73,15 @@
     return Math.max(0, (e.clientX - left) / pps);
   }
 
+  // the beat grid (and the BPM shown for beat-triggered effects) follows the music as it's edited
+  let beatTimer = 0;
+  $effect(() => {
+    if (!beatInfo.grid && !store.project.effects.some(usesBeats)) return;
+    void beatInputs(store.project);
+    clearTimeout(beatTimer);
+    beatTimer = window.setTimeout(refreshBeats, 400);
+  });
+
   // ---------------------------------------------------------------- snapping
   function snapTargets(exclude: string | null): number[] {
     const t: number[] = [0, store.ui.time, duration];
@@ -76,6 +89,7 @@
     for (const c of store.project.clips) if (c.track !== VIDEO_TRACK && c.id !== exclude) t.push(c.start, c.start + clipLen(c));
     for (const tx of store.project.texts) if (tx.id !== exclude) t.push(tx.start, tx.start + tx.duration);
     for (const m of markers) t.push(m.t);
+    if (beatInfo.grid) t.push(...beatInfo.beats);
     if (store.ui.inPoint !== null) t.push(store.ui.inPoint);
     if (store.ui.outPoint !== null) t.push(store.ui.outPoint);
     return t;
@@ -287,7 +301,7 @@
 
   function snapFrame(f: number, ev: PointerEvent, id: string) {
     if (!store.ui.snap || ev.shiftKey) return f;
-    const cands = [0, totalF, Math.round(store.ui.time * fps), ...store.cuts, ...store.project.encoder.keyMarkers, ...store.project.effects.flatMap((e) => (e.id === id ? [] : [e.start, e.end]))];
+    const cands = [0, totalF, Math.round(store.ui.time * fps), ...(beatInfo.grid ? beatInfo.beats.map((b) => Math.round(b * fps)) : []), ...store.cuts, ...store.project.encoder.keyMarkers, ...store.project.effects.flatMap((e) => (e.id === id ? [] : [e.start, e.end]))];
     const tol = 8 / (pps / fps);
     let best = f;
     let bd = tol;
@@ -761,6 +775,15 @@
           {#each ticks.out as s}
             <div class="tick" style="left:{x(s)}px"><span class="mono">{fmtTick(s)}</span></div>
           {/each}
+          {#if beatInfo.grid && beatInfo.status === 'ready'}
+            {@const down = new Set(beatInfo.downbeats.map((d) => Math.round(d * 1000)))}
+            {@const gap = pps * (60 / Math.max(1, beatInfo.bpm))}
+            {#each beatInfo.beats as b, i}
+              {#if gap >= 4 || down.has(Math.round(b * 1000))}
+                <div class="beat" class:down={down.has(Math.round(b * 1000))} style="left:{x(b)}px" title={i === 0 ? `${Math.round(beatInfo.bpm)} BPM` : undefined}></div>
+              {/if}
+            {/each}
+          {/if}
           {#if store.ui.inPoint !== null || store.ui.outPoint !== null}
             {@const a = store.ui.inPoint ?? 0}
             {@const b = store.ui.outPoint ?? duration}
@@ -1054,11 +1077,18 @@
     style="left:{left}px;width:{w}px;{thumb ? `--thumb:url(${thumb});` : ''}{c.label ? `--lab:${c.label};` : ''}"
     onpointerdown={(e) => clipDown(e, c.id, kind)}
     oncontextmenu={(e) => openMenu(e, c.id, kind)}
-    title="{name} · {fmtDur(clipLen(c))}{clipOn(c) ? '' : ' · off (D to turn on)'}"
+    ondblclick={() => compoundOf(mediaOf(store.project, c.mediaId)) && openCompound(c.mediaId)}
+    title="{name} · {fmtDur(clipLen(c))}{clipOn(c) ? '' : ' · off (D to turn on)'}{compoundOf(mediaOf(store.project, c.mediaId)) ? ' · compound: double-click to edit inside' : ''}"
   >
     <div class="edge l" onpointerdown={(e) => edgeDown(e, c.id, kind, 'l')}></div>
     <span class="cname">{name}</span>
-    {#if c.freeze}<span class="badge">freeze</span>{:else if c.speed !== 1}<span class="badge">{c.speed}×</span>{/if}
+    {#if compoundOf(mediaOf(store.project, c.mediaId))}<span class="badge cmp">compound</span>{/if}
+    {#if c.freeze}<span class="badge">freeze</span>{:else if c.ramp?.length}<span class="badge">ramp</span>{:else if c.speed !== 1}<span class="badge">{c.speed}×</span>{/if}
+    {#if c.key}<span class="badge">key</span>{/if}
+    {#if c.grade?.lut}<span class="badge">LUT</span>{/if}
+    {#each [...new Set(Object.values(c.keys ?? {}).flatMap((pts) => (pts ?? []).map(([t]) => t)))] as kt}
+      <span class="kdot" style="left:{x(kt)}px" title="Keyframe at {kt.toFixed(2)} s"></span>
+    {/each}
     {#if c.reverse && !c.freeze}<span class="badge">rev</span>{/if}
     {#if c.blend && c.blend !== 'normal'}<span class="badge">{c.blend}</span>{/if}
     {#if (c.opacity ?? 1) < 1}<span class="badge">{Math.round((c.opacity ?? 1) * 100)}%</span>{/if}
@@ -1091,6 +1121,11 @@
         <button class="ghost" onclick={() => (edit.setTransition(menuClip.id, 'melt'), store.selectTransition(menuClip.id))}><Icon name="split" />Melt into this clip</button>
         <button class="ghost" onclick={() => (edit.setTransition(menuClip.id, 'dissolve'), store.selectTransition(menuClip.id))}><Icon name="split" />Dissolve into this clip</button>
       {/if}
+      {#if compoundOf(mediaOf(store.project, menuClip.mediaId))}
+        <button class="ghost" onclick={() => openCompound(menuClip.mediaId)}><Icon name="folder" />Edit inside the compound</button>
+      {:else if menuClip.track === VIDEO_TRACK}
+        <button class="ghost" onclick={() => makeCompound()} title="Fold the selected main-track clips (first to last) into one clip with its own timeline"><Icon name="folder" />Make compound clip{store.ui.selectedClips.length > 1 ? ` (${store.ui.selectedClips.length})` : ''}</button>
+      {/if}
       <button class="ghost" onclick={() => edit.markClip()}><Icon name="loop" />Mark In / Out on this clip<span class="kbd">X</span></button>
       <div class="labels" role="group" aria-label="Clip colour">
         {#each CLIP_LABELS as col}
@@ -1106,6 +1141,20 @@
 {/if}
 
 <style>
+  .kdot {
+    position: absolute;
+    bottom: 2px;
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+    background: var(--accent);
+    transform: rotate(45deg);
+    pointer-events: none;
+  }
+  .badge.cmp {
+    background: var(--accent);
+    color: #000;
+  }
   .wrap {
     height: 100%;
     display: flex;
@@ -1236,6 +1285,18 @@
   .tick span {
     position: relative;
     top: -10px;
+  }
+  .beat {
+    position: absolute;
+    bottom: 0;
+    height: 5px;
+    border-left: 1px solid var(--accent);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .beat.down {
+    height: 9px;
+    opacity: 0.95;
   }
   .g-head {
     color: var(--text-2);

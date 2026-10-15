@@ -1,4 +1,5 @@
 import type { MoshCodec } from './bitstream';
+import type { Keys, Ramp } from './keys';
 
 export type FrameType = 'I' | 'P' | 'B' | 'S' | '?';
 
@@ -23,9 +24,23 @@ export interface Frame {
   file?: string;
 }
 
+/** What's inside a compound clip: a timeline of its own (media is shared with the project). */
+export interface Sequence {
+  clips: Clip[];
+  tracks: Track[];
+  texts: TextClip[];
+  effects: EffectInstance[];
+  markers?: Marker[];
+  /** the compound's own mosh effects are rendered into it */
+  moshInside?: boolean;
+}
+
 export type ClipSource =
-  | { kind: 'file'; fileId: string; name: string; mime: string; isImage: boolean; ext: string }
-  | { kind: 'generator'; generator: string; name: string };
+  /** `compound`: the file is the rendered sequence (re-rendered when it's edited) */
+  | { kind: 'file'; fileId: string; name: string; mime: string; isImage: boolean; ext: string; compound?: Sequence; stale?: boolean }
+  | { kind: 'generator'; generator: string; name: string }
+  /** adjustment layer: no picture, applies its colour and look to everything below it */
+  | { kind: 'adjust'; name: string };
 
 export type FitMode = 'fit' | 'fill' | 'stretch';
 
@@ -59,6 +74,26 @@ export interface Grade {
   gamma: number;
   /** degrees */
   hue: number;
+  /** id of an imported .cube LUT, and how much of it (0..1) */
+  lut?: string;
+  lutAmount?: number;
+}
+
+/** Green / blue screen: pixels near `color` become transparent. */
+export interface ChromaKey {
+  color: string;
+  /** 0..1: how far from the colour still counts */
+  similarity: number;
+  /** 0..1: soft edge */
+  blend: number;
+  /** remove the colour's spill from the edges */
+  spill: boolean;
+}
+
+/** An imported look-up table. */
+export interface LutRef {
+  id: string;
+  name: string;
 }
 
 export type BlendMode = 'normal' | 'screen' | 'add' | 'multiply' | 'difference';
@@ -143,6 +178,16 @@ export interface Clip {
   /** video fades (to black on the main track, to transparent on upper tracks), seconds */
   vfadeIn?: number;
   vfadeOut?: number;
+  /** animated position / zoom / rotation / opacity (clip-local seconds) */
+  keys?: Keys;
+  /** speed ramp: speed over the clip (replaces `speed`) */
+  ramp?: Ramp;
+  /** chroma key (upper video tracks) */
+  key?: ChromaKey;
+  /** tracked objects: [source seconds, centre x 0..1, centre y 0..1] */
+  paths?: { id: string; name: string; pts: [number, number, number][] }[];
+  /** stabilization: corrections over source seconds (shift as shares of the frame, rotation in °), and the zoom that hides the edges */
+  stab?: { x: [number, number][]; y: [number, number][]; r: [number, number][]; zoom: number };
 }
 
 /** A marker on the timeline ruler. */
@@ -187,6 +232,14 @@ export interface TextClip {
   fade: number;
   /** burn into the video before moshing so the text melts too */
   moshed: boolean;
+  /** made by auto captions */
+  caption?: boolean;
+  /** word timings (seconds from the title's start), for word-by-word highlighting */
+  words?: { t0: number; t1: number; text: string }[];
+  /** colour of the word being spoken */
+  highlight?: string;
+  /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
+  follow?: [number, number, number][];
 }
 
 export type Aspect = 'auto' | '16:9' | '4:3' | '1:1' | '9:16' | '4:5' | '21:9';
@@ -213,6 +266,10 @@ export interface EncoderSettings {
   /** extra forced keyframes (frame numbers) */
   keyMarkers: number[];
   previewWidth: number;
+  /** feedback: mosh the result again this many times (1 = once) */
+  generations?: number;
+  /** quality steps lost on each extra generation */
+  genCrush?: number;
 }
 
 export interface DecoderSettings {
@@ -226,9 +283,18 @@ export interface DecoderSettings {
 export type AutoInterp = 'linear' | 'smooth' | 'step';
 export type LfoShape = 'sine' | 'triangle' | 'square' | 'saw' | 'random' | 'noise';
 
+export type AudioBand = 'low' | 'mid' | 'high' | 'full' | 'onset' | 'beat';
+
 export type Automation =
   | { kind: 'curve'; points: [number, number][]; interp: AutoInterp }
-  | { kind: 'lfo'; shape: LfoShape; rate: number; min: number; max: number; phase: number };
+  | { kind: 'lfo'; shape: LfoShape; rate: number; min: number; max: number; phase: number }
+  /**
+   * follows the music: `track` is 'auto' (the music track), 'mix' (everything) or an audio track
+   * id; attack / release in frames, threshold 0..1
+   */
+  | { kind: 'audio'; track: string; band: AudioBand; min: number; max: number; attack: number; release: number; threshold: number }
+  /** one value per frame of the effect's range (audio automation, worked out at render time) */
+  | { kind: 'samples'; values: number[]; min: number };
 
 export type ParamValue = number | boolean | string;
 
@@ -247,6 +313,8 @@ export interface EffectInstance {
   params: Record<string, ParamValue>;
   auto: Record<string, Automation>;
   locks: string[];
+  /** structured settings that aren't single values (sequencer patterns, painted strokes…) */
+  data?: Record<string, unknown>;
 }
 
 export interface AudioSettings {
@@ -272,6 +340,12 @@ export interface Project {
   audio: AudioSettings;
   globalSeed: number;
   markers?: Marker[];
+  /** the Chaos dial: 0 calm .. 1 as authored .. 2 destroyed */
+  chaos?: number;
+  /** where beats come from for beat-triggered effects: 'auto' (the music track), 'mix' or a track id */
+  beatSource?: string;
+  /** imported LUTs (the files are kept with the media) */
+  luts?: LutRef[];
 }
 
 export const defaultEncoder = (): EncoderSettings => ({
@@ -320,7 +394,7 @@ export const identityGrade = (): Grade => ({ brightness: 0, contrast: 1, saturat
 export const transformOf = (c: Pick<Clip, 'transform'>): Transform => ({ ...identityTransform(), ...(c.transform ?? {}) });
 export const gradeOf = (c: Pick<Clip, 'grade'>): Grade => ({ ...identityGrade(), ...(c.grade ?? {}) });
 export const isIdentityTransform = (t: Transform) => t.zoom === 1 && !t.x && !t.y && !t.rotate && !t.flipH && !t.flipV && !t.cropL && !t.cropR && !t.cropT && !t.cropB;
-export const isIdentityGrade = (g: Grade) => !g.brightness && g.contrast === 1 && g.saturation === 1 && g.gamma === 1 && !g.hue;
+export const isIdentityGrade = (g: Grade) => !g.brightness && g.contrast === 1 && g.saturation === 1 && g.gamma === 1 && !g.hue && !(g.lut && (g.lutAmount ?? 1) > 0);
 export const clipOn = (c: Pick<Clip, 'enabled'>) => c.enabled !== false;
 export const CLIP_AUDIO = 'a0';
 

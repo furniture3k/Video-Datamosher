@@ -1,9 +1,14 @@
 <script lang="ts">
-  import { untrack, onDestroy } from 'svelte';
+  import { untrack, onDestroy, onMount } from 'svelte';
   import { store, type CompareMode } from '../lib/store.svelte';
   import { loadExample } from '../lib/media';
   import Icon from './Icon.svelte';
-  import { originalFrames, moshedAudio, type RenderResult } from '../lib/renderer';
+  import { originalFrames, renderPreview, moshedAudio, type RenderResult } from '../lib/renderer';
+  import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
+  import { lutState } from '../lib/luts.svelte';
+  import Scopes from './Scopes.svelte';
+  import { trackClip } from '../lib/motion.svelte';
+  import { rasterizeField, type Stroke } from '../engine/flowfield';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
@@ -11,6 +16,7 @@
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
   import { tc, parseTimecode } from '../lib/timecode';
+  import { outputSize } from '../engine/args';
 
   let canvas: HTMLCanvasElement;
   let editCanvas: HTMLCanvasElement;
@@ -138,6 +144,7 @@
     void JSON.stringify(store.project.texts);
     void store.project.media.length;
     void store.project.encoder.aspect;
+    void lutState.loaded;
     if (!mosh && !store.ui.playing) untrack(drawEdit);
   });
   $effect(() => {
@@ -148,17 +155,44 @@
     editAudio.dispose();
   });
 
+  /** A snapshot's mosh, one picture per timeline frame (so it lines up with the current render). */
+  async function snapshotFrames(p: Project, width: number): Promise<Uint8Array[]> {
+    const r = await renderPreview(p, width);
+    const out: Uint8Array[] = [];
+    r.frames.forEach((f, i) => {
+      const pos = f.at ?? f.src;
+      out[pos] ??= r.jpegs[i];
+    });
+    // fill holes (dropped frames) with the picture before
+    for (let i = 0; i < out.length; i++) out[i] ??= out[i - 1] ?? r.jpegs[0];
+    return out;
+  }
+  const cmpName = $derived(store.ui.compareSnap ? (snapshots.list.find((s) => s.id === store.ui.compareSnap)?.name ?? 'snapshot') : 'source');
+  onMount(() => {
+    setFrameGrabber(() => {
+      const src = mosh ? canvas : editCanvas;
+      if (!src?.width) return '';
+      const c = document.createElement('canvas');
+      c.width = 192;
+      c.height = Math.max(1, Math.round((src.height * 192) / src.width));
+      c.getContext('2d')!.drawImage(src, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.7);
+    });
+    return () => setFrameGrabber(null);
+  });
+
   // ---- originals for A/B ----
   $effect(() => {
     const mode = store.ui.compare;
     const r = store.render;
     if (mode === 'off' || !r) return;
     const p = $state.snapshot(store.project) as Project;
-    const key = JSON.stringify([p.clips, p.encoder]);
+    const snap = store.ui.compareSnap ? snapshots.list.find((s) => s.id === store.ui.compareSnap) : null;
+    const key = snap ? 'snap:' + snap.id + ':' + p.encoder.previewWidth : JSON.stringify([p.clips, p.encoder]);
     if (key === origKey) return;
     origKey = key;
     loadingOrig = true;
-    originalFrames(p, p.encoder.previewWidth)
+    (snap ? snapshotFrames(snap.project, p.encoder.previewWidth) : originalFrames(p, p.encoder.previewWidth))
       .then((o) => (originals = o))
       .catch((e) => store.toast('Compare failed: ' + e.message, 'error'))
       .finally(() => (loadingOrig = false));
@@ -390,6 +424,131 @@
     (mosh ? canvas : editCanvas).toBlob((b) => b && download(b, `${store.project.name.replace(/[^\w-]+/g, '_')}_${mosh ? 'frame' + store.ui.playhead : 't' + store.ui.time.toFixed(2)}.png`), 'image/png');
   }
 
+  /** Pointer position as a share of the picture on screen (whichever canvas is shown). */
+  function pictureUV(e: { clientX: number; clientY: number }): [number, number] {
+    const shown = mosh ? canvas : editCanvas;
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    return [(e.clientX - (rc.left + (rc.width - shown.width * k) / 2)) / (shown.width * k), (e.clientY - (rc.top + (rc.height - shown.height * k) / 2)) / (shown.height * k)];
+  }
+  // ---- flow painting
+  const paintFx = $derived(store.ui.paintEffect ? store.project.effects.find((x) => x.id === store.ui.paintEffect && (x.type === 'flowPaint' || x.type === 'mvedit')) : undefined);
+  let liveStroke = $state<[number, number][]>([]);
+  /** The picture's box inside the stage, in stage pixels. */
+  function pictureBox() {
+    const shown = mosh ? canvas : editCanvas;
+    const sr = wrap.getBoundingClientRect();
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    const w = shown.width * k;
+    const h = shown.height * k;
+    return { left: rc.left - sr.left + (rc.width - w) / 2, top: rc.top - sr.top + (rc.height - h) / 2, width: w, height: h };
+  }
+  function paintStroke(e: PointerEvent) {
+    const fx = paintFx;
+    if (!fx) return;
+    const pts: [number, number][] = [pictureUV(e)];
+    liveStroke = pts;
+    const move = (ev: PointerEvent) => {
+      const p = pictureUV(ev);
+      const l = pts[pts.length - 1];
+      if (Math.hypot(p[0] - l[0], p[1] - l[1]) <= 0.008) return;
+      pts.push(p);
+      liveStroke = [...pts];
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      liveStroke = [];
+      const b = store.ui.brush;
+      const stroke = { tool: b.tool, pts: pts.map(([x, y]) => [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]), radius: b.radius, strength: b.strength };
+      const id = fx.id;
+      store.edit((p) => {
+        const x = p.effects.find((y) => y.id === id);
+        if (x) x.data = { ...(x.data ?? {}), strokes: [...((x.data?.strokes as unknown[]) ?? []), stroke] };
+      });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+  /** Arrows showing the painted field. */
+  const fieldArrows = $derived.by(() => {
+    if (!paintFx) return [];
+    const strokes = (paintFx.data?.strokes as Stroke[] | undefined) ?? [];
+    const { w, h } = outputSize(store.project, store.project.encoder.previewWidth);
+    const gw = 24;
+    const gh = Math.max(4, Math.round((24 * h) / w));
+    const f = rasterizeField(strokes, gw, gh, w / h);
+    // drawn to scale with each other, the strongest one grid cell long
+    let max = 0;
+    for (let k = 0; k < f.length; k += 2) max = Math.max(max, Math.hypot(f[k], f[k + 1]));
+    const out: { x: number; y: number; dx: number; dy: number }[] = [];
+    if (max < 1e-5) return out;
+    const s = 0.9 / gw / max;
+    for (let j = 0; j < gh; j++)
+      for (let i = 0; i < gw; i++) {
+        const k = (j * gw + i) * 2;
+        if (Math.hypot(f[k], f[k + 1]) < max * 0.05) continue;
+        out.push({ x: (i + 0.5) / gw, y: (j + 0.5) / gh, dx: f[k] * s, dy: ((f[k + 1] * w) / h) * s });
+      }
+    return out;
+  });
+
+  /** The box being drawn around something to track, in stage pixels. */
+  let trackRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+  function drawTrackBox(e: PointerEvent) {
+    const id = store.ui.trackPick;
+    if (!id) return;
+    const sr = wrap.getBoundingClientRect();
+    const a = pictureUV(e);
+    const x0 = e.clientX - sr.left;
+    const y0 = e.clientY - sr.top;
+    trackRect = { x: x0, y: y0, w: 0, h: 0 };
+    const move = (ev: PointerEvent) => {
+      const x1 = ev.clientX - sr.left;
+      const y1 = ev.clientY - sr.top;
+      trackRect = { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      const b = pictureUV(ev);
+      trackRect = null;
+      store.ui.trackPick = null;
+      if (Math.abs(b[0] - a[0]) < 0.01 || Math.abs(b[1] - a[1]) < 0.01) return store.toast('Drag a box around the thing to follow.', 'error');
+      trackClip(id, [a[0], a[1], b[0], b[1]]).catch((err) => store.toast('Tracking failed: ' + (err as Error).message, 'error'));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+
+  /** Eyedropper: the colour under the pointer in the live edit picture (drawn without keys). */
+  function pickKeyColour(e: PointerEvent) {
+    const id = store.selectedClip?.id;
+    store.ui.eyedropper = false;
+    if (!id || !editCanvas) return;
+    preview ??= new EditPreview(editCanvas);
+    preview.noKey = true;
+    preview.draw(store.project, store.ui.time, false);
+    preview.noKey = false;
+    // measure against whichever picture is on screen (same shape), then map into the edit canvas
+    const shown = mosh ? canvas : editCanvas;
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    const u = (e.clientX - (rc.left + (rc.width - shown.width * k) / 2)) / (shown.width * k);
+    const v = (e.clientY - (rc.top + (rc.height - shown.height * k) / 2)) / (shown.height * k);
+    const x = Math.floor(u * editCanvas.width);
+    const y = Math.floor(v * editCanvas.height);
+    if (x < 0 || y < 0 || x >= editCanvas.width || y >= editCanvas.height) return;
+    const [r, g, b] = editCanvas.getContext('2d')!.getImageData(x, y, 1, 1).data;
+    const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+    store.edit((p) => {
+      const c = p.clips.find((x) => x.id === id);
+      if (c) c.key = { ...(c.key ?? { similarity: 0.25, blend: 0.08, spill: true }), color: hex };
+    });
+    store.toast(`Key colour ${hex}`, 'ok', 1500);
+  }
+
   let draggingSplit = false;
   function splitMove(e: PointerEvent) {
     if (!draggingSplit) return;
@@ -413,6 +572,7 @@
     ['edit', 'Edit', 'Always show the live edit preview (no mosh, instant)'],
     ['mosh', 'Mosh', 'Always show the last rendered mosh'],
   ];
+  const guideSize = $derived(outputSize(store.project, store.project.encoder.previewWidth));
   const hasTimeline = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
 </script>
 
@@ -420,9 +580,13 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stage"
+    class:picking={store.ui.eyedropper || !!store.ui.trackPick || !!paintFx}
     bind:this={wrap}
     onpointerdown={(e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
+      if (store.ui.eyedropper) return pickKeyColour(e);
+      if (store.ui.trackPick) return drawTrackBox(e);
+      if (paintFx) return paintStroke(e);
       if (store.ui.compare === 'split') {
         draggingSplit = true;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -437,6 +601,41 @@
     {/if}
     <canvas bind:this={canvas} class:hidden={!mosh} class:split={store.ui.compare === 'split'}></canvas>
     <canvas bind:this={editCanvas} class="edit" class:hidden={mosh || !hasTimeline}></canvas>
+    {#if paintFx && hasTimeline}
+      {@const pb = pictureBox()}
+      <svg class="paintlayer" style="left:{pb.left}px;top:{pb.top}px;width:{pb.width}px;height:{pb.height}px" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+        {#each fieldArrows as a}
+          <line x1={a.x} y1={a.y} x2={a.x + a.dx} y2={a.y + a.dy} class="arrow" />
+        {/each}
+        {#if liveStroke.length > 1}<polyline points={liveStroke.map(([x, y]) => `${x},${y}`).join(' ')} class="stroke" />{/if}
+      </svg>
+      <div class="stage-note mono picknote">painting {store.ui.brush.tool}: drag on the picture · Esc to stop</div>
+    {/if}
+    {#if trackRect}
+      <div class="trackbox" style="left:{trackRect.x}px;top:{trackRect.y}px;width:{trackRect.w}px;height:{trackRect.h}px"></div>
+    {/if}
+    {#if store.ui.trackPick && !trackRect}
+      <div class="stage-note mono picknote">drag a box around what to follow</div>
+    {/if}
+    {#if store.ui.scopes && hasTimeline}
+      <Scopes source={() => (mosh ? canvas : editCanvas)} />
+    {/if}
+    {#if store.ui.guides && hasTimeline}
+      {@const g = guideSize}
+      <svg class="guides" viewBox="0 0 {g.w} {g.h}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        {#if store.ui.guides === 'vertical'}
+          <!-- where TikTok / Reels / Shorts put their buttons, captions and header -->
+          <rect x={g.w * 0.06} y={g.h * 0.08} width={g.w * 0.78} height={g.h * 0.66} class="safe" />
+          <rect x="0" y={g.h * 0.78} width={g.w} height={g.h * 0.22} class="cover" />
+          <rect x={g.w * 0.86} y={g.h * 0.35} width={g.w * 0.14} height={g.h * 0.43} class="cover" />
+          <text x={g.w * 0.07} y={g.h * 0.08 + g.h * 0.03} class="gt" font-size={g.h * 0.022}>safe for text</text>
+        {:else}
+          <!-- the profile grid shows the middle 3:4 of a feed post -->
+          <rect x={(g.w - (g.h * 3) / 4) / 2} y="0" width={(g.h * 3) / 4} height={g.h} class="safe" />
+          <text x={(g.w - (g.h * 3) / 4) / 2 + g.h * 0.02} y={g.h * 0.05} class="gt" font-size={g.h * 0.03}>profile grid</text>
+        {/if}
+      </svg>
+    {/if}
     {#if hasTimeline}
       <div class="badge-view mono" class:live={!mosh} title={mosh ? 'Showing the rendered mosh' : 'Live edit preview: your cut as it is, before moshing'}>
         {#if mosh}mosh{:else}edit{#if store.status.busy || store.status.pending}<span class="faint"> · mosh rendering</span>{:else if store.render && !store.renderFresh && !store.ui.autoRender}<span class="faint"> · mosh out of date</span>{/if}{/if}
@@ -458,7 +657,7 @@
       <div class="stage-note mono">{store.status.stage || 'Working'} {Math.round(store.status.progress * 100)}%</div>
     {:else if store.ui.compare !== 'off' && mosh}
       <div class="stage-note mono">
-        {#if loadingOrig}loading source{:else if store.ui.compare === 'split'}source | mosh{:else if store.ui.compare === 'side'}source | mosh{:else}source{/if}
+        {#if loadingOrig}loading {cmpName}{:else if store.ui.compare === 'split' || store.ui.compare === 'side'}{cmpName} | mosh{:else}{cmpName}{/if}
       </div>
     {/if}
     {#if store.status.error}
@@ -526,6 +725,7 @@
         {/each}
       </div>
       <span class="divider"></span>
+      <button class="icon ghost" class:on={store.ui.scopes} title="Scopes: waveform, parade, vectorscope, histogram  Shift S" aria-label="Scopes" disabled={!hasTimeline} onclick={() => (store.ui.scopes = !store.ui.scopes)}><Icon name="grid" /></button>
       <button class="icon ghost" title="Save this frame as PNG" aria-label="Save frame" disabled={!hasTimeline} onclick={snapshot}><Icon name="still" /></button>
       <button class="icon ghost render-btn" title="Render now  Enter" aria-label="Render now" disabled={!hasTimeline} onclick={() => store.doRender(true)}><Icon name="render" /></button>
     </div>
@@ -554,6 +754,60 @@
     width: calc(100% - 24px);
     height: calc(100% - 24px);
     object-fit: contain;
+  }
+  .guides {
+    position: absolute;
+    inset: 12px;
+    width: calc(100% - 24px);
+    height: calc(100% - 24px);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .guides .safe {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.75);
+    stroke-width: 1.5px;
+    stroke-dasharray: 6px 5px;
+    vector-effect: non-scaling-stroke;
+  }
+  .guides .cover {
+    fill: rgba(255, 60, 60, 0.18);
+  }
+  .guides .gt {
+    fill: rgba(255, 255, 255, 0.8);
+    font-family: var(--mono, monospace);
+  }
+  .paintlayer {
+    position: absolute;
+    pointer-events: none;
+    z-index: 3;
+    overflow: visible;
+  }
+  .paintlayer .arrow {
+    stroke: rgba(126, 196, 224, 0.9);
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+  }
+  .paintlayer .stroke {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3px;
+    vector-effect: non-scaling-stroke;
+  }
+  .trackbox {
+    position: absolute;
+    border: 1.5px solid var(--accent);
+    background: rgba(255, 255, 255, 0.06);
+    pointer-events: none;
+    z-index: 3;
+  }
+  .picknote {
+    top: auto;
+    bottom: 8px;
+  }
+  .stage.picking {
+    cursor: crosshair;
   }
   canvas.split {
     cursor: ew-resize;

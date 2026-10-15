@@ -1,6 +1,7 @@
 import { EFFECTS, defaultParams, type ParamDef } from './effects';
 import type { EffectInstance, EncoderSettings, ParamValue, Project, Automation } from './types';
 import { makeRng, randomSeed, type Rng } from './rng';
+import { randomSteps } from './effects/bend';
 
 /** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -33,6 +34,28 @@ export interface Preset {
 }
 
 export const PRESETS: Preset[] = [
+  {
+    id: 'melttheworld',
+    name: 'Melt the World',
+    description: 'Everything melts and blooms, except the people: they stay sharp in the middle of it. Needs footage with people in it.',
+    encoder: { gop: 600 },
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'bloom', start: 0.15, end: 0.85, params: { target: 'every', interval: 3 } },
+      { type: 'mask', start: 0, end: 1, params: { source: 'person', keep: 'subject', feather: 0.02, expand: 0.06 } },
+    ],
+  },
+  {
+    id: 'ghostwalker',
+    name: 'Ghost Walker',
+    description: 'Only the people smear and leave trails; the world around them stays clean.',
+    encoder: { gop: 600 },
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'echo', start: 0, end: 1, params: { delay: 4, probability: 0.9, taps: 3 } },
+      { type: 'mask', start: 0, end: 1, params: { source: 'person', keep: 'background', feather: 0.03 } },
+    ],
+  },
   {
     id: 'melt',
     name: 'Classic Melt',
@@ -273,6 +296,9 @@ const CHAOS_WEIGHTS: [string, number][] = [
   ['vectorWarp', 2],
   ['chroma', 1],
   ['pixelSort', 0.5],
+  ['sequence', 1.5],
+  ['databend', 1],
+  ['rawbend', 0.7],
 ];
 
 function weightedPick(rng: Rng): string {
@@ -298,6 +324,7 @@ export function chaos(project: Project, total: number, seed = randomSeed(), inte
     const start = rng.int(0, Math.max(0, total - len));
     let e = makeEffect(type, start, start + len, {}, rng.int(0, 1e9));
     e = randomizeEffect(e, rng, total);
+    if (type === 'sequence') e.data = { steps: randomSteps(rng, rng.pick([4, 8, 8, 16])) };
     if (type === 'glitch') e.params.amount = Math.round(rng.range(0.5, 2 + intensity * 8) * 10) / 10;
     if (type === 'bloom' && e.params.length === 'count' && rng.chance(0.3)) e.auto.repeats = { kind: 'lfo', shape: rng.pick(['sine', 'random', 'triangle'] as const), rate: rng.int(1, 6), min: 1, max: Math.round(10 + 50 * intensity), phase: rng() };
     effects.push(e);
@@ -332,4 +359,76 @@ export function mutate(project: Project, total: number, amount = 0.2, seed = ran
     return { ...e, params, start, end, seed: e.locks.includes('__seed') ? e.seed : rng.int(0, 1e9) };
   });
   return { ...project, effects };
+}
+
+// ---------- breeding ----------
+
+/** Encoder settings that are about the format, not the look: always the base project's. */
+const FORMAT_KEYS = new Set(['width', 'aspect', 'fps', 'previewWidth', 'keyMarkers', 'codec']);
+
+/**
+ * Cross two or more projects' effect stacks into a child (genetic crossover), then nudge it
+ * a little. Effects of the same type in about the same place count as the same "gene": the child
+ * gets each gene with the share of parents that have it, with settings mixed between them.
+ * The first parent supplies the timeline, format and pinned effects.
+ */
+export function breed(parents: Project[], total: number, seed = randomSeed(), mutation = 0.12): Project {
+  const base = parents[0];
+  if (parents.length < 2) return mutate(base, total, mutation, seed);
+  const rng = makeRng(seed);
+  const near = Math.max(1, total * 0.25);
+  const mid = (e: EffectInstance) => (e.start + e.end) / 2;
+  type Gene = { type: string; members: { e: EffectInstance; parent: number }[] };
+  const genes: Gene[] = [];
+  parents.forEach((p, pi) => {
+    for (const e of p.effects) {
+      if (!EFFECTS[e.type] || e.locks.includes('__keep')) continue;
+      const g = genes.find((g) => g.type === e.type && !g.members.some((m) => m.parent === pi) && Math.abs(mid(g.members[0].e) - mid(e)) <= near);
+      if (g) g.members.push({ e, parent: pi });
+      else genes.push({ type: e.type, members: [{ e, parent: pi }] });
+    }
+  });
+  const effects: EffectInstance[] = base.effects.filter((e) => e.locks.includes('__keep'));
+  const chosen = genes.filter((g) => g.members.length === parents.length || rng.chance(g.members.length / parents.length));
+  if (!chosen.length && genes.length) chosen.push(genes.reduce((a, g) => (g.members.length > a.members.length ? g : a)));
+  for (const g of chosen) {
+    const a = rng.pick(g.members).e;
+    const b = rng.pick(g.members).e;
+    const w = rng();
+    const mix = (x: number, y: number) => x + (y - x) * w;
+    const def = EFFECTS[g.type];
+    const params = { ...a.params };
+    for (const d of def.params) {
+      const va = a.params[d.key];
+      const vb = b.params[d.key];
+      if ((d.type === 'number' || d.type === 'int') && typeof va === 'number' && typeof vb === 'number') {
+        const v = mix(va, vb);
+        params[d.key] = d.type === 'int' ? Math.round(v) : Math.round(v / (d.step ?? 0.01)) * (d.step ?? 0.01);
+      } else if (vb !== undefined && rng.chance(0.5)) params[d.key] = vb;
+    }
+    const auto = { ...a.auto };
+    for (const [k, v] of Object.entries(b.auto ?? {})) if (!(k in auto) || rng.chance(0.5)) auto[k] = v;
+    const start = Math.max(0, Math.min(total - 1, Math.round(mix(a.start, b.start))));
+    const end = Math.max(start + 1, Math.min(total, Math.round(mix(a.end, b.end))));
+    effects.push({ ...a, id: uid(), params, auto, start, end, seed: rng.chance(0.5) ? a.seed : b.seed, locks: [...new Set([...a.locks, ...b.locks])], solo: false, enabled: true });
+  }
+  // the order of a stack matters (Keyframe Killer under the rest): sort genes by their order in the parents
+  const rank = (e: EffectInstance) => Math.min(...parents.map((p) => (p.effects.findIndex((x) => x.type === e.type) + 1 || 99) / Math.max(1, p.effects.length)));
+  const pinned = effects.filter((e) => e.locks.includes('__keep'));
+  const rest = effects.filter((e) => !e.locks.includes('__keep')).sort((x, y) => rank(x) - rank(y));
+  const pick = <T,>(xs: T[]) => rng.pick(xs);
+  const enc = { ...base.encoder } as Record<string, unknown>;
+  for (const k of Object.keys(enc)) if (!FORMAT_KEYS.has(k)) enc[k] = (pick(parents).encoder as unknown as Record<string, unknown>)[k];
+  const chaosOf = pick(parents).chaos;
+  const child: Project = {
+    ...base,
+    effects: [...pinned, ...rest],
+    encoder: enc as unknown as Project['encoder'],
+    decoder: { ...pick(parents).decoder },
+    audio: { ...pick(parents).audio },
+    globalSeed: pick(parents).globalSeed,
+  };
+  if (chaosOf === undefined) delete child.chaos;
+  else child.chaos = chaosOf;
+  return mutation > 0 ? mutate(child, total, mutation, rng.int(0, 1e9)) : child;
 }

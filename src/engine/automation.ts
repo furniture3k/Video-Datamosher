@@ -15,6 +15,9 @@ function noise1(x: number, seed: number): number {
 /** Evaluate an automation at normalised time t (0..1 across the effect range). */
 export function evalAutomation(a: Automation, t: number, seed = 0): number {
   t = clamp01(t);
+  if (a.kind === 'samples') return a.values.length ? a.values[Math.min(a.values.length - 1, Math.round(t * (a.values.length - 1)))] : a.min;
+  // audio automation is turned into samples before rendering; without the music it rests at min
+  if (a.kind === 'audio') return a.min;
   if (a.kind === 'curve') {
     const pts = [...a.points].sort((p, q) => p[0] - q[0]);
     if (pts.length === 0) return 0;

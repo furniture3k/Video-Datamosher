@@ -12,6 +12,12 @@
   import Inspector from './components/Inspector.svelte';
   import Toasts from './components/Toasts.svelte';
   import PresetsDialog from './dialogs/PresetsDialog.svelte';
+  import SnapshotsDialog from './dialogs/SnapshotsDialog.svelte';
+  import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
+  import BakeDialog from './dialogs/BakeDialog.svelte';
+  import CompoundDialog from './dialogs/CompoundDialog.svelte';
+  import CaptionsDialog from './dialogs/CaptionsDialog.svelte';
+  import { takeSnapshot } from './lib/snapshots.svelte';
   import ExportDialog from './dialogs/ExportDialog.svelte';
   import VariationsDialog from './dialogs/VariationsDialog.svelte';
   import HelpDialog from './dialogs/HelpDialog.svelte';
@@ -46,6 +52,7 @@
 
   function runChaos() {
     if (!store.project.clips.length) return store.toast('Add a clip first.');
+    if (store.project.effects.length) takeSnapshot('Before Randomize', true);
     store.set(chaos($state.snapshot(store.project) as never, store.totalFrames, randomSeed(), store.ui.chaosIntensity));
     
   }
@@ -84,7 +91,8 @@
     }
     if (mod && k === 's') {
       e.preventDefault();
-      saveProjectFile();
+      if (e.shiftKey) takeSnapshot().then((s) => store.toast(s ? `Saved ${s.name}.` : 'Nothing to save yet.', s ? 'ok' : 'error'));
+      else saveProjectFile();
       return;
     }
     if (inField(e)) return;
@@ -112,7 +120,8 @@
     }
     if (mod) return;
     if (e.key === 'Escape') {
-      if (store.ui.dialog) store.ui.dialog = null;
+      if (store.ui.trackPick || store.ui.eyedropper || store.ui.paintEffect) ((store.ui.trackPick = null), (store.ui.eyedropper = false), (store.ui.paintEffect = null));
+      else if (store.ui.dialog) store.ui.dialog = null;
       else if (store.ui.tool !== 'select') store.ui.tool = 'select';
       else if (store.ui.selectedClips.length || store.ui.selectedTransition) {
         store.ui.selectedClips = [];
@@ -203,7 +212,8 @@
         store.ui.tool = 'trim';
         break;
       case 's':
-        edit.splitAtPlayhead();
+        if (sh) store.ui.scopes = !store.ui.scopes;
+        else edit.splitAtPlayhead();
         break;
       case 'm':
         edit.toggleMarker();
@@ -242,6 +252,17 @@
       case 'u':
         runMutate();
         break;
+      case 'g':
+        // a Frame Sequencer at the playhead
+        if (store.project.clips.length) store.addEffect('sequence');
+        break;
+      case 'q': {
+        // Chaos dial: Q wilder, Shift+Q calmer
+        const v = Math.round(Math.min(2, Math.max(0, (store.project.chaos ?? 1) + (sh ? -0.25 : 0.25))) * 20) / 20;
+        store.edit((p) => (v === 1 ? delete p.chaos : (p.chaos = v)), 'chaos');
+        store.toast(`Chaos ${Math.round(v * 100)}%`);
+        break;
+      }
       case 'c':
         store.ui.compare = store.ui.compare === 'off' ? 'split' : 'off';
         break;
@@ -336,6 +357,11 @@
 </div>
 
 {#if store.ui.dialog === 'presets'}<PresetsDialog />{/if}
+{#if store.ui.dialog === 'snapshots'}<SnapshotsDialog />{/if}
+{#if store.ui.dialog === 'beatEdit'}<BeatEditDialog />{/if}
+{#if store.ui.dialog === 'bake'}<BakeDialog />{/if}
+{#if store.ui.dialog === 'compound'}<CompoundDialog />{/if}
+{#if store.ui.dialog === 'captions'}<CaptionsDialog />{/if}
 {#if store.ui.dialog === 'export'}<ExportDialog />{/if}
 {#if store.ui.dialog === 'variations'}<VariationsDialog />{/if}
 {#if store.ui.dialog === 'help'}<HelpDialog />{/if}

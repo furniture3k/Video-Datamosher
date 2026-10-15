@@ -66,13 +66,16 @@ Bitstream effects change the compressed video itself. The decoder then reconstru
 |---|---|---|
 | `KEY` | Keyframe Killer | Removes I-frames, so motion after a cut lands on the previous image. All, at cuts only, random, or every Nth. |
 | `BLM` | Bloom | Repeats a P-frame so the same motion piles up. First, strongest, every Nth or random frame; each bloom fills its bar (drag the bar to set the length) or repeats a fixed number of times. |
-| `XFR` | Motion Transfer | Takes motion from elsewhere on the timeline and applies it here. |
+| `XFR` | Motion Transfer | Takes motion from elsewhere on the timeline, or from a **motion pack** (Drift, Fall, Vortex, Tunnel, Implode, Shake, Ripple, Life: generated on the spot), and applies it here. |
 | `STU` | Stutter Loop | Loops short groups of motion frames, optionally ping-pong. |
 | `SHF` | Shuffle | Reorders motion frames inside small windows. |
 | `REV` | Reverse Motion | Plays motion frames backwards. |
 | `ECH` | Echo | Re-inserts motion from a few frames back. |
 | `DRP` | Frame Drop | Drops every Nth or random frames. |
 | `GLT` | Byte Glitch | Corrupts frame data: 11 modes including bit flips, runs, swaps, bit-shifts, inserts and deletes. |
+| `SEQ` | Frame Sequencer | A drum machine for frames: draw a looping pattern of Bloom, Echo, Reverse, Melt and Glitch steps (<kbd>G</kbd> adds one). |
+| `DBD` | Databend | Runs an audio effect (echo, reverb, phaser, bitcrush, reverse, amplify) over the compressed frame data. |
+| `MVX` | Vector Edit | Rewrites the motion vectors inside the compressed frames: amplify, turn, swap, drift, jitter, quantise, or paint them with the brush (Xvid codec). |
 
 Picture effects run on the decoded frames:
 
@@ -81,10 +84,13 @@ Picture effects run on the decoded frames:
 | `WRP` | Vector Warp | Estimates motion on the GPU and lets you bend it: amplify, rotate, swap axes, drift, turbulence, quantise. |
 | `CHR` | Chroma Drift | Offsets the colour channels, with jitter and line tearing. |
 | `SRT` | Pixel Sort | Sorts runs of pixels by brightness. |
+| `RAW` | Raw Bend | The Audacity trick on the picture: the RGB values go through echo, reverb, phaser, bitcrush, reverse or amplify. |
+| `PNT` | Flow Paint | Paint on the player where the picture should flow (push, swirl, pinch, bulge) and it smears along the strokes. |
+| `SUB` | Subject Guard | Keeps people (found by a small on-device model), a tracked object, the bright or dark parts, or a colour clean while everything else moshes. Or the reverse. |
 
 Effects that repeat or insert frames (Bloom, Stutter, Echo, Motion Transfer's insert mode, Frame Drop) have a **Timing** setting. **Keep length** (the default) makes the repeats replace the frames after them, so the effect lasts exactly as long as its bar and the picture, the sound and the playhead stay in sync. **Stretch** inserts them instead, so the video gets longer (slow, syrupy melts). Every setting has a description underneath it; the **?** button in the Inspector hides them.
 
-There are 19 presets to start from, and you can save your own.
+There are 21 presets to start from, and you can save your own.
 
 ## Editing
 
@@ -92,6 +98,16 @@ There are 19 presets to start from, and you can save your own.
 - **Magnetic main track.** Clips butt up against each other, so deleting or trimming one closes the gap. Drag to reorder, drag edges to trim (ripple), split, duplicate, copy and paste. Speed (0.05–16×), reverse, freeze frames and fit per clip.
 - **Video tracks on top.** Add Video 2, 3… above the main track for picture-in-picture, overlays and titles made from footage. Clips there are placed freely and composited with opacity and blend modes (screen, add, multiply, difference). Drag a clip between the main track and the tracks above.
 - **Transform, colour and fades.** Zoom, position, rotation, flips and crop; brightness, contrast, saturation, gamma and hue; picture fades (drag the dots on a clip's top corners). All of it happens before moshing, so it melts with everything else.
+- **Keyframes.** Position, zoom, rotation and opacity can be animated: press ◆ next to a setting to add a keyframe at the playhead, move the playhead and change the value. Keys show as diamonds on the clip; ◀◆ ◆▶ jump between them.
+- **Speed ramps.** Speed up, slow down, slow-mo in the middle, rush in the middle or montage bursts, between a Slow and a Fast speed; the clip's length follows and its sound stretches with it.
+- **Chroma key.** Green or blue screen on the tracks above: pick the colour with the eyedropper in the player, then set similarity, softness and spill removal.
+- **LUTs.** Import `.cube` LUTs (3D or 1D) and apply them to any clip, with an amount.
+- **Adjustment layers.** The **Adjust** button in the Media panel puts a layer above the picture that re-colours everything below it while it's on screen (colour, LUT, opacity, fades).
+- **Compound clips.** Right-click clips on the main track → **Make compound clip** folds them into one clip with its own timeline. Double-click it to edit inside, **Close compound** to come back. **Mosh inside** renders the compound's own mosh into it, so you can melt a melt.
+- **Scopes.** Waveform, RGB parade, vectorscope and histogram over the player (<kbd>Shift</kbd> <kbd>S</kbd>).
+- **Tracking.** In the Clip tab, **Track an object**, then drag a box around it on the player: moshpit follows it forwards and backwards. A title, or a clip on a track above, can then follow it.
+- **Stabilization.** **Stabilize** measures the camera shake and smooths it out, zooming in just enough to hide the edges.
+- **Auto captions.** More → **Auto captions** listens with Whisper, running on your device (downloaded once, nothing uploaded), and adds the words as titles: clean, bold short-video style, word-by-word karaoke, or melting with the mosh. Download them as `.srt` or `.vtt`.
 - **Editing tools like an NLE.** Select (<kbd>A</kbd>), Trim (<kbd>T</kbd>: roll a cut, slip a clip's footage) and Blade (<kbd>B</kbd>: click to cut). Box-select with the mouse, ripple delete, turn clips off without removing them, colour labels, locked and hidden tracks, markers, In / Out marks, and Insert / Overwrite / Place on top / Append from the media panel (<kbd>F9</kbd> <kbd>F10</kbd> <kbd>F12</kbd>).
 - **Playback like an NLE.** <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> shuttle (backwards too, up to 16×), loop the In–Out range, jump between edit points and markers, and type a timecode to go straight there. The playhead and the picture always match: the mosh keeps the timeline's timing.
 - **Transitions.** Mosh transitions (Melt, Bloom melt, Glitch cut, Stutter melt, Liquid melt, Ghost melt, Rewind melt) and classic ones (cross dissolve, dip to black or white, wipes, slides, circle, pixelize). Drag a transition's band to change its length. Mosh transitions last exactly that long, then a fresh keyframe brings the next shot back clean (turn **Resolve at the end** off to let the melt run on).
@@ -118,11 +134,20 @@ The same app works on phones and tablets. The player stays at the top, and a tab
 ## Controls
 
 - **Effect lanes.** Each mosh effect is a bar you can move and resize; it snaps to cuts, the playhead and other effects. The output lane shows every frame of the result, coloured by what happened to it.
-- **Automation.** Any number or switch can follow a drawn curve or an LFO over the effect's range.
+- **Automation.** Any number or switch can follow a drawn curve, an LFO, or **the music**: the bass, mids, highs, loudness, every hit or every beat, with attack, release and a threshold. A glitch can hit harder on the kick drum and a warp swell with the chorus.
+- **On the beat.** Bloom, Stutter Loop, Frame Drop and Byte Glitch can fire on every beat, every bar or every hit of the music (and every Nth one). moshpit finds the tempo, the beats and the first beat of each bar itself.
+- **Beat grid.** The Audio tab shows the BPM and can draw the beats on the ruler (bars taller); clips, marks and effect bars snap to them.
+- **Auto-edit to the beat.** Pick clips and a song and moshpit cuts them on every Nth beat or bar, with melts on the bars and blooms where the music drops.
 - **Randomize, Nudge, Variations.** Roll a new stack, nudge the current settings, or compare a grid of options side by side. Locked settings and pinned effects are left alone.
+- **Breeding.** In Variations, tick the ones you like and **Breed** them: the children mix their parents' effects and settings. Keep going for as many generations as you like, and step **Back** to an earlier one.
+- **Chaos dial.** One knob in the top bar pushes every effect calmer or wilder without touching your settings: 0 % is calm, 100 % is as you made it, 200 % is destroyed. Drag it, scroll it, or press <kbd>Q</kbd> / <kbd>Shift</kbd> <kbd>Q</kbd>.
+- **Snapshots.** Save named versions of the project (<kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd>), restore them, or **Compare** one against the current mosh in the player. One is taken automatically before Randomize, presets, recipes and Variations replace your stack.
 - **Seeds.** Every random choice comes from a seed, so a result can always be reproduced.
 - **Share codes.** Copy the whole recipe as a short text code and paste it into another project.
+- **Recipes travel with your videos.** MP4, WebM, AVI and GIF exports (and PNG zips) carry their recipe. Drop a video made in moshpit into the app and it offers to put that same mosh on your own footage.
 - **Encoder settings.** Codec (Xvid, MPEG-2, MPEG-1), quality, keyframe interval, forced keyframes, motion search and more. These change the texture of the mosh as much as the effects do.
+- **Generations.** Feedback: the finished mosh is encoded and moshed again up to 8 times, losing a little quality each pass, like a copy of a copy.
+- **Bake.** Render the mosh (with its sound) into a clip in the media library, or replace the timeline with it, then cut it, speed it up or mosh it again.
 - **Moshed sound.** On tracks that follow the mosh, each frame plays its own slice of sound, so repeats and shuffles are audible. Bitcrush and sample-rate reduction are available.
 - **Live.** Real-time warp of a camera, screen or video, with recording back into the project.
 - Unlimited undo, autosave (including media) and project files.
@@ -131,7 +156,7 @@ The same app works on phones and tablets. The player stays at the top, and a tab
 
 ## Exporting
 
-MP4 (H.264) and WebM (VP8) with sound, GIF, a zip of PNG frames, or the raw moshed AVI. The **mosh resolution** (Encode tab) and the **output size** are separate: mosh at 720p for chunky smears and save at 1080p or 4K, or mosh at full resolution. 1080p exports work well in the browser; 1440p and 4K are fine for short videos.
+MP4 (H.264) and WebM (VP8) with sound, GIF, a zip of PNG frames, or the raw moshed AVI. **Shape** exports another aspect than the project (9:16 from 16:9…) with the crop following the action, and **Loop** makes seamless loops: a crossfade, or a melt where the start grows out of the end picture. **Made for** sets everything up for TikTok / Reels / Shorts, the Instagram feed, square posts, YouTube (1080p and 4K), X, Discord (aimed under 10 MB) or chat GIFs. It warns when the video is too long or the wrong shape, and can show the apps' safe zones in the player. The **mosh resolution** (Encode tab) and the **output size** are separate: mosh at 720p for chunky smears and save at 1080p or 4K, or mosh at full resolution. 1080p exports work well in the browser; 1440p and 4K are fine for short videos.
 
 ![The export dialog, set to save a 720p mosh at 1080p](docs/export.png)
 
@@ -170,6 +195,8 @@ flowchart LR
 | <kbd>N</kbd> | Snapping | <kbd>+</kbd> <kbd>−</kbd> <kbd>Shift</kbd> <kbd>Z</kbd> | Zoom / fit |
 | <kbd>Shift</kbd> <kbd>K</kbd> | Force a keyframe | <kbd>Shift</kbd> <kbd>A</kbd> | Add effect |
 | <kbd>R</kbd> / <kbd>U</kbd> | Randomize / nudge settings | <kbd>V</kbd> / <kbd>P</kbd> | Variations / presets |
+| <kbd>Q</kbd> / <kbd>Shift</kbd> <kbd>Q</kbd> | Chaos dial wilder / calmer | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd> | Save a snapshot |
+| <kbd>G</kbd> | Add a Frame Sequencer | <kbd>Shift</kbd> <kbd>S</kbd> | Scopes |
 | <kbd>C</kbd> | Compare with source | <kbd>E</kbd> | Export |
 | <kbd>Ctrl</kbd> <kbd>Z</kbd> | Undo (<kbd>Shift</kbd>: redo) | <kbd>?</kbd> | Help |
 

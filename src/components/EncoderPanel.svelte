@@ -27,6 +27,18 @@
   />
   <Field label="Quality → crunch" min={1} max={31} step={1} value={e.quality} help="1 = clean and detailed, 31 = huge blocky artefacts. Mid values (4–10) look the most 'datamoshy'." onchange={setE('quality')} />
   <Field label="Keyframe interval" unit="frames" min={1} max={600} step={1} value={e.gop} help="How often the encoder inserts a clean full picture (I-frame). Long intervals (300+) give long melts; short ones (12–30) give lots of keyframes for Keyframe Killer to remove." onchange={setE('gop')} />
+  <Field
+    label="Generations"
+    min={1}
+    max={8}
+    step={1}
+    value={e.generations ?? 1}
+    help="Feedback: the finished mosh is encoded again and moshed again, this many times. Every pass melts the last one further and loses detail, like a copy of a copy. Each extra generation adds to the render time."
+    onchange={setE('generations')}
+  />
+  {#if (e.generations ?? 1) > 1}
+    <Field label="Loss per generation" min={0} max={8} step={1} value={e.genCrush ?? 2} help="How many steps of Quality each extra generation loses. 0 keeps the quality and only re-moshes; higher values decay into blocks fast." onchange={setE('genCrush')} />
+  {/if}
   <Field type="bool" label="Keyframe at every clip cut" value={e.keyAtCuts} help="Forces a keyframe where each clip starts, so 'Cut Transitions' can find and remove it." onchange={setE('keyAtCuts')} />
   <Field type="bool" label="Scene-cut detection" value={e.sceneCut} help="Let the encoder add keyframes when the picture changes a lot. Usually off for moshing." onchange={setE('sceneCut')} />
   <Field
