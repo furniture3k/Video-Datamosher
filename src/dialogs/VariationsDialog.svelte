@@ -193,6 +193,13 @@
   .gen {
     font-weight: 600;
   }
+  @media (max-width: 600px) {
+    /* the hint gets its own line on phones */
+    .breed .grow {
+      order: 10;
+      flex-basis: 100%;
+    }
+  }
   .ph {
     aspect-ratio: 16 / 9;
     display: grid;

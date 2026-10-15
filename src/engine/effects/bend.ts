@@ -40,7 +40,7 @@ export const sequencer: BitstreamEffect = {
   description: 'A drum machine for frames. Each step of the pattern does one move (bloom, echo, reverse, melt, glitch) for a few frames, and the pattern loops along the bar. Draw the pattern in the grid.',
   span: 4,
   params: [
-    { key: 'stepLen', label: 'Step length', type: 'int', min: 1, max: 48, default: 3, unit: 'frames', help: 'How many frames each step lasts. At 24 fps, 6 frames = a sixteenth note at 120 BPM… roughly.' },
+    { key: 'stepLen', label: 'Step length', type: 'int', min: 1, max: 48, default: 3, unit: 'frames', help: 'How many frames each step lasts. At 24 fps and 120 BPM a beat is 12 frames, so 3 frames is a sixteenth note and 6 an eighth.' },
     { key: 'echoDist', label: 'Echo distance', type: 'int', min: 1, max: 96, default: 8, unit: 'frames', help: 'How far back Echo steps take their motion from.' },
     { key: 'glitchAmount', label: 'Glitch amount', type: 'number', min: 0, max: 40, step: 0.5, default: 4, intensity: 'up', help: 'Bytes damaged per frame on Glitch steps.', chaos: [1, 12] },
   ],

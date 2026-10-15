@@ -274,6 +274,8 @@ export async function generations(project: Project, prep: Prepared, frames: Fram
 export async function renderPreview(project: Project, width: number, progress?: Progress, signal?: Signal): Promise<RenderResult> {
   const id = ++renderId;
   let prep = await prepare(project, width, progress, signal);
+  // the clean footage (generation passes replace `prep` with moshed streams)
+  const clean0 = prep;
   check(signal);
   const cuts = cutsOf(project);
   progress?.('Moshing', 0);
@@ -301,7 +303,7 @@ export async function renderPreview(project: Project, width: number, progress?: 
   } else jpegs = await decode(project, blob, 4, frames.length, 'Decoding', progress);
   check(signal);
   lastDecode = { key: dkey, frames, jpegs };
-  const clean = needsClean(project) ? new CleanFrames(project, writeMoshedBlob(prep, prep.frames), prep.frames.length) : undefined;
+  const clean = needsClean(project) ? new CleanFrames(project, clean0) : undefined;
   const runner = new PostRunner(project, 0.85, false, audio, clean);
   const post = runner.active;
   try {
@@ -317,35 +319,47 @@ export async function renderPreview(project: Project, width: number, progress?: 
 /** Decoded frames of the clean prepared video (for A/B compare). */
 /**
  * The clean (un-moshed) picture at any timeline position, decoded a stretch at a time from the
- * prepared stream. Subject Guard puts it back where the mask says.
+ * prepared stream. Each stretch is decoded from the nearest keyframe before it (not from the
+ * start), so long videos stay quick. Subject Guard puts these pictures back where its mask says.
  */
 export class CleanFrames {
   private cache = new Map<number, Uint8Array>();
   private loading: Promise<void> | null = null;
   constructor(
     private project: Project,
-    /** the clean stream: in memory, or an engine file on desktop */
-    private src: Blob | string,
-    private total: number,
+    /** the prepared (clean) stream; on desktop its frames may be on disk */
+    private prep: Prepared,
     private span = 96,
   ) {}
+  private async load(pos: number) {
+    const fr = this.prep.frames;
+    const to = Math.min(fr.length, pos + this.span);
+    let kf = pos;
+    while (kf > 0 && fr[kf].type !== 'I') kf--;
+    // the stream's first keyframe carries the headers; it's decoded first and dropped
+    let list = [fr[0], ...fr.slice(kf, to)];
+    if (list.some((f) => f.size !== undefined)) {
+      const loaded = await loadFrames(list.filter((f) => f.size !== undefined));
+      list = list.map((f) => loaded.get(f) ?? f);
+    }
+    const js = await decode(this.project, writeMoshedBlob(this.prep, list), 4, list.length, 'Clean frames');
+    if (this.cache.size > this.span * 3) this.cache.clear();
+    js.slice(1).forEach((j, i) => this.cache.set(kf + i, j));
+  }
   async get(pos: number): Promise<Uint8Array | null> {
-    pos = Math.max(0, Math.min(this.total - 1, pos));
-    if (!this.cache.has(pos)) {
-      while (this.loading) await this.loading;
-      if (!this.cache.has(pos)) {
-        const to = Math.min(this.total, pos + this.span);
-        this.loading = decode(this.project, this.src, 4, to, 'Clean frames', undefined, { from: pos, to }).then((js) => {
-          // keep memory bounded: only the latest stretch
-          if (this.cache.size > this.span * 3) this.cache.clear();
-          js.forEach((j, i) => this.cache.set(pos + i, j));
-        });
-        try {
-          await this.loading;
-        } finally {
-          this.loading = null;
-        }
+    pos = Math.max(0, Math.min(this.prep.frames.length - 1, pos));
+    while (!this.cache.has(pos)) {
+      if (this.loading) {
+        await this.loading;
+        continue;
       }
+      this.loading = this.load(pos);
+      try {
+        await this.loading;
+      } finally {
+        this.loading = null;
+      }
+      if (!this.cache.has(pos)) break;
     }
     return this.cache.get(pos) ?? null;
   }
@@ -593,6 +607,7 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
   const disk = isDesktop && !gens;
   try {
     let prep = await prepare(project, width, progress, signal, false, disk);
+    const clean0 = prep;
     check(signal);
     // the recipe rides along in the file, so anyone can load the mosh from the video
     o = { ...o, comment: o.comment ?? (await encodeRecipe(project, prep.frames.length)) };
@@ -662,11 +677,7 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     }
 
     const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
-    let clean: CleanFrames | undefined;
-    if (needsClean(project)) {
-      if (disk) await assembleAvi(ffmpeg.file!('clean.avi'), prep, prep.frames);
-      clean = new CleanFrames(project, disk ? 'clean.avi' : writeMoshedBlob(prep, prep.frames), prep.frames.length);
-    }
+    const clean = needsClean(project) ? new CleanFrames(project, clean0) : undefined;
     const runner = new PostRunner(project, 0.95, true, audioFx, clean);
     const post = runner.active;
     const n = hi - lo;

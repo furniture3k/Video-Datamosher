@@ -64,7 +64,7 @@ export async function lutInputs(p: Project): Promise<Record<string, () => Promis
     const name = lutFile(g.lut, g.lutAmount ?? 1);
     if (out[name]) continue;
     const l = await getLut(g.lut);
-    if (!l) throw new Error('A LUT used by a clip is missing. Import it again in the Media panel.');
+    if (!l) throw new Error('A LUT used by a clip is missing. Import it again: select the clip, Clip tab → LUT → Import .cube.');
     const text = cubeText(l, g.lutAmount ?? 1);
     out[name] = async () => new TextEncoder().encode(text);
   }

@@ -109,16 +109,16 @@
   const anyKeys = $derived(hasKeys(c?.keys));
 
   // ---- speed ramp
-  const rampPreset = $derived(c?.ramp ? (RAMP_PRESETS.find((r) => JSON.stringify(r.make(rampSlow, rampFast)) === JSON.stringify(c.ramp))?.id ?? 'custom') : 'none');
-  let rampSlow = $state(0.3);
-  let rampFast = $state(2.5);
-  function setRamp(id: string) {
+  // a ramp's slow and fast speeds are read back from the ramp itself
+  const rampSpeeds = $derived<[number, number]>(c?.ramp?.length ? [Math.min(...c.ramp.map((p) => p[1])), Math.max(...c.ramp.map((p) => p[1]))] : [0.3, 2.5]);
+  const rampPreset = $derived(c?.ramp?.length ? (RAMP_PRESETS.find((r) => JSON.stringify(r.make(rampSpeeds[0], rampSpeeds[1])) === JSON.stringify(c.ramp))?.id ?? 'custom') : 'none');
+  function setRamp(id: string, slow = rampSpeeds[0], fast = rampSpeeds[1]) {
     const pr = RAMP_PRESETS.find((r) => r.id === id);
     const cid = c!.id;
     store.editTimeline((p) => {
       const x = p.clips.find((y) => y.id === cid);
       if (!x) return;
-      if (pr) x.ramp = pr.make(rampSlow, rampFast);
+      if (pr) x.ramp = pr.make(Math.min(slow, fast), Math.max(slow, fast));
       else delete x.ramp;
     }, 'ramp' + cid);
   }
@@ -265,12 +265,14 @@
     {#if !isVideo}
       <Field label="Position" unit="s" min={0} max={Math.max(60, store.duration + 30)} step={0.04} value={c.start} help="Where the clip sits on the timeline." onchange={setC('start')} />
     {/if}
-    {#if !c.freeze && !c.ramp && !isAdjust}
+    {#if !c.freeze && !isAdjust}
+      {#if !c.ramp}
       <Field label="Speed" unit="×" min={0.05} max={16} step={0.05} value={c.speed} help="Slow down or speed up the clip (the clip gets longer or shorter; later clips move). For moshing: slow clips have smaller motion, fast clips have bigger, wilder vectors." onchange={(v: number) => setC('speed', true)(Math.max(0.05, Math.min(16, v)))}>
         <div class="seg speeds">
           {#each [0.25, 0.5, 1, 2, 4] as sp}<button class:on={c.speed === sp} onclick={() => setC('speed', true)(sp)}>{sp}×</button>{/each}
         </div>
       </Field>
+      {/if}
       <Field type="bool" label="Reverse" value={c.reverse} help="Play the clip backwards." onchange={setC('reverse', true)} />
       {#if isVideo && !isStill}
         <Field
@@ -283,8 +285,8 @@
         />
         {#if c.ramp}
           <div class="row ramp">
-            <Field label="Slow" unit="×" type="number" min={0.05} max={4} step={0.05} value={rampSlow} help="Slowest speed of the ramp." onchange={(v: number) => ((rampSlow = v), rampPreset !== 'custom' && setRamp(rampPreset))} />
-            <Field label="Fast" unit="×" type="number" min={0.25} max={16} step={0.05} value={rampFast} help="Fastest speed of the ramp." onchange={(v: number) => ((rampFast = v), rampPreset !== 'custom' && setRamp(rampPreset))} />
+            <Field label="Slow" unit="×" type="number" min={0.05} max={4} step={0.05} value={rampSpeeds[0]} help="Slowest speed of the ramp." onchange={(v: number) => rampPreset !== 'custom' && setRamp(rampPreset, v, rampSpeeds[1])} />
+            <Field label="Fast" unit="×" type="number" min={0.25} max={16} step={0.05} value={rampSpeeds[1]} help="Fastest speed of the ramp." onchange={(v: number) => rampPreset !== 'custom' && setRamp(rampPreset, rampSpeeds[0], v)} />
           </div>
         {/if}
       {/if}

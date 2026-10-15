@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0
 
 - **Subject Guard**: keep people (on-device segmentation), a tracked object, bright/dark parts or
   a colour clean while the rest moshes, or the other way round. Presets: Melt the World, Ghost Walker.

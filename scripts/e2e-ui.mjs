@@ -534,7 +534,7 @@ await step('NLE: make a compound, edit inside, close re-renders it', async () =>
     st.ui.selectedClips = [st.project.clips.filter((c) => c.track === 'v1')[1].id];
   });
   await page.keyboard.press('Shift+Delete');
-  await page.getByRole('button', { name: 'Close compound' }).click();
+  await page.locator('.crumbs').getByRole('button', { name: 'Done' }).click();
   await page.waitForFunction(() => !window.__moshpit.store.seqStack.length && !window.__moshpit.store.ui.dialog, null, { timeout: 240000 });
   const d1 = await S((id) => window.__moshpit.store.project.media.find((m) => m.id === id).duration, cmp.mediaId);
   if (!(d1 < d0 - 0.2)) throw new Error(`compound did not get shorter: ${d0} -> ${d1}`);

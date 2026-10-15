@@ -60,7 +60,9 @@ export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number,
     ctx.shadowOffsetY = size * 0.05;
   }
   ctx.fillStyle = tx.color;
-  if (tx.words?.length && tx.highlight && lines.length === 1) {
+  // word highlighting only while the words still match the text (an edited caption draws as typed)
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (tx.words?.length && tx.highlight && lines.length === 1 && norm(tx.words.map((w) => w.text).join(' ')) === norm(tx.text)) {
     // word by word: the word being spoken lights up
     const local = t - tx.start;
     const space = ctx.measureText(' ').width;

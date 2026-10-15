@@ -352,13 +352,20 @@ export function parsePVop(chunk: Uint8Array, vol: Vol): ParsedVop {
       }
     }
     advance(slice, mb % mbw, Math.floor(mb / mbw));
-    if (r.bit()) {
+    // like FFmpeg: after MCBPC stuffing, the not-coded flag comes again
+    let i = 20;
+    let skipped = false;
+    while (i === 20) {
+      if (r.bit()) {
+        skipped = true;
+        break;
+      }
+      i = readMcbpc(r);
+    }
+    if (skipped) {
       field.mv[mb] = [0, 0]; // not coded: skipped, zero motion
       continue;
     }
-    let i: number;
-    do i = readMcbpc(r);
-    while (i === 20); // stuffing
     const type = i >> 2;
     const cbpc = i & 3;
     const intra = type === 1 || type === 3;

@@ -92,6 +92,7 @@
   }
   .bar {
     gap: 2px;
+    flex-wrap: wrap;
   }
   .bar select {
     height: 22px;

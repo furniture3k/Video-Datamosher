@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { evalKeys, keysExpr, rampIntegral, rampInverse, rampLength, rampSetpts, type KeyPoint, type Ramp } from '../src/engine/keys';
 import { clipLen, localTime, makeClip, segments, sourceTime, splitClip } from '../src/engine/timeline';
-import { segmentArgs } from '../src/engine/args';
+import { segmentArgs, segmentKey, windowClip } from '../src/engine/args';
 import { cubeText, lutFile, parseCube, sampleLut } from '../src/engine/lut';
 import { newProject, type Clip, type MediaItem, type Project } from '../src/engine/types';
 import { hasFfmpeg, tmpdir, ff } from './helpers';
@@ -294,5 +294,27 @@ describe('editing ramped clips', () => {
     expect(sourceTime(a, 0.3)).toBeCloseTo(whole[0], 4);
     expect(sourceTime(b, 0.1)).toBeCloseTo(whole[1], 4);
     expect(sourceTime(b, len - 1.2)).toBeCloseTo(whole[2], 4);
+  });
+});
+
+describe('review fixes', () => {
+  const m: MediaItem = { id: 'm', source: { kind: 'file', fileId: 'm', name: 'm', mime: '', isImage: false, ext: 'mp4' }, duration: 20, width: 320, height: 240, fps: 24, hasAudio: false, hasVideo: true };
+  it('a windowed piece of a ramped clip shows the same source at the same times', () => {
+    const c = { ...makeClip(m, 'v2'), in: 2, out: 8, ramp: [[0, 0.5], [0.5, 3], [1, 1]] as Ramp };
+    const len = clipLen(c);
+    const [a, b] = [len * 0.3, len * 0.7];
+    const w = windowClip(c, a, b);
+    expect(clipLen(w)).toBeCloseTo(b - a, 4);
+    for (const t of [0, 0.2, b - a - 0.01]) expect(sourceTime(w, t)).toBeCloseTo(sourceTime(c, a + t), 3);
+  });
+  it('changing keyframes, a ramp, a key or stabilization re-prepares the segment', () => {
+    const p: Project = { ...newProject(), media: [m], clips: [{ ...makeClip(m, 'v1'), out: 3 }] };
+    const key = (q: Project) => segmentKey(q, segments(q, 24)[0], 320, (x) => x.id);
+    const base = key(p);
+    const with_ = (patch: Partial<Clip>) => key({ ...p, clips: [{ ...p.clips[0], ...patch }] });
+    expect(with_({ keys: { x: [[0, 0.1]] } })).not.toBe(base);
+    expect(with_({ ramp: [[0, 1], [1, 2]] })).not.toBe(base);
+    expect(with_({ key: { color: '#00ff00', similarity: 0.2, blend: 0, spill: false } })).not.toBe(base);
+    expect(with_({ stab: { x: [[0, 0]], y: [[0, 0]], r: [[0, 0]], zoom: 1.1 } })).not.toBe(base);
   });
 });

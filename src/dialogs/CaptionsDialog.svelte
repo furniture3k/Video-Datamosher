@@ -94,13 +94,15 @@
 <style>
   .grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    /* minmax(0, …): long option names mustn't widen the dialog past a phone screen */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 6px 12px;
   }
   .grid label {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
     font-size: 12px;
     color: var(--text-2);
   }
@@ -128,5 +130,9 @@
   }
   .err {
     color: var(--danger);
+  }
+  .grid select {
+    width: 100%;
+    min-width: 0;
   }
 </style>

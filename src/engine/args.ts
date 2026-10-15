@@ -1,11 +1,11 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
 import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
 import { findRecipe } from './recipe';
-import { hasKeys, keysExpr, rampSetpts, type Keys } from './keys';
+import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
 import { reframeFilter, type ReframePath } from './reframe';
 import { linearExpr } from './track';
-import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
+import { BLEND_TRANSITIONS, audioSources, clipLen, sourceTime, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
   { id: 'mandelbrot', name: 'Mandelbrot zoom', spec: (w, h, r) => `mandelbrot=s=${w}x${h}:r=${r}` },
@@ -159,6 +159,17 @@ function keyedTransform(keys: Keys, T: { zoom: number; x: number; y: number; rot
 /** A clip cut down to part of itself: local seconds a..b of it. */
 export function windowClip(c: Clip, a: number, b: number): Clip {
   if (c.freeze) return { ...c, out: c.in + (b - a) };
+  if (c.ramp?.length) {
+    // the piece of the source under [a, b], with the matching piece of the ramp
+    const len = clipLen(c);
+    const x0 = Math.max(0, Math.min(1, a / len));
+    const x1 = Math.max(x0 + 1e-6, Math.min(1, b / len));
+    let ramp = c.ramp;
+    if (x1 < 1) ramp = splitRamp(ramp, x1)[0];
+    if (x0 > 0) ramp = splitRamp(ramp, x0 / x1)[1];
+    const [s0, s1] = [sourceTime(c, a), sourceTime(c, b)];
+    return { ...c, in: Math.min(s0, s1), out: Math.max(s0, s1), ramp };
+  }
   if (c.reverse) return { ...c, in: c.out - b * c.speed, out: c.out - a * c.speed };
   return { ...c, in: c.in + a * c.speed, out: c.in + b * c.speed };
 }
@@ -444,7 +455,8 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
 
 /** Everything about a clip's picture besides its timing. */
 function clipLook(c: Clip) {
-  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0 };
+  // everything clipGraph draws from, so a change re-prepares the segment
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab };
 }
 
 /**
