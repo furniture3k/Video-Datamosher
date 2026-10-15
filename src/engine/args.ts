@@ -633,7 +633,7 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
   if (xf) {
     // the end crossfades into the start, so the file loops without a jump
     const g = [`${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')}`, `[lv]${chain}[v]`];
-    if (withAudio) g.push(loopAudioFilter('[1:a]', xf.overlap / fps, '[aout]'));
+    if (withAudio) g.push(loopAudioFilter('[1:a]', xf.frames / fps, xf.overlap / fps, '[aout]'));
     a.push('-filter_complex', g.join(';'), '-map', '[v]');
     if (withAudio) a.push('-map', '[aout]');
   } else {
@@ -677,15 +677,21 @@ export function loopFilter(input: string, frames: number, overlap: number, fps: 
   return `${input}split[lpa][lpb];[lpa]trim=start_frame=${overlap},setpts=PTS-STARTPTS[lpbody];[lpb]trim=end_frame=${overlap},setpts=PTS-STARTPTS[lphead];[lpbody][lphead]xfade=transition=fade:duration=${d}:offset=${off}${out}`;
 }
 
-export function loopAudioFilter(input: string, seconds: number, out: string): string {
+/**
+ * The sound of a crossfade loop (`total` seconds long, `seconds` of overlap). Built from afade +
+ * adelay + amix rather than acrossfade: acrossfade fed from asplit outputs nothing in FFmpeg 6.1
+ * and older (ffmpeg.wasm included).
+ */
+export function loopAudioFilter(input: string, total: number, seconds: number, out: string): string {
   const d = r3(seconds);
-  return `${input}asplit[lqa][lqb];[lqa]atrim=start=${d},asetpts=PTS-STARTPTS[lqbody];[lqb]atrim=end=${d},asetpts=PTS-STARTPTS[lqhead];[lqbody][lqhead]acrossfade=d=${d}${out}`;
+  const st = r3(Math.max(0, total - 2 * seconds));
+  return `${input}asplit[lqa][lqb];[lqa]atrim=start=${d},asetpts=PTS-STARTPTS,afade=t=out:st=${st}:d=${d}[lqbody];[lqb]atrim=end=${d},asetpts=PTS-STARTPTS,afade=t=in:d=${d},adelay=${Math.round(st * 1000)}:all=1[lqhead];[lqbody][lqhead]amix=inputs=2:normalize=0:duration=first${out}`;
 }
 
 /** A finished (joined) MP4 / WebM made into a crossfade loop: one more encode. */
 export function loopPassArgs(o: ExportOptions, input: string, frames: number, overlap: number, fps: number, withAudio: boolean, out: string): string[] {
   const g = [loopFilter('[0:v]', frames, overlap, fps, '[v]')];
-  if (withAudio) g.push(loopAudioFilter('[0:a]', overlap / fps, '[aout]'));
+  if (withAudio) g.push(loopAudioFilter('[0:a]', frames / fps, overlap / fps, '[aout]'));
   return ['-i', input, '-filter_complex', g.join(';'), '-map', '[v]', ...(withAudio ? ['-map', '[aout]'] : []), '-r', String(fps), '-pix_fmt', 'yuv420p', ...encodeArgs(o, withAudio), ...commentArgs(o.comment), out];
 }
 
