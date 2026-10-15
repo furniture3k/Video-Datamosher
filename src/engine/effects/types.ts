@@ -48,6 +48,8 @@ export interface EffectContext {
   source: Frame[];
   /** the analysed music, for beat-triggered effects (missing: no music on the timeline) */
   audio?: AudioFeatures;
+  /** frames of the motion packs in use, encoded like the timeline */
+  packs?: Record<string, Frame[]>;
 }
 
 export interface BitstreamEffect {

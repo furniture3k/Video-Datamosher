@@ -79,6 +79,7 @@
         <button class="ghost" onclick={saveProjectFile}><Icon name="save" />Save project<span class="kbd">Ctrl S</span></button>
         <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
         <button class="ghost" onclick={() => (store.ui.dialog = 'share')}><Icon name="link" />Share code…</button>
+        <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'bake')}><Icon name="film" />Bake the mosh into a clip…</button>
         <hr />
         <button class="ghost" onclick={() => loadExample()}><Icon name="gen" />Load example</button>
         <button

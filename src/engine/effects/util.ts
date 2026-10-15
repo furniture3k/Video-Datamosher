@@ -29,3 +29,12 @@ export function rangeRuns(frames: Frame[], e: EffectInstance): [number, number][
   if (s >= 0) runs.push([s, frames.length]);
   return runs;
 }
+
+/**
+ * After editing a frame's bytes: break any new "00 00 01" start code (which would read as the
+ * start of another frame) that wasn't in the original data.
+ */
+export function defuseStartCodes(d: Uint8Array, orig: Uint8Array, from: number) {
+  for (let q = from; q + 2 < d.length; q++)
+    if (d[q] === 0 && d[q + 1] === 0 && d[q + 2] <= 1 && !(orig[q] === 0 && orig[q + 1] === 0 && orig[q + 2] === 1)) d[q + 2] = 2;
+}

@@ -13,6 +13,7 @@
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
   import { SOCIAL_PRESETS, bitrateFor } from '../engine/social';
+  import { EFFECTS } from '../engine/effects';
 
   const marked = markedRange();
   let onlyRange = $state(!!marked);
@@ -24,7 +25,7 @@
   let result = $state<{ url?: string; file?: string; savedTo?: string; name: string; size: number; type: string } | null>(null);
   let error = $state('');
   let signal = { cancelled: false };
-  const hasPixel = $derived(store.project.effects.some((e) => e.enabled && ['vectorWarp', 'chroma', 'pixelSort'].includes(e.type)));
+  const hasPixel = $derived(store.project.effects.some((e) => e.enabled && EFFECTS[e.type]?.kind === 'pixel'));
   const hasAudio = $derived(audioSources(store.project).length > 0);
   const mosh = $derived(outputSize(store.project, store.project.encoder.width));
   const outW = $derived(o.width ? even(o.width) : mosh.w);
@@ -147,7 +148,7 @@
     </div>
 
     <div class="small muted">
-      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if o.width && o.format !== 'avi'}, saved at {outW}×{outH}{o.width > mosh.w ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Pixel effects (Vector Warp, Chroma, Pixel Sort) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
+      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if o.width && o.format !== 'avi'}, saved at {outW}×{outH}{o.width > mosh.w ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Picture effects (Vector Warp, Chroma, Pixel Sort, Raw Bend) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
     </div>
     {#if heavy && !isDesktop}
       <div class="small warn">This is a big render for a browser ({Math.round(pixels / 1e6)} megapixel-frames). Expect it to take a while; keep this tab in front. Lower the mosh resolution or use "Ultra fast" to speed it up.</div>

@@ -1,8 +1,9 @@
 // Bitstream effects: each one rewrites the list of compressed frames.
 import type { BitstreamEffect, ParamDef } from './types';
 import type { Frame } from '../types';
-import { bool, copy, inRange, isMotion, num, posOf, rangeRuns, str, tOf, frameSize } from './util';
+import { bool, copy, inRange, isMotion, num, posOf, rangeRuns, str, tOf, frameSize, defuseStartCodes } from './util';
 import { beatHits, beatParams, framesAtHits } from '../audiofx';
+import { MOTION_PACKS } from '../motionpacks';
 
 /** Shared setting of the effects that repeat or insert frames. */
 export const TIMING: ParamDef = {
@@ -414,7 +415,19 @@ export const splice: BitstreamEffect = {
   retimes: true,
   span: 3,
   params: [
-    { key: 'from', label: 'Motion source frame', type: 'frame', default: 0, help: 'First frame of the motion to borrow. Move the playhead there and press the arrow button.' },
+    {
+      key: 'source',
+      label: 'Motion from',
+      type: 'select',
+      default: 'timeline',
+      options: [
+        { value: 'timeline', label: 'The timeline', hint: 'Borrow the motion of another part of your own footage.' },
+        { value: 'pack', label: 'A motion pack', hint: 'Ready-made motion (spin, zoom, rain, ripple…) made on the spot, nothing to import.' },
+      ],
+      help: 'Where the borrowed motion comes from.',
+    },
+    { show: (p) => p.source === 'pack', key: 'pack', label: 'Motion pack', type: 'select', default: 'vortex', options: MOTION_PACKS.map((m) => ({ value: m.id, label: m.name, hint: m.hint })), help: 'Which ready-made motion to apply.' },
+    { show: (p) => p.source !== 'pack', key: 'from', label: 'Motion source frame', type: 'frame', default: 0, help: 'First frame of the motion to borrow. Move the playhead there and press the arrow button.' },
     { key: 'length', label: 'Source length', type: 'int', min: 0, max: 3600, default: 0, unit: 'frames', help: 'How many frames of motion to borrow. 0 = as long as this bar.' },
     {
       key: 'mode',
@@ -435,9 +448,14 @@ export const splice: BitstreamEffect = {
     const from = Math.round(Number(e.params.from));
     const len = Math.round(Number(e.params.length)) || Math.max(1, e.end - e.start);
     const speed = Math.max(0.05, Number(e.params.speed ?? 1));
-    const pool = ctx.source.filter((f) => f.src >= from && f.src < from + len && isMotion(f));
+    const fromPack = str(e, 'source') === 'pack';
+    const pool = fromPack ? (ctx.packs?.[str(e, 'pack')] ?? []).filter(isMotion).slice(0, len) : ctx.source.filter((f) => f.src >= from && f.src < from + len && isMotion(f));
     if (pool.length === 0) return frames;
-    const at = (k: number) => pool[Math.floor(k * speed) % pool.length];
+    // pack frames come from another stream: give them the timeline's source so nothing points into it
+    const at = (k: number, pos?: number) => {
+      const f = pool[Math.floor(k * speed) % pool.length];
+      return fromPack && pos !== undefined ? { ...f, src: pos } : f;
+    };
     const out: Frame[] = [];
     if (str(e, 'mode') === 'insert') {
       let done = false;
@@ -446,7 +464,7 @@ export const splice: BitstreamEffect = {
           done = true;
           out.push(f);
           const n = Math.round((pool.length / speed) * Math.round(num(e, 'loops', 0)));
-          for (let k = 0; k < n; k++) out.push(copy(at(k), 'spliced', posOf(f)));
+          for (let k = 0; k < n; k++) out.push(copy(at(k, posOf(f)), 'spliced', posOf(f)));
           continue;
         }
         out.push(f);
@@ -455,7 +473,7 @@ export const splice: BitstreamEffect = {
     }
     let k = 0;
     frames.forEach((f, i) => {
-      if (inRange(f, e) && i > 0) out.push(copy(at(k++), 'spliced', posOf(f)));
+      if (inRange(f, e) && i > 0) out.push(copy(at(k++, posOf(f)), 'spliced', posOf(f)));
       else out.push(f);
     });
     return out;
@@ -604,11 +622,7 @@ export const byteGlitch: BitstreamEffect = {
           }
         }
       }
-      if (bool(e, 'safe', t)) {
-        const o = f.data;
-        for (let q = f.payloadStart; q + 2 < d.length; q++)
-          if (d[q] === 0 && d[q + 1] === 0 && d[q + 2] <= 1 && !(o[q] === 0 && o[q + 1] === 0 && o[q + 2] === 1)) d[q + 2] = 2;
-      }
+      if (bool(e, 'safe', t)) defuseStartCodes(d, f.data, f.payloadStart);
       return { ...f, data: d, tag: 'glitch' as const };
     });
   },

@@ -4,6 +4,7 @@
   import { randomizeEffect } from '../engine/presets';
   import { makeRng, randomSeed } from '../engine/rng';
   import ParamControl from './ParamControl.svelte';
+  import SequencerGrid from './SequencerGrid.svelte';
   import Icon from './Icon.svelte';
   import type { EffectInstance } from '../engine/types';
   import { layoutVideo } from '../engine/timeline';
@@ -99,6 +100,13 @@
     </div>
     <div class="small faint">{((effect.end - effect.start) / store.fps).toFixed(2)} s long. Drag the bar's ends on the timeline to change it.</div>
   </section>
+
+  {#if effect.type === 'sequence'}
+    <section>
+      <div class="sh"><span class="label">Pattern</span></div>
+      <SequencerGrid {effect} />
+    </section>
+  {/if}
 
   <section>
     <div class="sh"><span class="label">Settings</span></div>

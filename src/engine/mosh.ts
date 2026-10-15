@@ -53,12 +53,12 @@ export function allEffects(project: Project): EffectInstance[] {
 
 const bitstreamEffects = (project: Project) => activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'bitstream');
 
-function applyOne(frames: Frame[], inst: EffectInstance, prep: Prepared, project: Project, cuts: number[], audio?: MoshAudio): Frame[] {
+function applyOne(frames: Frame[], inst: EffectInstance, prep: Prepared, project: Project, cuts: number[], audio?: MoshAudio, packs?: Packs): Frame[] {
   const e = bakeAudio(withChaos(inst, project.chaos), audio, project);
   const rng = makeRng(hashSeed(project.globalSeed, e.seed, e.id));
   const def = EFFECTS[e.type];
   if (def.kind !== 'bitstream') return frames;
-  const out = def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames, audio: audio?.sources[audio.beatKey] });
+  const out = def.apply(frames, e, { totalFrames: prep.frames.length, fps: project.encoder.fps, cuts, rng, source: prep.frames, audio: audio?.sources[audio.beatKey], packs });
   return def.retimes && e.params.timing !== 'stretch' ? fitRange(frames, out, e) : out;
 }
 
@@ -133,20 +133,26 @@ function finishFrames(frames: Frame[], prep: Prepared): Frame[] {
   return frames;
 }
 
-export function applyBitstream(prep: Prepared, project: Project, cuts: number[], audio?: MoshAudio): Frame[] {
+/** Motion pack id → its encoded frames. */
+export type Packs = Record<string, Frame[]>;
+
+/** The motion packs a project's effects use. */
+export const packsNeeded = (p: Project): string[] => [...new Set(activeEffects(p.effects).filter((e) => e.type === 'splice' && e.params.source === 'pack').map((e) => String(e.params.pack)))];
+
+export function applyBitstream(prep: Prepared, project: Project, cuts: number[], audio?: MoshAudio, packs?: Packs): Frame[] {
   let frames = prep.frames.slice();
-  for (const e of bitstreamEffects(project)) frames = applyOne(frames, e, prep, project, cuts, audio);
+  for (const e of bitstreamEffects(project)) frames = applyOne(frames, e, prep, project, cuts, audio, packs);
   return finishFrames(frames, prep);
 }
 
 /** Effects that rewrite the bytes of frames (the rest only reorder, repeat or drop them). */
-export const EDITS_BYTES = new Set(['glitch']);
+export const EDITS_BYTES = new Set(['glitch', 'databend', 'sequence']);
 
 /**
  * applyBitstream for disk-backed frames: before each effect that edits bytes, `load` gets the
  * frames it may touch (those in its range) so their full payloads can be read in. Same result.
  */
-export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts: number[], load: (frames: Frame[]) => Promise<Map<Frame, Frame>>, audio?: MoshAudio): Promise<Frame[]> {
+export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts: number[], load: (frames: Frame[]) => Promise<Map<Frame, Frame>>, audio?: MoshAudio, packs?: Packs): Promise<Frame[]> {
   let frames = prep.frames.slice();
   for (const e of bitstreamEffects(project)) {
     if (EDITS_BYTES.has(e.type)) {
@@ -157,7 +163,7 @@ export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts:
         frames = frames.map((f) => loaded.get(f) ?? f);
       }
     }
-    frames = applyOne(frames, e, prep, project, cuts, audio);
+    frames = applyOne(frames, e, prep, project, cuts, audio, packs);
   }
   return finishFrames(frames, prep);
 }
@@ -178,4 +184,13 @@ export function writeMoshedBlob(prep: Prepared, frames: Frame[]): Blob {
     ) as BlobPart[],
     { type: 'video/x-msvideo' },
   );
+}
+
+/**
+ * After a generation-loss pass: that pass's frame k came from the previous pass's output frame k,
+ * so trace each frame's sound source and timeline position back through it.
+ */
+export function traceGeneration(prev: Frame[], out: Frame[]): Frame[] {
+  const at = (k: number) => prev[Math.max(0, Math.min(prev.length - 1, k))];
+  return out.map((f) => ({ ...f, src: at(f.src).src, at: posOf(at(posOf(f))), tag: f.tag === 'orig' ? at(f.src).tag : f.tag }));
 }

@@ -28,7 +28,8 @@ const AUDIO_EXT = /^(mp3|wav|m4a|aac|ogg|oga|opus|flac|aif|aiff|wma)$/;
 /** Where dropped media should land. */
 export type Place = { track: 'v1'; index: number } | { track: string; start: number } | 'auto' | 'none';
 
-export async function addFiles(list: FileList | File[], place: Place = 'auto', knownDuration?: number): Promise<MediaItem[]> {
+/** `recipes: false`: don't offer to apply a recipe found in the files (our own bakes). */
+export async function addFiles(list: FileList | File[], place: Place = 'auto', knownDuration?: number, opts: { recipes?: boolean } = {}): Promise<MediaItem[]> {
   const files = [...list];
   const added: MediaItem[] = [];
   const wasEmpty = store.project.clips.length === 0;
@@ -60,7 +61,7 @@ export async function addFiles(list: FileList | File[], place: Place = 'auto', k
       };
       store.edit((p) => p.media.push(m));
       added.push(m);
-      if (info.recipe && !recipe) recipe = { code: info.recipe, name: file.name };
+      if (info.recipe && !recipe && opts.recipes !== false) recipe = { code: info.recipe, name: file.name };
       prepareMedia(m);
     } catch (e) {
       console.error(e);

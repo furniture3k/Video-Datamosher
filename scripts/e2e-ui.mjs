@@ -53,12 +53,12 @@ await step('demo', async () => {
   await settle();
 });
 
-const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'vectorWarp', 'chroma', 'pixelSort']);
+const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend']);
 for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
     await page.keyboard.press('Shift+A');
-    await page.locator('.modal .item').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort' })[t], t) }).first().click();
+    await page.locator('.modal .item').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend' })[t], t) }).first().click();
     await settle();
     const n = await S(() => window.__moshpit.store.render.frames.length);
     if (!n) throw new Error('no frames');
@@ -367,6 +367,72 @@ await step('beats: import music, BPM, grid, beat-triggered and audio-reactive ef
   if (!ok) throw new Error('auto-edit cuts are not on the beat: ' + JSON.stringify(await S(() => window.__moshpit.timeline.layoutVideo(window.__moshpit.store.project).map((pl) => pl.start))));
   await settle();
   await page.locator('.field', { hasText: 'Beat grid' }).locator('input, button, [role=switch]').first().click();
+});
+
+await step('sequencer: G adds one, paint the grid, renders', async () => {
+  await S(() => window.__moshpit.store.edit((p) => (p.effects = [])));
+  await page.keyboard.press('g');
+  await page.locator('.seq .grid').waitFor({ timeout: 10000 });
+  const cells = page.locator('.seq .cell');
+  // paint Glitch on the first two steps (row 5, columns 0-1) and clear the bloom on step 0
+  const n = await S(() => window.__moshpit.store.project.effects[0].data?.steps?.length ?? 8);
+  await cells.nth(4 * n + 0).click();
+  await cells.nth(4 * n + 1).click();
+  const steps = await S(() => window.__moshpit.store.project.effects[0].data.steps);
+  if (steps[0] !== 'glitch' || steps[1] !== 'glitch') throw new Error('grid did not paint: ' + JSON.stringify(steps));
+  await page.getByRole('button', { name: 'Random', exact: true }).click();
+  await settle();
+  if (!(await S(() => window.__moshpit.store.render.frames.length))) throw new Error('no frames');
+});
+
+await step('generation loss: 3 generations render with the same length', async () => {
+  const len0 = await S(() => window.__moshpit.store.totalFrames);
+  await S(() => window.__moshpit.store.edit((p) => ((p.encoder.generations = 3), (p.encoder.genCrush = 2))));
+  await settle();
+  const len = await S(() => window.__moshpit.store.render.frames.length);
+  if (Math.abs(len - len0) > 1) throw new Error(`length changed: ${len0} -> ${len}`);
+  await S(() => window.__moshpit.store.edit((p) => delete p.encoder.generations));
+  await settle();
+});
+
+await step('motion pack: Motion Transfer from Vortex renders', async () => {
+  await S(() => {
+    const st = window.__moshpit.store;
+    const total = st.totalFrames;
+    st.edit((p) => {
+      p.effects = [
+        { id: 'k1', type: 'kill', enabled: true, solo: false, start: 0, end: total, seed: 1, params: { mode: 'all', replace: 'prev' }, auto: {}, locks: [] },
+        { id: 'x1', type: 'splice', enabled: true, solo: false, start: Math.round(total * 0.3), end: Math.round(total * 0.7), seed: 2, params: { source: 'pack', pack: 'vortex', from: 0, length: 0, mode: 'replace', loops: 1, speed: 1, timing: 'fit' }, auto: {}, locks: [] },
+      ];
+    });
+    st.ui.selectedEffect = 'x1';
+  });
+  await settle();
+  const spliced = await S(() => window.__moshpit.store.render.frames.filter((f) => f.tag === 'spliced').length);
+  if (spliced < 10) throw new Error('no pack motion spliced: ' + spliced);
+  await page.locator('.tabs button', { hasText: 'Effects' }).click();
+  await page.locator('.pc', { hasText: 'Motion from' }).locator('button.on', { hasText: 'A motion pack' }).waitFor();
+});
+
+await step('bake the mosh into a clip (add to media)', async () => {
+  const before = await S(() => window.__moshpit.store.project.media.length);
+  await page.locator('.menu-wrap > button').click();
+  await page.getByRole('button', { name: /Bake the mosh into a clip/ }).click();
+  await page.getByRole('button', { name: 'Add to media' }).click();
+  await page.waitForFunction((n) => window.__moshpit.store.project.media.length === n + 1 && !window.__moshpit.store.ui.dialog, before, { timeout: 240000 });
+  const m = await S(() => window.__moshpit.store.project.media.at(-1));
+  if (!m.source.name.endsWith('_baked.mp4') || !m.hasVideo || !(m.duration > 1)) throw new Error('baked clip looks wrong: ' + JSON.stringify(m));
+  await idle();
+  // and again, replacing the timeline: one clip of the bake, no effects (undo brings it all back)
+  await page.locator('.menu-wrap > button').click();
+  await page.getByRole('button', { name: /Bake the mosh into a clip/ }).click();
+  await page.getByRole('button', { name: 'Replace the timeline' }).click();
+  await page.waitForFunction(() => !window.__moshpit.store.ui.dialog, null, { timeout: 240000 });
+  const after = await S(() => ({ clips: window.__moshpit.store.project.clips.map((c) => c.track), fx: window.__moshpit.store.project.effects.length }));
+  if (after.clips.join() !== 'v1' || after.fx) throw new Error('replace left: ' + JSON.stringify(after));
+  await page.keyboard.press('Control+z');
+  if ((await S(() => window.__moshpit.store.project.clips.length)) < 2) throw new Error('undo did not bring the timeline back');
+  await settle();
 });
 
 await step('light theme + new project + undo', async () => {

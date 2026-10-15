@@ -65,7 +65,7 @@ class Store {
     split: 0.5,
     zoom: 1,
     autoRender: localGet('autoRender', true),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,

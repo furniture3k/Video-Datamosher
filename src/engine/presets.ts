@@ -1,6 +1,7 @@
 import { EFFECTS, defaultParams, type ParamDef } from './effects';
 import type { EffectInstance, EncoderSettings, ParamValue, Project, Automation } from './types';
 import { makeRng, randomSeed, type Rng } from './rng';
+import { randomSteps } from './effects/bend';
 
 /** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -273,6 +274,9 @@ const CHAOS_WEIGHTS: [string, number][] = [
   ['vectorWarp', 2],
   ['chroma', 1],
   ['pixelSort', 0.5],
+  ['sequence', 1.5],
+  ['databend', 1],
+  ['rawbend', 0.7],
 ];
 
 function weightedPick(rng: Rng): string {
@@ -298,6 +302,7 @@ export function chaos(project: Project, total: number, seed = randomSeed(), inte
     const start = rng.int(0, Math.max(0, total - len));
     let e = makeEffect(type, start, start + len, {}, rng.int(0, 1e9));
     e = randomizeEffect(e, rng, total);
+    if (type === 'sequence') e.data = { steps: randomSteps(rng, rng.pick([4, 8, 8, 16])) };
     if (type === 'glitch') e.params.amount = Math.round(rng.range(0.5, 2 + intensity * 8) * 10) / 10;
     if (type === 'bloom' && e.params.length === 'count' && rng.chance(0.3)) e.auto.repeats = { kind: 'lfo', shape: rng.pick(['sine', 'random', 'triangle'] as const), rate: rng.int(1, 6), min: 1, max: Math.round(10 + 50 * intensity), phase: rng() };
     effects.push(e);

@@ -213,6 +213,10 @@ export interface EncoderSettings {
   /** extra forced keyframes (frame numbers) */
   keyMarkers: number[];
   previewWidth: number;
+  /** feedback: mosh the result again this many times (1 = once) */
+  generations?: number;
+  /** quality steps lost on each extra generation */
+  genCrush?: number;
 }
 
 export interface DecoderSettings {
@@ -256,6 +260,8 @@ export interface EffectInstance {
   params: Record<string, ParamValue>;
   auto: Record<string, Automation>;
   locks: string[];
+  /** structured settings that aren't single values (sequencer patterns, painted strokes…) */
+  data?: Record<string, unknown>;
 }
 
 export interface AudioSettings {

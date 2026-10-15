@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Frame Sequencer**: a step pattern of Bloom, Echo, Reverse, Melt and Glitch moves (<kbd>G</kbd>).
+- **Databend** (compressed bytes) and **Raw Bend** (pixels): echo, reverb, phaser, bitcrush,
+  reverse and amplify, the Audacity trick built in.
+- **Generations**: mosh the mosh again, up to 8 times, with loss per generation.
+- **Bake the mosh into a clip**, to add to the library or replace the timeline with.
+- **Motion packs** for Motion Transfer: Drift, Fall, Vortex, Tunnel, Implode, Shake, Ripple, Life.
+
 - **Audio-reactive automation**: any setting can follow the bass, mids, highs, loudness, hits or
   beats of the music, with attack, release and threshold.
 - **Beat triggers**: Bloom, Stutter Loop, Frame Drop and Byte Glitch can fire on beats, bars or hits.

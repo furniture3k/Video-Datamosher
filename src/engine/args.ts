@@ -547,3 +547,11 @@ export function parseProbe(log: string): { duration: number; width: number; heig
     recipe: findRecipe(log),
   };
 }
+
+/** Generation loss: decode a moshed AVI and encode it again (settings `enc`) for another pass. */
+export function regenArgs(project: Pick<Project, 'decoder' | 'encoder' | 'clips' | 'media' | 'texts'>, enc: EncoderSettings, input: string, out: string): string[] {
+  return [...decoderInputArgs(project.decoder), '-i', input, '-an', '-pix_fmt', 'yuv420p', ...encoderArgs(enc, keyTimes(project as Project)), '-f', 'avi', out];
+}
+
+/** Settings for generation g (2, 3…): quality crushed a little more each time. */
+export const generationEncoder = (enc: EncoderSettings, g: number): EncoderSettings => ({ ...enc, quality: Math.min(31, enc.quality + (g - 1) * (enc.genCrush ?? 2)) });

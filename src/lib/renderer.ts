@@ -5,14 +5,16 @@ import { isDesktop } from './platform';
 import { getFile } from './storage';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
-import { type TextOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
-import { framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
+import { regenArgs, generationEncoder, type TextOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { packsNeeded, traceGeneration, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
 import { audioKey, audioKeysNeeded, type MoshAudio } from '../engine/audiofx';
 import { splitJpegs } from '../engine/jpeg';
 import { buildAudio, wav, wavParts, SAMPLE_RATE } from '../engine/audio';
 import { zip } from '../engine/zip';
+import { hashSeed } from '../engine/rng';
+import { packArgs } from '../engine/motionpacks';
 import { bitrateFor } from '../engine/social';
 import { encodeRecipe, findRecipe, gifComments, gifWithComment } from '../engine/recipe';
 import type { Frame, MediaItem, Project, TextClip } from '../engine/types';
@@ -214,16 +216,69 @@ export const renderKey = (p: Project) => JSON.stringify({
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
+// ---------------------------------------------------------------- motion packs
+
+const packCache = new Map<string, Promise<Frame[]>>();
+
+/** Frames of every motion pack the project uses, rendered at the mosh's size and settings. */
+export async function packsFor(project: Project, width: number): Promise<Packs | undefined> {
+  const ids = packsNeeded(project);
+  if (!ids.length) return undefined;
+  const { w, h } = outputSize(project, width);
+  const out: Packs = {};
+  for (const id of ids) {
+    const { keyMarkers: _k, previewWidth: _p, generations: _g, genCrush: _c, ...enc } = project.encoder;
+    const key = JSON.stringify([id, w, h, enc]);
+    let hit = packCache.get(key);
+    if (!hit) {
+      hit = ffmpeg.run(packArgs(id, project.encoder, w, h, 'pack.avi'), { outputs: ['pack.avi'] }).then((r) => framesFromAvi(r.out['pack.avi'], project.encoder.codec).frames);
+      hit.catch(() => packCache.delete(key));
+      packCache.set(key, hit);
+      if (packCache.size > 8) packCache.delete(packCache.keys().next().value!);
+    }
+    out[id] = await hit;
+  }
+  return out;
+}
+
+/**
+ * Feedback / generation loss: decode the mosh, encode it again and mosh it again, N times. Each
+ * pass crushes the quality a little more. Returns the last pass, with every frame's source and
+ * timeline position traced back through the passes (so the sound and the timeline still match).
+ */
+export async function generations(project: Project, prep: Prepared, frames: Frame[], cuts: number[], audio: MoshAudio | undefined, progress?: Progress, signal?: Signal, packs?: Packs): Promise<{ prep: Prepared; frames: Frame[] }> {
+  const n = Math.max(1, Math.min(8, Math.round(project.encoder.generations ?? 1)));
+  let curPrep = prep;
+  let cur = frames;
+  for (let g = 2; g <= n; g++) {
+    progress?.(`Generation ${g} of ${n}`, (g - 2) / (n - 1));
+    const enc = generationEncoder(project.encoder, g);
+    const r = await ffmpeg.run(regenArgs(project, enc, MOUNT + 'gen_in.avi', 'gen.avi'), {
+      mounts: { 'gen_in.avi': writeMoshedBlob(curPrep, cur) },
+      outputs: ['gen.avi'],
+    });
+    check(signal);
+    const next = framesFromAvi(r.out['gen.avi'], enc.codec);
+    if (!next.frames.length) break;
+    const out = applyBitstream(next, { ...project, encoder: enc, globalSeed: hashSeed(project.globalSeed, g) }, cuts, audio, packs);
+    cur = traceGeneration(cur, out);
+    curPrep = next;
+  }
+  return { prep: curPrep, frames: cur };
+}
+
 export async function renderPreview(project: Project, width: number, progress?: Progress, signal?: Signal): Promise<RenderResult> {
   const id = ++renderId;
-  const prep = await prepare(project, width, progress, signal);
+  let prep = await prepare(project, width, progress, signal);
   check(signal);
   const cuts = cutsOf(project);
   progress?.('Moshing', 0);
   const audio = await moshAudioFor(project);
+  const packs = await packsFor(project, width);
   check(signal);
-  const frames = applyBitstream(prep, project, cuts, audio);
+  let frames = applyBitstream(prep, project, cuts, audio, packs);
   check(signal);
+  if ((project.encoder.generations ?? 1) > 1) ({ prep, frames } = await generations(project, prep, frames, cuts, audio, progress, signal, packs));
   // Frames before the first change decode exactly as last time: only decode what changed.
   const dkey = JSON.stringify({ d: project.decoder, w: width });
   let from = 0;
@@ -484,15 +539,19 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
   const width = project.encoder.width;
   // Desktop: frame payloads stay on disk and the moshed AVI is assembled there, so memory use
   // doesn't grow with the length of the video.
-  const disk = isDesktop;
+  // generation loss re-encodes the mosh in memory, so it doesn't use the on-disk path
+  const gens = (project.encoder.generations ?? 1) > 1;
+  const disk = isDesktop && !gens;
   try {
-    const prep = await prepare(project, width, progress, signal, false, disk);
+    let prep = await prepare(project, width, progress, signal, false, disk);
     check(signal);
     // the recipe rides along in the file, so anyone can load the mosh from the video
     o = { ...o, comment: o.comment ?? (await encodeRecipe(project, prep.frames.length)) };
     progress('Moshing', 0);
     const audioFx = await moshAudioFor(project);
-    const frames = disk ? await applyBitstreamDisk(prep, project, cutsOf(project), loadFrames, audioFx) : applyBitstream(prep, project, cutsOf(project), audioFx);
+    const packs = await packsFor(project, width);
+    let frames = disk ? await applyBitstreamDisk(prep, project, cutsOf(project), loadFrames, audioFx, packs) : applyBitstream(prep, project, cutsOf(project), audioFx, packs);
+    if (gens) ({ prep, frames } = await generations(project, prep, frames, cutsOf(project), audioFx, progress, signal, packs));
     const avi = disk ? null : writeMoshedBlob(prep, frames);
     if (disk) await assembleAvi(ffmpeg.file!('mosh.avi'), prep, frames);
     check(signal);

@@ -258,3 +258,8 @@ export async function assembleAvi(dst: string, prep: Prepared, frames: Frame[]) 
   body.set(plan.inline, 4 + json.length);
   await invoke('engine_assemble', body);
 }
+
+/** Read a file from the engine's work folder (desktop) into memory. */
+export async function readEngineFile(path: string, type = 'application/octet-stream'): Promise<Blob> {
+  return new Blob([await invoke<ArrayBuffer>('engine_read', { path })], { type });
+}

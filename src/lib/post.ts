@@ -5,6 +5,7 @@ import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
 import { paramAt } from '../engine/automation';
 import { withChaos } from '../engine/chaos';
+import { bend, type BendMode, type BendOptions } from '../engine/dsp';
 import { bakeAudio, type MoshAudio } from '../engine/audiofx';
 import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project, TextClip } from '../engine/types';
@@ -70,6 +71,15 @@ export function pixelSort(px: Uint8Array, w: number, h: number, low: number, hig
   }
 }
 
+/** Raw Bend: the RGB values of an RGBA image as one long signal through an audio effect (in place). */
+export function rawBendPixels(px: Uint8Array, o: BendOptions) {
+  const n = px.length / 4;
+  const x = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) for (let c = 0; c < 3; c++) x[i * 3 + c] = (px[i * 4 + c] - 128) / 128;
+  const y = bend(x, o);
+  for (let i = 0; i < n; i++) for (let c = 0; c < 3; c++) px[i * 4 + c] = Math.max(0, Math.min(255, Math.round(y[i * 3 + c] * 128 + 128)));
+}
+
 export class PostProcessor {
   gl: GL;
   canvas: HTMLCanvasElement;
@@ -122,6 +132,17 @@ export class PostProcessor {
         const ang = ((Number(paramAt(e, 'angle', t)) + wob * 90 * (rng() * 2 - 1)) * Math.PI) / 180;
         gl.pass(CHROMA, other, { src: cur.tex }, { size: [this.w, this.h], off: [Math.cos(ang) * off, Math.sin(ang) * off], tear: Number(paramAt(e, 'scanTear', t)), seed: index % 997 });
         [cur, other] = [other, cur];
+      } else if (e.type === 'rawbend') {
+        const px = gl.read(cur);
+        rawBendPixels(px, {
+          mode: String(e.params.mode) as BendMode,
+          delay: Number(paramAt(e, 'delay', t)) * 3,
+          feedback: Number(paramAt(e, 'feedback', t)),
+          mix: Number(paramAt(e, 'mix', t)),
+          amount: e.params.mode === 'crush' ? Number(paramAt(e, 'bits', t)) : Number(paramAt(e, 'gain', t)),
+          wrap: Boolean(paramAt(e, 'wrap', t)),
+        });
+        gl.uploadPixels(cur, px);
       } else if (e.type === 'pixelSort') {
         const px = gl.read(cur);
         pixelSort(px, this.w, this.h, Number(paramAt(e, 'low', t)), Number(paramAt(e, 'high', t)), e.params.direction === 'vertical', Boolean(paramAt(e, 'reverse', t)));
