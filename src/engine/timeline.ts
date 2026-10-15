@@ -3,6 +3,7 @@
 import { CLIP_AUDIO, VIDEO_TRACK, clipOn, type Clip, type EffectInstance, type MediaItem, type Project, type Track, type Transition, type TransitionType } from './types';
 import { EFFECTS, defaultParams } from './effects';
 import { hashSeed } from './rng';
+import { rampIntegral, rampInverse, rampLength, rampSpeedAt, splitRamp, type Ramp } from './keys';
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -36,7 +37,13 @@ export const transitionName = (t: TransitionType) => BLEND_TRANSITIONS[t]?.name 
 export const isBlend = (t?: Transition) => !!t && t.type in BLEND_TRANSITIONS && t.duration > 0;
 export const isMoshTransition = (t?: Transition) => !!t && t.type in MOSH_TRANSITIONS;
 
-export const clipLen = (c: Pick<Clip, 'in' | 'out' | 'speed' | 'freeze'>) => Math.max(0.04, c.freeze ? c.out - c.in : (c.out - c.in) / Math.max(0.01, c.speed));
+/** A ramp only counts on clips that play (not freeze frames). */
+const rampOf = (c: Pick<Clip, 'ramp' | 'freeze'>) => (!c.freeze && c.ramp && c.ramp.length ? c.ramp : null);
+
+export const clipLen = (c: Pick<Clip, 'in' | 'out' | 'speed' | 'freeze'> & { ramp?: Ramp }) => {
+  const r = rampOf(c);
+  return Math.max(0.04, c.freeze ? c.out - c.in : r ? rampLength(r, c.out - c.in) : (c.out - c.in) / Math.max(0.01, c.speed));
+};
 
 /** Track ids: 'v1' is the main (magnetic) video track, 'v2'… are video tracks above it, 'a…' are audio. */
 export const isVideoTrack = (id: string) => id.startsWith('v');
@@ -100,14 +107,37 @@ export const timelineFrames = (p: Pick<Project, 'clips' | 'media' | 'texts'>, fp
 /** Source time shown at `local` seconds into a clip. */
 export function sourceTime(c: Clip, local: number): number {
   if (c.freeze) return c.in;
-  const l = Math.max(0, Math.min(clipLen(c), local));
-  return c.reverse ? c.out - l * c.speed : c.in + l * c.speed;
+  const len = clipLen(c);
+  const l = Math.max(0, Math.min(len, local));
+  const r = rampOf(c);
+  const played = r ? len * rampIntegral(r, l / len) : l * c.speed;
+  return c.reverse ? c.out - played : c.in + played;
+}
+
+/** Speed at a clip's left or right edge (what trimming that edge moves the source by). */
+export const edgeSpeed = (c: Clip, edge: 'l' | 'r') => {
+  const r = rampOf(c);
+  // ramp positions run along the timeline, so the left edge is 0 even when the clip plays backwards
+  return r ? rampSpeedAt(r, edge === 'l' ? 0 : 1) : c.speed;
+};
+
+/** Playback speed at `local` seconds into a clip. */
+export function speedAt(c: Clip, local: number): number {
+  const r = rampOf(c);
+  return r ? rampSpeedAt(r, local / clipLen(c)) : c.speed;
 }
 
 /** Inverse of sourceTime (may fall outside the clip). */
 export function localTime(c: Clip, src: number): number {
   if (c.freeze) return 0;
-  return c.reverse ? (c.out - src) / c.speed : (src - c.in) / c.speed;
+  const played = c.reverse ? c.out - src : src - c.in;
+  const r = rampOf(c);
+  if (!r) return played / c.speed;
+  const len = clipLen(c);
+  // outside the clip: extend with the speed at that end
+  if (played < 0) return played / rampSpeedAt(r, 0);
+  if (played > c.out - c.in) return len + (played - (c.out - c.in)) / rampSpeedAt(r, 1);
+  return len * rampInverse(r, played / len);
 }
 
 export interface Segment {
@@ -302,7 +332,7 @@ export function audioSources(p: Pick<Project, 'clips' | 'media' | 'tracks'>): Au
 // ---------------------------------------------------------------- edit operations
 
 export function makeClip(media: MediaItem, track: string, extra: Partial<Clip> = {}): Clip {
-  const len = media.source.kind === 'file' && media.source.isImage ? 3 : media.duration;
+  const len = media.source.kind === 'file' && media.source.isImage ? 3 : media.source.kind === 'adjust' ? 5 : media.duration;
   return {
     id: uid(),
     mediaId: media.id,
@@ -366,6 +396,8 @@ export function splitClip(p: Project, id: string, t: number): Clip | null {
   if (local < 0.05 || local > len - 0.05) return null;
   const at = sourceTime(c, local);
   const b: Clip = { ...c, id: uid(), transition: undefined, fadeIn: 0, vfadeIn: 0, start: c.start + local };
+  const r = rampOf(c);
+  if (r) [c.ramp, b.ramp] = splitRamp(r, local / len);
   if (c.freeze) {
     b.out = c.in + (len - local);
     c.out = c.in + local;
@@ -410,8 +442,9 @@ export function trimClip(p: Project, id: string, edge: 'l' | 'r', dt: number, or
     if (edge === 'l' && c.track !== VIDEO_TRACK) c.start = Math.max(0, orig.start + clipLen(orig) - len);
     return;
   }
-  const ds = dt * orig.speed;
-  const minLen = 0.1 * orig.speed;
+  const sp = edgeSpeed(orig, edge);
+  const ds = dt * sp;
+  const minLen = 0.1 * sp;
   // which source edge moves depends on direction of play
   const moveIn = (edge === 'l') !== orig.reverse;
   if (moveIn) {
@@ -460,11 +493,11 @@ export function rollEdit(p: Project, leftId: string, rightId: string, dt: number
   // media limits: the left clip's tail and the right clip's head must exist in the source
   if (!origL.freeze) {
     const spare = origL.reverse ? origL.in : maxSource(ml) - origL.out;
-    d = Math.min(d, spare / origL.speed);
+    d = Math.min(d, spare / edgeSpeed(origL, 'r'));
   }
   if (!origR.freeze) {
     const spare = origR.reverse ? maxSource(mr) - origR.out : origR.in;
-    d = Math.max(d, -spare / origR.speed);
+    d = Math.max(d, -spare / edgeSpeed(origR, 'l'));
   }
   trimClip(p, leftId, 'r', d, origL);
   trimClip(p, rightId, 'l', d, origR);
@@ -482,7 +515,9 @@ export function slipClip(p: Project, id: string, dt: number, orig: Clip) {
     return;
   }
   // dragging right shows earlier footage (the picture follows the mouse)
-  let ds = -dt * orig.speed * (orig.reverse ? -1 : 1);
+  // slipping keeps the clip's length: the footage under it moves at its average speed
+  const avg = rampOf(orig) ? (orig.out - orig.in) / clipLen(orig) : orig.speed;
+  let ds = -dt * avg * (orig.reverse ? -1 : 1);
   ds = Math.max(-orig.in, Math.min(max - orig.out, ds));
   c.in = orig.in + ds;
   c.out = orig.out + ds;

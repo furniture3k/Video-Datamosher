@@ -5,6 +5,8 @@
   import Icon from './Icon.svelte';
   import { originalFrames, renderPreview, moshedAudio, type RenderResult } from '../lib/renderer';
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
+  import { lutState } from '../lib/luts.svelte';
+  import Scopes from './Scopes.svelte';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
@@ -140,6 +142,7 @@
     void JSON.stringify(store.project.texts);
     void store.project.media.length;
     void store.project.encoder.aspect;
+    void lutState.loaded;
     if (!mosh && !store.ui.playing) untrack(drawEdit);
   });
   $effect(() => {
@@ -419,6 +422,33 @@
     (mosh ? canvas : editCanvas).toBlob((b) => b && download(b, `${store.project.name.replace(/[^\w-]+/g, '_')}_${mosh ? 'frame' + store.ui.playhead : 't' + store.ui.time.toFixed(2)}.png`), 'image/png');
   }
 
+  /** Eyedropper: the colour under the pointer in the live edit picture (drawn without keys). */
+  function pickKeyColour(e: PointerEvent) {
+    const id = store.selectedClip?.id;
+    store.ui.eyedropper = false;
+    if (!id || !editCanvas) return;
+    preview ??= new EditPreview(editCanvas);
+    preview.noKey = true;
+    preview.draw(store.project, store.ui.time, false);
+    preview.noKey = false;
+    // measure against whichever picture is on screen (same shape), then map into the edit canvas
+    const shown = mosh ? canvas : editCanvas;
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    const u = (e.clientX - (rc.left + (rc.width - shown.width * k) / 2)) / (shown.width * k);
+    const v = (e.clientY - (rc.top + (rc.height - shown.height * k) / 2)) / (shown.height * k);
+    const x = Math.floor(u * editCanvas.width);
+    const y = Math.floor(v * editCanvas.height);
+    if (x < 0 || y < 0 || x >= editCanvas.width || y >= editCanvas.height) return;
+    const [r, g, b] = editCanvas.getContext('2d')!.getImageData(x, y, 1, 1).data;
+    const hex = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+    store.edit((p) => {
+      const c = p.clips.find((x) => x.id === id);
+      if (c) c.key = { ...(c.key ?? { similarity: 0.25, blend: 0.08, spill: true }), color: hex };
+    });
+    store.toast(`Key colour ${hex}`, 'ok', 1500);
+  }
+
   let draggingSplit = false;
   function splitMove(e: PointerEvent) {
     if (!draggingSplit) return;
@@ -450,9 +480,11 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stage"
+    class:picking={store.ui.eyedropper}
     bind:this={wrap}
     onpointerdown={(e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
+      if (store.ui.eyedropper) return pickKeyColour(e);
       if (store.ui.compare === 'split') {
         draggingSplit = true;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -467,6 +499,9 @@
     {/if}
     <canvas bind:this={canvas} class:hidden={!mosh} class:split={store.ui.compare === 'split'}></canvas>
     <canvas bind:this={editCanvas} class="edit" class:hidden={mosh || !hasTimeline}></canvas>
+    {#if store.ui.scopes && hasTimeline}
+      <Scopes source={() => (mosh ? canvas : editCanvas)} />
+    {/if}
     {#if store.ui.guides && hasTimeline}
       {@const g = guideSize}
       <svg class="guides" viewBox="0 0 {g.w} {g.h}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
@@ -572,6 +607,7 @@
         {/each}
       </div>
       <span class="divider"></span>
+      <button class="icon ghost" class:on={store.ui.scopes} title="Scopes: waveform, parade, vectorscope, histogram  Shift S" aria-label="Scopes" disabled={!hasTimeline} onclick={() => (store.ui.scopes = !store.ui.scopes)}><Icon name="grid" /></button>
       <button class="icon ghost" title="Save this frame as PNG" aria-label="Save frame" disabled={!hasTimeline} onclick={snapshot}><Icon name="still" /></button>
       <button class="icon ghost render-btn" title="Render now  Enter" aria-label="Render now" disabled={!hasTimeline} onclick={() => store.doRender(true)}><Icon name="render" /></button>
     </div>
@@ -622,6 +658,9 @@
   .guides .gt {
     fill: rgba(255, 255, 255, 0.8);
     font-family: var(--mono, monospace);
+  }
+  .stage.picking {
+    cursor: crosshair;
   }
   canvas.split {
     cursor: ew-resize;

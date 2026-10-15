@@ -435,6 +435,102 @@ await step('bake the mosh into a clip (add to media)', async () => {
   await settle();
 });
 
+await step('NLE: keyframes, speed ramp, scopes', async () => {
+  await S(() => window.__moshpit.store.edit((p) => (p.effects = [])));
+  await settle();
+  const first = await S(() => window.__moshpit.store.project.clips.find((c) => c.track === 'v1').id);
+  await S((id) => {
+    const st = window.__moshpit.store;
+    st.ui.selectedClips = [id];
+    st.seek(0.1);
+  }, first);
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  const posX = page.locator('.field', { hasText: 'Position X' });
+  await posX.locator('.kf').click();
+  await S(() => window.__moshpit.store.seek(1.2));
+  await posX.locator('input.val').fill('0.4');
+  await posX.locator('input.val').press('Enter');
+  const keys = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).keys?.x, first);
+  if (!keys || keys.length !== 2 || keys[1][1] !== 0.4) throw new Error('keyframes not set: ' + JSON.stringify(keys));
+  await page.locator('.clip .kdot').first().waitFor();
+  // speed ramp
+  const clipLength = () => S((id) => window.__moshpit.timeline.clipLen(window.__moshpit.store.project.clips.find((c) => c.id === id)), first);
+  const len0 = await clipLength();
+  await page.locator('.field', { hasText: 'Speed ramp' }).locator('select').selectOption('up');
+  const ramp = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).ramp, first);
+  if (!ramp?.length) throw new Error('no ramp');
+  if (Math.abs((await clipLength()) - len0) < 0.05) throw new Error('ramp did not change the clip length');
+  await settle();
+  // scopes
+  // (the keyboard shortcut is Shift+S; focus is still in the inspector here, so use the button)
+  await page.getByRole('button', { name: 'Scopes', exact: true }).click();
+  await page.locator('.scopes canvas').waitFor();
+  for (const k of ['Parade', 'Vector', 'Histogram', 'Waveform']) await page.locator('.scopes button', { hasText: k }).click();
+  await page.getByRole('button', { name: 'Scopes', exact: true }).click();
+});
+
+await step('NLE: adjustment layer, chroma key with eyedropper, LUT import', async () => {
+  // adjustment layer from the media panel, darkened
+  await page.locator('.tabs[role=tablist] button', { hasText: 'Media' }).first().click().catch(() => {});
+  await page.getByRole('button', { name: 'Adjust', exact: true }).click();
+  const adj = await S(() => window.__moshpit.store.selectedClip);
+  const m = await S((id) => window.__moshpit.store.project.media.find((x) => x.id === id).source.kind, adj.mediaId);
+  if (m !== 'adjust' || adj.track === 'v1') throw new Error('adjustment layer not placed on top: ' + JSON.stringify(adj));
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  const br = page.locator('.field', { hasText: 'Brightness' }).locator('input.val');
+  await br.fill('-0.4');
+  await br.press('Enter');
+  await settle();
+  // a generated clip on top, keyed
+  await S(() => {
+    const st = window.__moshpit.store;
+    const gen = st.project.media.find((x) => x.source.kind === 'file' && !x.source.compound && x.hasVideo && x.source.kind !== 'adjust');
+    window.__moshpit.edit.placeOnTop(gen);
+  });
+  await page.locator('.field', { hasText: 'Key out a colour' }).locator('input').click();
+  await page.getByRole('button', { name: 'Pick from player' }).click();
+  const stage = await page.locator('.player .stage').boundingBox();
+  await page.mouse.click(stage.x + stage.width * 0.3, stage.y + stage.height * 0.5);
+  const key = await S(() => window.__moshpit.store.selectedClip?.key);
+  if (!key || !/^#[0-9a-f]{6}$/.test(key.color)) throw new Error('eyedropper did not set a key colour: ' + JSON.stringify(key));
+  await settle();
+  // LUT: import a .cube (an inverting one) and render with it
+  const cube = 'TITLE "invert"\nLUT_3D_SIZE 2\n' + [0, 1].flatMap((b) => [0, 1].flatMap((g) => [0, 1].map((r) => `${1 - r} ${1 - g} ${1 - b}`))).join('\n') + '\n';
+  await page.locator('.lutrow input[type=file]').setInputFiles({ name: 'invert.cube', mimeType: 'text/plain', buffer: Buffer.from(cube) });
+  await page.waitForFunction(() => window.__moshpit.store.selectedClip?.grade?.lut, null, { timeout: 10000 });
+  await settle();
+  if (!(await S(() => window.__moshpit.store.renderFresh))) throw new Error('render with LUT not fresh');
+});
+
+await step('NLE: make a compound, edit inside, close re-renders it', async () => {
+  const ids = await S(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').slice(0, 2).map((c) => c.id));
+  if (ids.length < 2) throw new Error('need two main-track clips');
+  const n0 = await S(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length);
+  await S((ids) => (window.__moshpit.store.ui.selectedClips = ids), ids);
+  await page.locator(`.clip.video[data-clip="${ids[0]}"]`).click({ button: 'right' });
+  await page.getByRole('button', { name: /Make compound clip/ }).click();
+  await page.waitForFunction((n) => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length === n - 1 && !window.__moshpit.store.ui.dialog, n0, { timeout: 240000 });
+  const cmp = await S(() => window.__moshpit.store.project.clips.find((c) => window.__moshpit.store.project.media.find((m) => m.id === c.mediaId)?.source.compound));
+  if (!cmp) throw new Error('no compound clip');
+  await settle();
+  // edit inside: drop its last clip, then close
+  await page.locator(`.clip.video[data-clip="${cmp.id}"]`).dblclick();
+  await page.locator('.crumbs').waitFor();
+  const inside = await S(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length);
+  if (inside !== 2) throw new Error('inside the compound there should be 2 clips, found ' + inside);
+  const d0 = await S((id) => window.__moshpit.store.seqStack[0].parent.media.find((m) => m.id === id).duration, cmp.mediaId);
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.ui.selectedClips = [st.project.clips.filter((c) => c.track === 'v1')[1].id];
+  });
+  await page.keyboard.press('Shift+Delete');
+  await page.getByRole('button', { name: 'Close compound' }).click();
+  await page.waitForFunction(() => !window.__moshpit.store.seqStack.length && !window.__moshpit.store.ui.dialog, null, { timeout: 240000 });
+  const d1 = await S((id) => window.__moshpit.store.project.media.find((m) => m.id === id).duration, cmp.mediaId);
+  if (!(d1 < d0 - 0.2)) throw new Error(`compound did not get shorter: ${d0} -> ${d1}`);
+  await settle();
+});
+
 await step('light theme + new project + undo', async () => {
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Light theme/ }).click();
@@ -473,14 +569,15 @@ await step('timeline lanes line up with headers and the playhead', async () => {
   const cut = await S(() => {
     const s = window.__moshpit.store;
     const v = s.project.clips.filter((c) => c.track === 'v1');
-    const len = (c) => (c.out - c.in) / c.speed;
+    const len = (c) => window.__moshpit.timeline.clipLen(c);
     const t = len(v[0]) - (v[1].transition && ['dissolve', 'dip', 'dipwhite', 'wipeleft', 'wiperight', 'wipeup', 'wipedown', 'slideleft', 'slideright', 'circleopen', 'pixelize'].includes(v[1].transition.type) ? Math.min(v[1].transition.duration, len(v[0]) / 2, len(v[1]) / 2) : 0);
     s.seek(t);
-    return t;
+    return { t, id: v[1].id };
   });
   await page.waitForTimeout(200);
-  const pos = await S(() => [document.querySelector('.phead.main').getBoundingClientRect().left, document.querySelectorAll('.clip.video')[1].getBoundingClientRect().left]);
-  if (Math.abs(pos[0] - pos[1]) > 1) throw new Error(`playhead at ${pos[0]} but the cut (${cut}s) is drawn at ${pos[1]}`);
+  // the second clip of the main track (upper tracks have video clips too)
+  const pos = await S((id) => [document.querySelector('.phead.main').getBoundingClientRect().left, document.querySelector(`.clip.video[data-clip="${id}"]`).getBoundingClientRect().left], cut.id);
+  if (Math.abs(pos[0] - pos[1]) > 1) throw new Error(`playhead at ${pos[0]} but the cut (${cut.t}s) is drawn at ${pos[1]}`);
 });
 
 await step('phone layout: one panel at a time, timeline usable', async () => {

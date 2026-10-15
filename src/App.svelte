@@ -15,6 +15,7 @@
   import SnapshotsDialog from './dialogs/SnapshotsDialog.svelte';
   import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
   import BakeDialog from './dialogs/BakeDialog.svelte';
+  import CompoundDialog from './dialogs/CompoundDialog.svelte';
   import { takeSnapshot } from './lib/snapshots.svelte';
   import ExportDialog from './dialogs/ExportDialog.svelte';
   import VariationsDialog from './dialogs/VariationsDialog.svelte';
@@ -209,7 +210,8 @@
         store.ui.tool = 'trim';
         break;
       case 's':
-        edit.splitAtPlayhead();
+        if (sh) store.ui.scopes = !store.ui.scopes;
+        else edit.splitAtPlayhead();
         break;
       case 'm':
         edit.toggleMarker();
@@ -356,6 +358,7 @@
 {#if store.ui.dialog === 'snapshots'}<SnapshotsDialog />{/if}
 {#if store.ui.dialog === 'beatEdit'}<BeatEditDialog />{/if}
 {#if store.ui.dialog === 'bake'}<BakeDialog />{/if}
+{#if store.ui.dialog === 'compound'}<CompoundDialog />{/if}
 {#if store.ui.dialog === 'export'}<ExportDialog />{/if}
 {#if store.ui.dialog === 'variations'}<VariationsDialog />{/if}
 {#if store.ui.dialog === 'help'}<HelpDialog />{/if}

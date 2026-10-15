@@ -95,6 +95,13 @@ There are 19 presets to start from, and you can save your own.
 - **Magnetic main track.** Clips butt up against each other, so deleting or trimming one closes the gap. Drag to reorder, drag edges to trim (ripple), split, duplicate, copy and paste. Speed (0.05–16×), reverse, freeze frames and fit per clip.
 - **Video tracks on top.** Add Video 2, 3… above the main track for picture-in-picture, overlays and titles made from footage. Clips there are placed freely and composited with opacity and blend modes (screen, add, multiply, difference). Drag a clip between the main track and the tracks above.
 - **Transform, colour and fades.** Zoom, position, rotation, flips and crop; brightness, contrast, saturation, gamma and hue; picture fades (drag the dots on a clip's top corners). All of it happens before moshing, so it melts with everything else.
+- **Keyframes.** Position, zoom, rotation and opacity can be animated: press ◆ next to a setting to add a keyframe at the playhead, move the playhead and change the value. Keys show as diamonds on the clip; ◀◆ ◆▶ jump between them.
+- **Speed ramps.** Speed up, slow down, slow-mo in the middle, rush in the middle or montage bursts, between a Slow and a Fast speed; the clip's length follows and its sound stretches with it.
+- **Chroma key.** Green or blue screen on the tracks above: pick the colour with the eyedropper in the player, then set similarity, softness and spill removal.
+- **LUTs.** Import `.cube` LUTs (3D or 1D) and apply them to any clip, with an amount.
+- **Adjustment layers.** The **Adjust** button in the Media panel puts a layer above the picture that re-colours everything below it while it's on screen (colour, LUT, opacity, fades).
+- **Compound clips.** Right-click clips on the main track → **Make compound clip** folds them into one clip with its own timeline. Double-click it to edit inside, **Close compound** to come back. **Mosh inside** renders the compound's own mosh into it, so you can melt a melt.
+- **Scopes.** Waveform, RGB parade, vectorscope and histogram over the player (<kbd>Shift</kbd> <kbd>S</kbd>).
 - **Editing tools like an NLE.** Select (<kbd>A</kbd>), Trim (<kbd>T</kbd>: roll a cut, slip a clip's footage) and Blade (<kbd>B</kbd>: click to cut). Box-select with the mouse, ripple delete, turn clips off without removing them, colour labels, locked and hidden tracks, markers, In / Out marks, and Insert / Overwrite / Place on top / Append from the media panel (<kbd>F9</kbd> <kbd>F10</kbd> <kbd>F12</kbd>).
 - **Playback like an NLE.** <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> shuttle (backwards too, up to 16×), loop the In–Out range, jump between edit points and markers, and type a timecode to go straight there. The playhead and the picture always match: the mosh keeps the timeline's timing.
 - **Transitions.** Mosh transitions (Melt, Bloom melt, Glitch cut, Stutter melt, Liquid melt, Ghost melt, Rewind melt) and classic ones (cross dissolve, dip to black or white, wipes, slides, circle, pixelize). Drag a transition's band to change its length. Mosh transitions last exactly that long, then a fresh keyframe brings the next shot back clean (turn **Resolve at the end** off to let the melt run on).
@@ -183,7 +190,7 @@ flowchart LR
 | <kbd>Shift</kbd> <kbd>K</kbd> | Force a keyframe | <kbd>Shift</kbd> <kbd>A</kbd> | Add effect |
 | <kbd>R</kbd> / <kbd>U</kbd> | Randomize / nudge settings | <kbd>V</kbd> / <kbd>P</kbd> | Variations / presets |
 | <kbd>Q</kbd> / <kbd>Shift</kbd> <kbd>Q</kbd> | Chaos dial wilder / calmer | <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>S</kbd> | Save a snapshot |
-| <kbd>G</kbd> | Add a Frame Sequencer | | |
+| <kbd>G</kbd> | Add a Frame Sequencer | <kbd>Shift</kbd> <kbd>S</kbd> | Scopes |
 | <kbd>C</kbd> | Compare with source | <kbd>E</kbd> | Export |
 | <kbd>Ctrl</kbd> <kbd>Z</kbd> | Undo (<kbd>Shift</kbd>: redo) | <kbd>?</kbd> | Help |
 

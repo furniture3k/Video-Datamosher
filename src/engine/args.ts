@@ -1,6 +1,8 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
-import { clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
+import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
 import { findRecipe } from './recipe';
+import { hasKeys, keysExpr, rampSetpts, type Keys } from './keys';
+import { lutFile } from './lut';
 import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
@@ -44,6 +46,7 @@ export function clipInputArgs(c: Clip, m: MediaItem, fps: number, path: PathFn =
     const g = GENERATORS.find((x) => x.id === (m.source as { generator: string }).generator) ?? GENERATORS[0];
     return ['-f', 'lavfi', '-t', String(r3(c.out)), '-i', g.spec(even(m.width), even(m.height), fps)];
   }
+  if (m.source.kind === 'adjust') return ['-f', 'lavfi', '-t', String(dur), '-i', `color=c=black@0:s=16x16:r=${fps}`];
   if (m.source.isImage) return ['-loop', '1', '-framerate', String(fps), '-t', String(dur), '-i', path(m)];
   // a freeze frame only needs its first frame
   return ['-ss', String(r3(c.in)), '-t', String(c.freeze ? 0.5 : dur), '-i', path(m)];
@@ -95,7 +98,46 @@ function gradeFilters(g: Grade): string[] {
     const k = ['rr', 'rg', 'rb', 'gr', 'gg', 'gb', 'br', 'bg', 'bb'];
     f.push('colorchannelmixer=' + k.map((n, i) => `${n}=${m[i]}`).join(':'));
   }
+  // the LUT file is written next to the job with the amount baked in (see lutFile)
+  if (g.lut && (g.lutAmount ?? 1) > 0) f.push(`lut3d=file=${lutFile(g.lut, g.lutAmount ?? 1)}:interp=tetrahedral`);
   return f;
+}
+
+/** Chroma key on an RGBA picture: the colour goes transparent, its spill is pulled from the edges. */
+function keyFilters(k: ChromaKey): string[] {
+  const hex = k.color.replace('#', '').padEnd(6, '0').slice(0, 6);
+  const f = [`colorkey=0x${hex}:${r3(Math.max(0.01, k.similarity))}:${r3(k.blend)}`];
+  if (k.spill) {
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    if (g >= b && g >= r) f.push('despill=type=green');
+    else if (b >= g && b >= r) f.push('despill=type=blue');
+  }
+  return f;
+}
+
+/**
+ * Animated position / zoom / rotation on a w×h picture: FFmpeg's perspective filter, fed for
+ * every frame the source point that lands on each corner. A 2px border of the background is
+ * added first so whatever comes into view from outside the picture is background.
+ */
+function keyedTransform(keys: Keys, T: { zoom: number; x: number; y: number; rotate: number }, w: number, h: number, fps: number, offset: number, bg: string): string[] {
+  const W = w + 4;
+  const H = h + 4;
+  const t = `(in/${fps}+${r3(offset)})`;
+  const val = (k: 'zoom' | 'x' | 'y' | 'rotate', fallback: number) => (keys[k]?.length ? `(${keysExpr(keys[k]!, t)})` : `(${r3(fallback)})`);
+  const z = `max(0.01,${val('zoom', T.zoom)})`;
+  const dx = `${val('x', T.x)}*${w}`;
+  const dy = `${val('y', T.y)}*${h}`;
+  const a = `${val('rotate', T.rotate)}*PI/180`;
+  const corner = (qx: number, qy: number): [string, string] => {
+    const ux = `((${qx}-${W / 2}-${dx})/${z})`;
+    const uy = `((${qy}-${H / 2}-${dy})/${z})`;
+    return [`${W / 2}+cos(${a})*${ux}+sin(${a})*${uy}`, `${H / 2}-sin(${a})*${ux}+cos(${a})*${uy}`];
+  };
+  const c = [corner(0, 0), corner(W, 0), corner(0, H), corner(W, H)];
+  // quoted, so the commas inside the expressions don't split the filter graph
+  const opts = c.flatMap(([x, y], i) => [`x${i}='${x}'`, `y${i}='${y}'`]);
+  return [`pad=${W}:${H}:2:2:color=${bg}`, `perspective=${opts.join(':')}:interpolation=linear:sense=source:eval=frame`, `crop=${w}:${h}:2:2`];
 }
 
 /** A clip cut down to part of itself: local seconds a..b of it. */
@@ -117,15 +159,20 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   const T = transformOf(c);
   const G = gradeOf(c);
   const op = Math.max(0, Math.min(1, c.opacity ?? 1));
-  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G);
+  const moving = hasKeys(c.keys, ['x', 'y', 'zoom', 'rotate']);
+  const fading = hasKeys(c.keys, ['opacity']);
+  const ramp = !c.freeze && c.ramp?.length ? c.ramp : null;
+  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G) || moving || fading;
   const bg = layer ? 'black@0' : 'black';
   const f: string[] = [];
   if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(Math.max(c.in + 0.04, c.out))}`);
   f.push('setpts=PTS-STARTPTS');
   if (c.freeze) f.push('trim=end_frame=1', 'loop=loop=-1:size=1', `setpts=N/${fps}/TB`);
+  else if (ramp) f.push(`setpts='${rampSetpts(ramp, c.out - c.in)}'`);
   else if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
   f.push(`fps=${fps}`);
   if (rgba) f.push('format=rgba');
+  if (layer && c.key) f.push(...keyFilters(c.key));
   // grade the picture itself (not the letterbox bars added next)
   f.push(...gradeFilters(G));
   f.push(scaleChain(c, w, h, layer), 'setsar=1');
@@ -144,7 +191,10 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   if (T.flipV) f.push('vflip');
   const stmts: string[] = [];
   let cur = `${tag}p`;
-  if (T.zoom !== 1 || T.x || T.y || T.rotate) {
+  if (moving) {
+    f.push(...keyedTransform(c.keys!, T, w, h, fps, offset, bg));
+    stmts.push(`[${src}]${f.join(',')}[${cur}]`);
+  } else if (T.zoom !== 1 || T.x || T.y || T.rotate) {
     f.push(`scale=${even(w * T.zoom)}:${even(h * T.zoom)}:flags=bicubic`);
     if (T.rotate) {
       const a = r3((T.rotate * Math.PI) / 180);
@@ -155,7 +205,10 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
     stmts.push(`[${tag}bg][${tag}fg]overlay=x=(W-w)/2+${r3(T.x * w)}:y=(H-h)/2+${r3(T.y * h)}:shortest=1:format=auto,setsar=1[${cur}]`);
   } else stmts.push(`[${src}]${f.join(',')}[${cur}]`);
   const g: string[] = [];
-  if (op < 1) g.push(layer ? `colorchannelmixer=aa=${r3(op)}` : `colorchannelmixer=rr=${r3(op)}:gg=${r3(op)}:bb=${r3(op)}`);
+  if (fading) {
+    const e = `clip(${keysExpr(c.keys!.opacity!, `(T+${r3(offset)})`)},0,1)`;
+    g.push(layer ? `geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*${e}'` : `geq=r='r(X,Y)*${e}':g='g(X,Y)*${e}':b='b(X,Y)*${e}':a='alpha(X,Y)'`);
+  } else if (op < 1) g.push(layer ? `colorchannelmixer=aa=${r3(op)}` : `colorchannelmixer=rr=${r3(op)}:gg=${r3(op)}:bb=${r3(op)}`);
   const alpha = layer ? ':alpha=1' : '';
   const fi = Math.min(c.vfadeIn ?? 0, fullLen / 2);
   const fo = Math.min(c.vfadeOut ?? 0, fullLen / 2);
@@ -222,9 +275,29 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     const a = Math.max(l.start, t0);
     const b = Math.min(l.end, t1);
     if (b - a < 0.5 / fps) return;
+    const lay = `${tag}l${k}`;
+    if (l.media.source.kind === 'adjust') {
+      // an adjustment layer re-grades everything below it while it's on screen
+      const next = `${tag}y${k}`;
+      const G = gradeOf(l.clip);
+      const ga = r3(a - t0);
+      const gb = r3(b - t0);
+      const op = Math.max(0, Math.min(1, l.clip.opacity ?? 1));
+      const fx = ['format=rgba', ...gradeFilters(G)];
+      if (op < 1) fx.push(`colorchannelmixer=aa=${r3(op)}`);
+      const len = clipLen(l.clip);
+      const fi = Math.min(l.clip.vfadeIn ?? 0, len / 2);
+      const fo = Math.min(l.clip.vfadeOut ?? 0, len / 2);
+      if (fi > 0.01) fx.push(`fade=t=in:st=${r3(l.start - t0)}:d=${r3(fi)}:alpha=1`);
+      if (fo > 0.01) fx.push(`fade=t=out:st=${r3(l.start + len - fo - t0)}:d=${r3(fo)}:alpha=1`);
+      filter.push(`[${acc}]split[${lay}a][${lay}b]`);
+      filter.push(`[${lay}b]${fx.join(',')}[${lay}c]`);
+      filter.push(`[${lay}a][${lay}c]overlay=0:0:enable='between(t,${ga},${gb})':format=auto,format=yuv420p[${next}]`);
+      acc = next;
+      return;
+    }
     const sub = windowClip(l.clip, a - l.start, b - l.start);
     const src = input(clipInputArgs(sub, l.media, fps, path));
-    const lay = `${tag}l${k}`;
     filter.push(...clipGraph(sub, l.media, fps, w, h, src, `${lay}r`, `${tag}L${k}`, true, a - l.start, clipLen(l.clip)));
     const at = r3(a - t0);
     filter.push(`[${lay}r]setpts=PTS+${at}/TB[${lay}]`);
@@ -409,7 +482,9 @@ export function audioMixArgs(project: Project, total: number, path: PathFn = inp
     const len = r3(Math.min(s.len, total - s.start));
     const f: string[] = ['asetpts=PTS-STARTPTS'];
     if (s.clip.reverse) f.push('areverse');
-    f.push(...tempo(s.clip.speed));
+    // a ramped clip's sound is stretched in time with the picture (samples dropped or repeated)
+    if (!s.clip.freeze && s.clip.ramp?.length) f.push(`asetpts='${rampSetpts(s.clip.ramp, s.clip.out - s.clip.in)}'`, 'aresample=async=1000:first_pts=0');
+    else f.push(...tempo(s.clip.speed));
     f.push('aresample=44100', 'aformat=sample_fmts=fltp:channel_layouts=stereo', 'apad', `atrim=end=${len}`);
     if (Math.abs(s.gain - 1) > 1e-4) f.push(`volume=${r3(s.gain)}`);
     const fi = Math.min(s.fadeIn, len / 2);

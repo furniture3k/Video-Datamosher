@@ -5,7 +5,10 @@ import { mediaState } from './mediastate.svelte';
 import { getPcm } from './media';
 import { proxyKey } from './renderer';
 import { drawTexts } from './text';
-import { layoutVideo, sourceTime, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
+import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
+import { keyedValue } from '../engine/keys';
+import { lutApplier } from '../engine/lut';
+import { lutNow } from './luts.svelte';
 import { gradeCurve, gradeMatrix } from '../engine/args';
 import { outputSize } from '../engine/args';
 import { SAMPLE_RATE } from '../engine/audio';
@@ -16,7 +19,7 @@ const COMPOSITE: Record<string, GlobalCompositeOperation> = { normal: 'source-ov
 
 /** Opacity of a clip's picture at local time `local` (its opacity and video fades). */
 export function clipAlpha(c: Clip, local: number, len: number): number {
-  let a = Math.max(0, Math.min(1, c.opacity ?? 1));
+  let a = Math.max(0, Math.min(1, keyedValue(c.keys, 'opacity', local, c.opacity ?? 1)));
   const fi = Math.min(c.vfadeIn ?? 0, len / 2);
   const fo = Math.min(c.vfadeOut ?? 0, len / 2);
   if (fi > 0.01) a *= Math.max(0, Math.min(1, local / fi));
@@ -26,6 +29,64 @@ export function clipAlpha(c: Clip, local: number, len: number): number {
 
 type Src = { url: string; proxy: boolean };
 
+/** Colour correction on RGBA pixels: the curve, the colour matrix, then the LUT (as the render does). */
+export function gradePixels(d: Uint8ClampedArray, G: ReturnType<typeof gradeOf>) {
+  const colour = G.brightness || G.contrast !== 1 || G.gamma !== 1 || G.saturation !== 1 || G.hue;
+  if (colour) {
+    const lut = new Uint8ClampedArray(256);
+    for (let i = 0; i < 256; i++) lut[i] = Math.round(gradeCurve(G, i / 255) * 255);
+    const m = gradeMatrix(G);
+    const ident = G.saturation === 1 && !G.hue;
+    for (let i = 0; i < d.length; i += 4) {
+      if (!d[i + 3]) continue;
+      const r = lut[d[i]];
+      const g = lut[d[i + 1]];
+      const b = lut[d[i + 2]];
+      if (ident) {
+        d[i] = r;
+        d[i + 1] = g;
+        d[i + 2] = b;
+      } else {
+        d[i] = m[0] * r + m[1] * g + m[2] * b;
+        d[i + 1] = m[3] * r + m[4] * g + m[5] * b;
+        d[i + 2] = m[6] * r + m[7] * g + m[8] * b;
+      }
+    }
+  }
+  if (G.lut && (G.lutAmount ?? 1) > 0) {
+    const l = lutNow(G.lut);
+    if (l) lutApplier(l, G.lutAmount ?? 1)(d);
+  }
+}
+
+/**
+ * Chroma key on RGBA pixels, like FFmpeg's colorkey: distance from the key colour (0..1) below
+ * `similarity` is transparent, with a soft `blend` edge; spill pulls the key channel down.
+ */
+export function chromaKeyPixels(d: Uint8ClampedArray, k: NonNullable<Clip['key']>) {
+  const hex = k.color.replace('#', '').padEnd(6, '0');
+  const kr = parseInt(hex.slice(0, 2), 16);
+  const kg = parseInt(hex.slice(2, 4), 16);
+  const kb = parseInt(hex.slice(4, 6), 16);
+  const sim = Math.max(0.01, k.similarity);
+  const blend = Math.max(0, k.blend);
+  const green = kg >= kr && kg >= kb;
+  for (let i = 0; i < d.length; i += 4) {
+    const dr = d[i] - kr;
+    const dg = d[i + 1] - kg;
+    const db = d[i + 2] - kb;
+    const dist = Math.sqrt(dr * dr + dg * dg + db * db) / (255 * Math.sqrt(3));
+    let a = 1;
+    if (dist < sim) a = 0;
+    else if (blend > 0 && dist < sim + blend) a = (dist - sim) / blend;
+    d[i + 3] = d[i + 3] * a;
+    if (k.spill && a > 0) {
+      if (green) d[i + 1] = Math.min(d[i + 1], (d[i] + d[i + 2]) / 2 + 8);
+      else d[i + 2] = Math.min(d[i + 2], (d[i] + d[i + 1]) / 2 + 8);
+    }
+  }
+}
+
 export class EditPreview {
   private videos = new Map<string, HTMLVideoElement>();
   private images = new Map<string, HTMLImageElement>();
@@ -34,6 +95,8 @@ export class EditPreview {
   private thumbs = new Map<string, HTMLImageElement>();
   /** called when something finished loading/seeking and the frame should be redrawn */
   onDirty: () => void = () => {};
+  /** draw chroma-keyed clips without their key (for picking the key colour) */
+  noKey = false;
   private scratch = document.createElement('canvas');
   private graded = document.createElement('canvas');
 
@@ -145,7 +208,7 @@ export class EditPreview {
       }
       used.add(v);
       const target = sourceTime(c, tt - start);
-      const rate = c.speed * speed;
+      const rate = speedAt(c, tt - start) * speed;
       if (playing && !c.reverse && !c.freeze && rate >= 0.0625 && rate <= 16) {
         if (Math.abs(v.playbackRate - rate) > 1e-3) v.playbackRate = rate;
         if (v.paused) {
@@ -168,14 +231,18 @@ export class EditPreview {
         const imgB = layer(b);
         const prog = Math.max(0, Math.min(1, (tv - b.start) / b.overlap));
         this.blend(ctx, w, h, a, imgA, b, imgB, prog, tv);
-      } else if (imgA) this.paint(ctx, imgA, a.clip, w, h, clipAlpha(a.clip, tv - a.start, a.end - a.start));
+      } else if (imgA) this.paint(ctx, imgA, a.clip, w, h, clipAlpha(a.clip, tv - a.start, a.end - a.start), 'source-over', 0, tv - a.start);
     }
 
     // clips on the upper video tracks, bottom track first
     for (const l of layers(p)) {
       if (t < l.start - 1e-6 || t >= l.end) continue;
+      if (l.media.source.kind === 'adjust') {
+        this.adjust(ctx, l.clip, w, h, clipAlpha(l.clip, t - l.start, l.end - l.start));
+        continue;
+      }
       const img = source(l.clip, l.media, l.start, 'L' + l.clip.id, t);
-      if (img) this.paint(ctx, img, l.clip, w, h, clipAlpha(l.clip, t - l.start, l.end - l.start), COMPOSITE[l.clip.blend ?? 'normal']);
+      if (img) this.paint(ctx, img, l.clip, w, h, clipAlpha(l.clip, t - l.start, l.end - l.start), COMPOSITE[l.clip.blend ?? 'normal'], 0, t - l.start);
     }
 
     // get the next clip ready so cuts don't stall
@@ -217,11 +284,14 @@ export class EditPreview {
    * Draw a clip's picture: fitted to the frame, then cropped, flipped, zoomed, rotated and moved
    * (its Transform), colour corrected (its Grade), at opacity `alpha`. Same order as the render.
    */
-  private paint(ctx: CanvasRenderingContext2D, img: CanvasImageSource, c: Clip, w: number, h: number, alpha = 1, op: GlobalCompositeOperation = 'source-over', dx = 0) {
+  private paint(ctx: CanvasRenderingContext2D, img: CanvasImageSource, c: Clip, w: number, h: number, alpha = 1, op: GlobalCompositeOperation = 'source-over', dx = 0, local = 0) {
     if (alpha <= 0) return;
-    const T = transformOf(c);
+    const T0 = transformOf(c);
+    // keyframed properties at this moment
+    const T = { ...T0, x: keyedValue(c.keys, 'x', local, T0.x), y: keyedValue(c.keys, 'y', local, T0.y), zoom: keyedValue(c.keys, 'zoom', local, T0.zoom), rotate: keyedValue(c.keys, 'rotate', local, T0.rotate) };
     const G = gradeOf(c);
-    const graded = !isIdentityGrade(G);
+    const keyed = !!c.key && c.track !== 'v1' && !this.noKey;
+    const graded = !isIdentityGrade(G) || keyed;
     let target = ctx;
     if (graded) {
       if (this.graded.width !== w || this.graded.height !== h) {
@@ -263,30 +333,34 @@ export class EditPreview {
     } catch {
       return;
     }
-    const lut = new Uint8ClampedArray(256);
-    for (let i = 0; i < 256; i++) lut[i] = Math.round(gradeCurve(G, i / 255) * 255);
-    const m = gradeMatrix(G);
-    const ident = G.saturation === 1 && !G.hue;
-    const d = px.data;
-    for (let i = 0; i < d.length; i += 4) {
-      if (!d[i + 3]) continue;
-      const r = lut[d[i]];
-      const g = lut[d[i + 1]];
-      const b = lut[d[i + 2]];
-      if (ident) {
-        d[i] = r;
-        d[i + 1] = g;
-        d[i + 2] = b;
-      } else {
-        d[i] = m[0] * r + m[1] * g + m[2] * b;
-        d[i + 1] = m[3] * r + m[4] * g + m[5] * b;
-        d[i + 2] = m[6] * r + m[7] * g + m[8] * b;
-      }
-    }
+    if (keyed) chromaKeyPixels(px.data, c.key!);
+    gradePixels(px.data, G);
     target.putImageData(px, 0, 0);
     ctx.save();
     ctx.globalAlpha = alpha;
     ctx.globalCompositeOperation = op;
+    ctx.drawImage(this.graded, 0, 0);
+    ctx.restore();
+  }
+
+  /** Adjustment layer: re-grade everything drawn so far, mixed in at `alpha`. */
+  private adjust(ctx: CanvasRenderingContext2D, c: Clip, w: number, h: number, alpha: number) {
+    const G = gradeOf(c);
+    if (alpha <= 0 || isIdentityGrade(G)) return;
+    let px: ImageData;
+    try {
+      px = ctx.getImageData(0, 0, w, h);
+    } catch {
+      return;
+    }
+    gradePixels(px.data, G);
+    if (this.graded.width !== w || this.graded.height !== h) {
+      this.graded.width = w;
+      this.graded.height = h;
+    }
+    this.graded.getContext('2d')!.putImageData(px, 0, 0);
+    ctx.save();
+    ctx.globalAlpha = alpha;
     ctx.drawImage(this.graded, 0, 0);
     ctx.restore();
   }
@@ -296,8 +370,8 @@ export class EditPreview {
     const xf = BLEND_TRANSITIONS[type]?.xfade ?? 'fade';
     const alA = clipAlpha(a.clip, tv - a.start, a.end - a.start);
     const alB = clipAlpha(b.clip, tv - b.start, b.end - b.start);
-    const drawA = (dx = 0) => imgA && this.paint(ctx, imgA, a.clip, w, h, alA * ctx.globalAlpha, 'source-over', dx);
-    const drawB = (dx = 0) => imgB && this.paint(ctx, imgB, b.clip, w, h, alB * ctx.globalAlpha, 'source-over', dx);
+    const drawA = (dx = 0) => imgA && this.paint(ctx, imgA, a.clip, w, h, alA * ctx.globalAlpha, 'source-over', dx, tv - a.start);
+    const drawB = (dx = 0) => imgB && this.paint(ctx, imgB, b.clip, w, h, alB * ctx.globalAlpha, 'source-over', dx, tv - b.start);
     const clipped = (r: () => void, fn: () => void) => {
       ctx.save();
       ctx.beginPath();

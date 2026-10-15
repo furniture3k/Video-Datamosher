@@ -20,7 +20,7 @@ export async function loadProjectFile(file: File) {
     const media: MediaItem[] = [];
     const idMap = new Map<string, string>();
     for (const m of p.media) {
-      if (m.source.kind === 'generator') {
+      if (m.source.kind !== 'file') {
         media.push(m);
         continue;
       }

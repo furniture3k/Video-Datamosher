@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
-  import { addFiles, addToTimeline } from '../lib/media';
+  import { addFiles, addToTimeline, addAdjustmentLayer } from '../lib/media';
   import { mediaState } from '../lib/mediastate.svelte';
   import { removeMedia, setTransition, transitionAtPlayhead, insertEdit, overwriteEdit, placeOnTop, appendEdit } from '../lib/edit';
   import { BLEND_TRANSITIONS, MOSH_TRANSITIONS } from '../engine/timeline';
@@ -16,7 +16,7 @@
     for (const c of store.project.clips) m.set(c.mediaId, (m.get(c.mediaId) ?? 0) + 1);
     return m;
   });
-  const kind = (m: MediaItem) => (m.source.kind === 'file' && m.source.isImage ? 'image' : !m.hasVideo ? 'audio' : 'video');
+  const kind = (m: MediaItem) => (m.source.kind === 'adjust' ? 'adjust' : m.source.kind === 'file' && m.source.compound ? 'compound' : m.source.kind === 'file' && m.source.isImage ? 'image' : !m.hasVideo ? 'audio' : 'video');
 
   function dragMedia(e: DragEvent, m: MediaItem) {
     e.dataTransfer!.setData('application/x-moshpit-media', m.id);
@@ -43,6 +43,7 @@
       <button onclick={() => fileInput?.click()} title="Import video, image or sound files"><Icon name="import" />Import</button>
       <button onclick={() => (store.ui.dialog = 'record')} title="Record from camera or screen"><span class="rec"><Icon name="rec" size={12} /></span>Record</button>
       <button onclick={() => (store.ui.dialog = 'generate')} title="Generate a test clip"><Icon name="gen" />Generate</button>
+      <button onclick={() => addAdjustmentLayer()} title="Adjustment layer: a clip on a track above that re-colours everything below it while it's on screen (colour, LUT, fades)"><Icon name="theme" />Adjust</button>
     </div>
     <input
       bind:this={fileInput}
@@ -68,13 +69,13 @@
         <div class="item" class:picked={store.ui.selectedMedia === m.id} draggable="true" ondragstart={(e) => dragMedia(e, m)} role="listitem" title="Drag onto the timeline, double-click to add it at the end, or click to pick it for Insert / Overwrite (F9 / F10)">
           <button class="main" ondblclick={() => addToTimeline(m)} onclick={() => (store.ui.selectedMedia = store.ui.selectedMedia === m.id ? null : m.id)}>
             <span class="thumb" class:audio={k === 'audio'}>
-              {#if m.thumb}<img src={m.thumb} alt="" draggable="false" />{:else}<Icon name={k === 'audio' ? 'music' : 'film'} />{/if}
+              {#if m.thumb}<img src={m.thumb} alt="" draggable="false" />{:else}<Icon name={k === 'audio' ? 'music' : k === 'adjust' ? 'theme' : 'film'} />{/if}
               {#if uses.get(m.id)}<span class="used mono" title="Clips using this media">{uses.get(m.id)}</span>{/if}
             </span>
             <span class="meta">
               <span class="nm">{m.source.name}</span>
               <span class="sub mono">
-                {#if k === 'image'}still{:else}{tc(m.duration)}{/if}{#if m.hasVideo && m.width}&ensp;{m.width}×{m.height}{/if}{#if m.hasAudio}&ensp;♪{/if}
+                {#if k === 'adjust'}adjustment layer{:else if k === 'image'}still{:else}{#if k === 'compound'}compound · {/if}{tc(m.duration)}{/if}{#if m.hasVideo && m.width}&ensp;{m.width}×{m.height}{/if}{#if m.hasAudio}&ensp;♪{/if}
               </span>
               {#if st?.proxy === 'working' || st?.proxy === 'pending'}
                 <span class="prep small"><span class="pbar"><span style="width:{Math.round((st.progress ?? 0) * 100)}%"></span></span>preview copy</span>

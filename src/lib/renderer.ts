@@ -3,6 +3,7 @@ import { ffmpeg, ffmpegBg, Cancelled, MOUNT, type RunOptions } from './ffmpeg';
 import { fileSize, framesFromDisk, loadFrames, assembleAvi, removeEngineFile, moveEngineFile, writeEngineFile } from './ffmpeg-native';
 import { isDesktop } from './platform';
 import { getFile } from './storage';
+import { lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { regenArgs, generationEncoder, type TextOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
@@ -141,6 +142,7 @@ export async function prepare(project: Project, width: number, progress?: Progre
   if (!project.clips.length && !project.texts?.length) throw new Error('Add a clip first');
   const fps = project.encoder.fps;
   const { mounts, path } = await mountsFor(project, preview);
+  const inputs = await lutInputs(project);
   const size = outputSize(project, width);
   const overlays = await textOverlays(project, size.w, size.h, mounts);
   // Without keyframes at cuts the stream must be encoded in one go (cuts become P-frames).
@@ -161,11 +163,11 @@ export async function prepare(project: Project, width: number, progress?: Progre
       const onFrame = (k: number) => progress?.('Preparing clips', Math.min(1, (base + k) / totalFrames));
       let log: string;
       if (disk) {
-        log = (await ffmpeg.run(args, { mounts, leave: [name], onFrame })).log;
+        log = (await ffmpeg.run(args, { mounts, inputs, leave: [name], onFrame })).log;
         check(signal);
         part = await framesFromDisk(ffmpeg.file!(name), project.encoder.codec);
       } else {
-        const r = await ffmpeg.run(args, { mounts, outputs: [name], onFrame });
+        const r = await ffmpeg.run(args, { mounts, inputs, outputs: [name], onFrame });
         check(signal);
         part = framesFromAvi(r.out[name], project.encoder.codec);
         log = r.log;

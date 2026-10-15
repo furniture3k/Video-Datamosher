@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Keyframes** for position, zoom, rotation and opacity, rendered with FFmpeg expressions.
+- **Speed ramps** (speed up, slow down, slow-mo, rush, montage), with the sound following.
+- **Chroma key** with an eyedropper, softness and spill removal.
+- **LUT import** (.cube) with an amount per clip; **adjustment layers**.
+- **Compound clips**: fold clips into one, edit inside, mosh inside.
+- **Scopes**: waveform, RGB parade, vectorscope, histogram (<kbd>Shift S</kbd>).
+
 - **Frame Sequencer**: a step pattern of Bloom, Echo, Reverse, Melt and Glitch moves (<kbd>G</kbd>).
 - **Databend** (compressed bytes) and **Raw Bend** (pixels): echo, reverb, phaser, bitcrush,
   reverse and amplify, the Audacity trick built in.

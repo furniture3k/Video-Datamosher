@@ -35,6 +35,7 @@
     ['V', 'Variations grid (tick favourites and breed them)'],
     ['Q / Shift Q', 'Chaos dial wilder / calmer'],
     ['G', 'Add a Frame Sequencer at the playhead'],
+    ['Shift S', 'Scopes on / off'],
     ['Shift K', 'Force a keyframe at playhead'],
     ['C', 'Compare with original'],
     ['E', 'Export'],

@@ -3,6 +3,7 @@ import { newProject, type Project, type EffectInstance, type Clip } from '../eng
 import { limits } from '../engine/mosh';
 import { timelineFrames, timelineDuration, cutFrames, remapToFootage, layoutVideo, clipLen as timelineClipLen } from '../engine/timeline';
 import { migrate } from '../engine/migrate';
+import { rootWithInner } from '../engine/compound';
 import { renderPreview, renderKey, proxyKey, Cancelled, type RenderResult } from './renderer';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
@@ -60,12 +61,16 @@ class Store {
     compare: 'off' as CompareMode,
     /** A/B against this snapshot instead of the clean source */
     compareSnap: null as string | null,
+    /** clicking the player picks a chroma-key colour for the selected clip */
+    eyedropper: false,
+    /** scopes panel under the player */
+    scopes: false,
     /** safe-zone guides drawn over the player (social export presets) */
     guides: null as null | 'vertical' | 'feed',
     split: 0.5,
     zoom: 1,
     autoRender: localGet('autoRender', true),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
@@ -78,6 +83,8 @@ class Store {
   private coalesceKey: string | null = null;
   private coalesceTimer = 0;
   historySize = $state({ undo: 0, redo: 0 });
+  /** compound clips opened for editing, outermost first (the parent timelines wait here) */
+  seqStack = $state.raw<{ parent: Project; mediaId: string; name: string }[]>([]);
   private renderTimer = 0;
   private renderSignal: { cancelled: boolean } | null = null;
   private renderQueued = false;
@@ -227,6 +234,35 @@ class Store {
       this.last = this.snapshot();
       this.changed();
     }
+  }
+
+  /** Forget undo / redo (entering or leaving a compound: its history doesn't mix with the parent's). */
+  resetHistory() {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.last = this.snapshot();
+    this.historySize = { undo: 0, redo: 0 };
+  }
+
+  /** Edit inside a compound: the current timeline waits on the stack while `inner` is shown. */
+  enterSequence(mediaId: string, name: string, inner: Project) {
+    this.seqStack = [...this.seqStack, { parent: JSON.parse(this.snapshot()), mediaId, name }];
+    this.project = inner;
+    this.ui.selectedClips = [];
+    this.ui.selectedEffect = null;
+    this.render = null;
+    this.resetHistory();
+    this.changed();
+  }
+
+  /** Back out of the innermost compound to its (updated) parent. */
+  leaveSequence(parent: Project) {
+    this.seqStack = this.seqStack.slice(0, -1);
+    this.project = parent;
+    this.ui.selectedClips = [];
+    this.render = null;
+    this.resetHistory();
+    this.changed();
   }
 
   /** Drop selections that point at things that no longer exist (after undo, redo, loading). */
@@ -387,7 +423,9 @@ class Store {
   autosave() {
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => {
-      kvSet('autosave', $state.snapshot(this.project));
+      const p = $state.snapshot(this.project) as Project;
+      // inside a compound: save the whole project, with the open edits folded back in
+      kvSet('autosave', this.seqStack.length ? rootWithInner(this.seqStack, p) : p);
     }, 1000);
   }
 
@@ -408,9 +446,13 @@ class Store {
     // (media used by snapshots is kept so they can still be restored)
     const { snapshotFileIds } = await import('./snapshots.svelte');
     const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
-    pruneFiles([...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)]);
+    const lutFiles = (this.project.luts ?? []).map((l) => 'lut:' + l.id);
+    pruneFiles([...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)]);
     const { prepareAll } = await import('./media');
     prepareAll(this.project.media);
+    // compounds edited when the app last closed are rendered again
+    const { ensureCompounds } = await import('./compound.svelte');
+    ensureCompounds().catch((e: unknown) => console.warn('compound render failed', e));
   }
 
   setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips'>(k: K, v: (typeof this.ui)[K]) {

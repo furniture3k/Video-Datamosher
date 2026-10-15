@@ -6,6 +6,7 @@
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
   import ChaosDial from './ChaosDial.svelte';
+  import { closeCompound } from '../lib/compound.svelte';
   import { newProject } from '../engine/types';
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
   let loadInput: HTMLInputElement;
@@ -28,6 +29,13 @@
     onchange={(e) => store.edit((p) => (p.name = (e.target as HTMLInputElement).value))}
   />
 
+  {#if store.seqStack.length}
+    <div class="crumbs" role="navigation" aria-label="Compound clips">
+      <span class="small faint">Main</span>
+      {#each store.seqStack as s}<span class="small faint">›</span><span class="small cur">{s.name}</span>{/each}
+      <button class="small primary" onclick={() => closeCompound()} title="Finish editing this compound: it's rendered again and you're back in the timeline above">Close compound</button>
+    </div>
+  {/if}
   <div class="sep"></div>
   <button class="icon ghost" title="Undo  Ctrl+Z" aria-label="Undo" disabled={!store.historySize.undo} onclick={() => store.undo()}><Icon name="undo" /></button>
   <button class="icon ghost" title="Redo  Ctrl+Shift+Z" aria-label="Redo" disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" /></button>
@@ -165,6 +173,21 @@
   .name:focus {
     border-color: var(--line-2);
     color: var(--text);
+  }
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 6px;
+    border: 1px solid var(--accent);
+    border-radius: var(--r);
+    height: 28px;
+  }
+  .crumbs .cur {
+    font-weight: 600;
+  }
+  .crumbs button {
+    height: 22px;
   }
   .sep {
     width: 1px;
