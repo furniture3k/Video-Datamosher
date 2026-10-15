@@ -333,3 +333,75 @@ export function mutate(project: Project, total: number, amount = 0.2, seed = ran
   });
   return { ...project, effects };
 }
+
+// ---------- breeding ----------
+
+/** Encoder settings that are about the format, not the look: always the base project's. */
+const FORMAT_KEYS = new Set(['width', 'aspect', 'fps', 'previewWidth', 'keyMarkers', 'codec']);
+
+/**
+ * Cross two or more projects' effect stacks into a child (genetic crossover), then nudge it
+ * a little. Effects of the same type in about the same place count as the same "gene": the child
+ * gets each gene with the share of parents that have it, with settings mixed between them.
+ * The first parent supplies the timeline, format and pinned effects.
+ */
+export function breed(parents: Project[], total: number, seed = randomSeed(), mutation = 0.12): Project {
+  const base = parents[0];
+  if (parents.length < 2) return mutate(base, total, mutation, seed);
+  const rng = makeRng(seed);
+  const near = Math.max(1, total * 0.25);
+  const mid = (e: EffectInstance) => (e.start + e.end) / 2;
+  type Gene = { type: string; members: { e: EffectInstance; parent: number }[] };
+  const genes: Gene[] = [];
+  parents.forEach((p, pi) => {
+    for (const e of p.effects) {
+      if (!EFFECTS[e.type] || e.locks.includes('__keep')) continue;
+      const g = genes.find((g) => g.type === e.type && !g.members.some((m) => m.parent === pi) && Math.abs(mid(g.members[0].e) - mid(e)) <= near);
+      if (g) g.members.push({ e, parent: pi });
+      else genes.push({ type: e.type, members: [{ e, parent: pi }] });
+    }
+  });
+  const effects: EffectInstance[] = base.effects.filter((e) => e.locks.includes('__keep'));
+  const chosen = genes.filter((g) => g.members.length === parents.length || rng.chance(g.members.length / parents.length));
+  if (!chosen.length && genes.length) chosen.push(genes.reduce((a, g) => (g.members.length > a.members.length ? g : a)));
+  for (const g of chosen) {
+    const a = rng.pick(g.members).e;
+    const b = rng.pick(g.members).e;
+    const w = rng();
+    const mix = (x: number, y: number) => x + (y - x) * w;
+    const def = EFFECTS[g.type];
+    const params = { ...a.params };
+    for (const d of def.params) {
+      const va = a.params[d.key];
+      const vb = b.params[d.key];
+      if ((d.type === 'number' || d.type === 'int') && typeof va === 'number' && typeof vb === 'number') {
+        const v = mix(va, vb);
+        params[d.key] = d.type === 'int' ? Math.round(v) : Math.round(v / (d.step ?? 0.01)) * (d.step ?? 0.01);
+      } else if (vb !== undefined && rng.chance(0.5)) params[d.key] = vb;
+    }
+    const auto = { ...a.auto };
+    for (const [k, v] of Object.entries(b.auto ?? {})) if (!(k in auto) || rng.chance(0.5)) auto[k] = v;
+    const start = Math.max(0, Math.min(total - 1, Math.round(mix(a.start, b.start))));
+    const end = Math.max(start + 1, Math.min(total, Math.round(mix(a.end, b.end))));
+    effects.push({ ...a, id: uid(), params, auto, start, end, seed: rng.chance(0.5) ? a.seed : b.seed, locks: [...new Set([...a.locks, ...b.locks])], solo: false, enabled: true });
+  }
+  // the order of a stack matters (Keyframe Killer under the rest): sort genes by their order in the parents
+  const rank = (e: EffectInstance) => Math.min(...parents.map((p) => (p.effects.findIndex((x) => x.type === e.type) + 1 || 99) / Math.max(1, p.effects.length)));
+  const pinned = effects.filter((e) => e.locks.includes('__keep'));
+  const rest = effects.filter((e) => !e.locks.includes('__keep')).sort((x, y) => rank(x) - rank(y));
+  const pick = <T,>(xs: T[]) => rng.pick(xs);
+  const enc = { ...base.encoder } as Record<string, unknown>;
+  for (const k of Object.keys(enc)) if (!FORMAT_KEYS.has(k)) enc[k] = (pick(parents).encoder as unknown as Record<string, unknown>)[k];
+  const chaosOf = pick(parents).chaos;
+  const child: Project = {
+    ...base,
+    effects: [...pinned, ...rest],
+    encoder: enc as unknown as Project['encoder'],
+    decoder: { ...pick(parents).decoder },
+    audio: { ...pick(parents).audio },
+    globalSeed: pick(parents).globalSeed,
+  };
+  if (chaosOf === undefined) delete child.chaos;
+  else child.chaos = chaosOf;
+  return mutation > 0 ? mutate(child, total, mutation, rng.int(0, 1e9)) : child;
+}

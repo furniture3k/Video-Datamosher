@@ -272,6 +272,8 @@ export interface Project {
   audio: AudioSettings;
   globalSeed: number;
   markers?: Marker[];
+  /** the Chaos dial: 0 calm .. 1 as authored .. 2 destroyed */
+  chaos?: number;
 }
 
 export const defaultEncoder = (): EncoderSettings => ({

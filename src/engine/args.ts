@@ -1,5 +1,6 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
 import { clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
+import { findRecipe } from './recipe';
 import { BLEND_TRANSITIONS, audioSources, clipLen, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
@@ -449,7 +450,22 @@ export interface ExportOptions {
   audio: boolean;
   /** only this part of the timeline (seconds), e.g. the In–Out range */
   range?: [number, number] | null;
+  /** written into the file's metadata (the mosh recipe, so the video can be remixed) */
+  comment?: string;
+  /** keep the file under this size (MB): the encoder targets a bitrate instead of a quality */
+  maxMB?: number;
+  /** worked out from maxMB and the length when exporting (kbit/s) */
+  videoKbps?: number;
 }
+
+/**
+ * ffmpeg's log cuts long metadata short, so a recipe seen in the log is read in full by
+ * writing the file's metadata out with these arguments.
+ */
+export const metadataArgs = (input: string, out: string) => ['-i', input, '-f', 'ffmetadata', out];
+
+/** ffmpeg arguments that store `comment` in the output's metadata. */
+export const commentArgs = (comment?: string) => (comment ? ['-metadata', `comment=${comment}`] : []);
 
 export const defaultExport = (): ExportOptions => ({
   format: 'mp4',
@@ -492,21 +508,26 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
   if (scale) a.push('-vf', `${scale},format=yuv420p`);
   else a.push('-pix_fmt', 'yuv420p');
   a.push('-r', String(fps));
+  const sized = o.videoKbps && o.videoKbps > 0 ? ['-b:v', `${o.videoKbps}k`, '-maxrate', `${Math.round(o.videoKbps * 1.1)}k`, '-bufsize', `${o.videoKbps * 2}k`] : null;
+  const abr = sized ? '128k' : '192k';
   if (o.format === 'mp4') {
-    a.push('-c:v', 'libx264', '-preset', o.preset, '-crf', String(o.crf), '-movflags', '+faststart');
-    if (withAudio) a.push('-c:a', 'aac', '-b:a', '192k');
+    a.push('-c:v', 'libx264', '-preset', o.preset, ...(sized ?? ['-crf', String(o.crf)]), '-movflags', '+faststart');
+    if (withAudio) a.push('-c:a', 'aac', '-b:a', abr);
+  } else if (sized) {
+    a.push('-c:v', 'libvpx', ...sized, '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
+    if (withAudio) a.push('-c:a', 'libvorbis', '-b:a', abr);
   } else {
     // VP8: the VP9 encoder in ffmpeg.wasm crashes, VP8 is solid
     a.push('-c:v', 'libvpx', '-crf', String(Math.min(63, Math.max(4, o.crf - 4))), '-b:v', '12M', '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
     if (withAudio) a.push('-c:a', 'libvorbis', '-q:a', '6');
   }
   if (withAudio) a.push('-shortest');
-  a.push(out);
+  a.push(...commentArgs(o.comment), out);
   return a;
 }
 
 /** Parse "ffmpeg -i" log output into basic media info. */
-export function parseProbe(log: string): { duration: number; width: number; height: number; fps: number; hasAudio: boolean; hasVideo: boolean } {
+export function parseProbe(log: string): { duration: number; width: number; height: number; fps: number; hasAudio: boolean; hasVideo: boolean; recipe: string | null } {
   const dur = /Duration: (\d+):(\d+):([\d.]+)/.exec(log);
   const duration = dur ? +dur[1] * 3600 + +dur[2] * 60 + +dur[3] : 0;
   const vid = /Stream #.*Video: .*?(\d{2,5})x(\d{2,5})/.exec(log);
@@ -523,5 +544,6 @@ export function parseProbe(log: string): { duration: number; width: number; heig
     fps: fpsM ? +fpsM[1] : 30,
     hasAudio: /Stream #.*Audio:/.test(log),
     hasVideo: !!vid,
+    recipe: findRecipe(log),
   };
 }

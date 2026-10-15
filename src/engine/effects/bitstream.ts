@@ -37,8 +37,8 @@ export const keyframeKiller: BitstreamEffect = {
       ],
       help: 'Choose which I-frames inside the range get removed.',
     },
-    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Chance that each keyframe is removed. 1 = all of them, 0 = none.' },
-    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 1, max: 20, default: 2, help: 'Remove every Nth keyframe. 1 removes all, 2 every other one, and so on.' },
+    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, intensity: 'up', help: 'Chance that each keyframe is removed. 1 = all of them, 0 = none.' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 1, max: 20, default: 2, intensity: 'down', help: 'Remove every Nth keyframe. 1 removes all, 2 every other one, and so on.' },
     {
       key: 'replace',
       label: 'Fill gap with',
@@ -109,8 +109,8 @@ export const bloom: BitstreamEffect = {
       ],
       help: 'Which motion frame (or frames) gets repeated.',
     },
-    { show: (p) => p.target === 'every', key: 'interval', label: 'Every Nth', type: 'int', min: 1, max: 300, default: 12, help: 'Bloom every N motion frames. With "Fill" each bloom lasts until the next one, so 2–4 gives a slow, stepped melt.' },
-    { show: (p) => p.target === 'random', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, help: 'Chance that each motion frame blooms.' },
+    { show: (p) => p.target === 'every', key: 'interval', label: 'Every Nth', type: 'int', min: 1, max: 300, default: 12, intensity: 'down', help: 'Bloom every N motion frames. With "Fill" each bloom lasts until the next one, so 2–4 gives a slow, stepped melt.' },
+    { show: (p) => p.target === 'random', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.1, intensity: 'up', help: 'Chance that each motion frame blooms.' },
     {
       key: 'length',
       label: 'Bloom length',
@@ -122,8 +122,8 @@ export const bloom: BitstreamEffect = {
       ],
       help: 'How long each bloom lasts.',
     },
-    { show: (p) => p.length === 'count', key: 'repeats', label: 'Repeats', type: 'int', min: 1, max: 600, default: 24, help: 'How many times the chosen frame is repeated. More repeats give a longer, wilder smear.', chaos: [4, 60] },
-    { show: (p) => p.length === 'count', key: 'jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01, default: 0, help: 'Randomly varies the repeat count of each bloom (0 = exact, 1 = anywhere from none to double).', advanced: true },
+    { show: (p) => p.length === 'count', key: 'repeats', label: 'Repeats', type: 'int', min: 1, max: 600, default: 24, intensity: 'up', help: 'How many times the chosen frame is repeated. More repeats give a longer, wilder smear.', chaos: [4, 60] },
+    { show: (p) => p.length === 'count', key: 'jitter', label: 'Jitter', type: 'number', min: 0, max: 1, step: 0.01, default: 0, intensity: 'up', help: 'Randomly varies the repeat count of each bloom (0 = exact, 1 = anywhere from none to double).', advanced: true },
     TIMING,
   ],
   apply(frames, e, ctx) {
@@ -183,8 +183,8 @@ export const stutter: BitstreamEffect = {
       help: 'When loops are triggered inside the bar.',
     },
     { key: 'group', label: 'Group size', type: 'int', min: 2, max: 60, default: 6, unit: 'frames', help: 'How many frames are in each loop. Small groups jitter, big groups rock slowly.' },
-    { key: 'loops', label: 'Loops', type: 'int', min: 1, max: 30, default: 3, help: 'How many times each group plays (1 = no repeat).' },
-    { show: (p) => p.mode === 'every', key: 'every', label: 'Repeat every', type: 'int', min: 1, max: 300, default: 24, unit: 'frames', help: 'Start a new loop every N frames. 24 at 24 fps = one pulse per second.' },
+    { key: 'loops', label: 'Loops', type: 'int', min: 1, max: 30, default: 3, intensity: 'up', help: 'How many times each group plays (1 = no repeat).' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Repeat every', type: 'int', min: 1, max: 300, default: 24, intensity: 'down', unit: 'frames', help: 'Start a new loop every N frames. 24 at 24 fps = one pulse per second.' },
     { key: 'pingpong', label: 'Ping-pong', type: 'bool', default: false, help: 'Every other loop plays backwards, so motion rocks to and fro instead of jumping.' },
     TIMING,
   ],
@@ -254,8 +254,8 @@ export const shuffle: BitstreamEffect = {
   color: '#5fa8c8',
   description: 'Reorders motion frames inside small windows. Movement jerks and jitters, and the smear gets scrambled.',
   params: [
-    { key: 'window', label: 'Window', type: 'int', min: 2, max: 120, default: 8, unit: 'frames', help: 'Frames only swap places with others in the same window. Small = jitter, large = chaos.' },
-    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 1, help: 'Chance that each window gets shuffled (1 = every window).' },
+    { key: 'window', label: 'Window', type: 'int', min: 2, max: 120, default: 8, intensity: 'up', unit: 'frames', help: 'Frames only swap places with others in the same window. Small = jitter, large = chaos.' },
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 1, intensity: 'up', help: 'Chance that each window gets shuffled (1 = every window).' },
     { key: 'keepKeys', label: 'Keep keyframes in place', type: 'bool', default: true, help: 'Only move motion frames and leave I-frames where they are.', advanced: true },
   ],
   apply(frames, e, ctx) {
@@ -312,8 +312,8 @@ export const drop: BitstreamEffect = {
       ],
       help: 'How frames are picked for dropping.',
     },
-    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 2, max: 30, default: 3, help: 'Drop every Nth frame. 2 drops every other frame.' },
-    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, help: 'Chance each frame is dropped.' },
+    { show: (p) => p.mode === 'every', key: 'every', label: 'Every Nth', type: 'int', min: 2, max: 30, default: 3, intensity: 'down', help: 'Drop every Nth frame. 2 drops every other frame.' },
+    { show: (p) => p.mode === 'probability', key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, intensity: 'up', help: 'Chance each frame is dropped.' },
     {
       key: 'types',
       label: 'Frame types',
@@ -365,8 +365,8 @@ export const echo: BitstreamEffect = {
   retimes: true,
   params: [
     { key: 'delay', label: 'Delay', type: 'int', min: 1, max: 120, default: 6, unit: 'frames', help: 'How far back the echoed motion comes from.' },
-    { key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.6, help: 'Chance that each frame echoes.' },
-    { key: 'taps', label: 'Taps', type: 'int', min: 1, max: 8, default: 1, help: 'Number of echoes per frame, each one a further Delay back.' },
+    { key: 'probability', label: 'Chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.6, intensity: 'up', help: 'Chance that each frame echoes.' },
+    { key: 'taps', label: 'Taps', type: 'int', min: 1, max: 8, default: 1, intensity: 'up', help: 'Number of echoes per frame, each one a further Delay back.' },
     TIMING,
   ],
   apply(frames, e, ctx) {
@@ -469,8 +469,8 @@ export const byteGlitch: BitstreamEffect = {
   span: 2,
   params: [
     { key: 'mode', label: 'Corruption', type: 'select', default: 'flip', options: GLITCH_MODES, help: 'How the bytes are damaged.' },
-    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 100, step: 0.5, default: 3, help: 'Corruption operations per frame. 1–5 is usually plenty; high values can break frames completely.', chaos: [1, 12], log: true },
-    { key: 'probability', label: 'Frame chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'Chance each frame gets glitched.' },
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 100, step: 0.5, default: 3, intensity: 'up', help: 'Corruption operations per frame. 1–5 is usually plenty; high values can break frames completely.', chaos: [1, 12], log: true },
+    { key: 'probability', label: 'Frame chance', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, intensity: 'up', help: 'Chance each frame gets glitched.' },
     {
       key: 'target',
       label: 'Target frames',

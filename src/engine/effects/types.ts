@@ -17,6 +17,8 @@ export type ParamDef = (
       chaos?: [number, number];
       /** UI hint: logarithmic slider */
       log?: boolean;
+      /** which way is "more destroyed" (the Chaos dial pushes values that way) */
+      intensity?: 'up' | 'down';
     }
   | { key: string; label: string; type: 'bool'; default: boolean; help: string; advanced?: boolean }
   | {

@@ -5,12 +5,14 @@ import { isDesktop } from './platform';
 import { getFile } from './storage';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
-import { type TextOverlay, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { type TextOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, mediaOf, type Segment } from '../engine/timeline';
 import { splitJpegs } from '../engine/jpeg';
 import { buildAudio, wav, wavParts, SAMPLE_RATE } from '../engine/audio';
 import { zip } from '../engine/zip';
+import { bitrateFor } from '../engine/social';
+import { encodeRecipe, findRecipe, gifComments, gifWithComment } from '../engine/recipe';
 import type { Frame, MediaItem, Project, TextClip } from '../engine/types';
 import { drawText } from './text';
 
@@ -204,7 +206,7 @@ export function cutsOf(project: Project): number[] {
 }
 
 /** Identity of everything that changes the moshed picture. */
-export const renderKey = (p: Project) => JSON.stringify({ c: p.clips.map(({ label: _l, ...c }) => c), v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed });
+export const renderKey = (p: Project) => JSON.stringify({ c: p.clips.map(({ label: _l, ...c }) => c), v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
@@ -314,6 +316,15 @@ export async function probeFile(blob: Blob, ext: string): Promise<{ info: Return
   const mounts = { [name]: blob };
   const r = await ffmpeg.run(['-i', MOUNT + name], { mounts });
   const info = parseProbe(r.log);
+  if (info.recipe)
+    try {
+      const m = await ffmpeg.run(metadataArgs(MOUNT + name, 'meta.txt'), { mounts, outputs: ['meta.txt'] });
+      info.recipe = findRecipe(new TextDecoder().decode(m.out['meta.txt'])) ?? info.recipe;
+    } catch {
+      /* keep what the log showed */
+    }
+  // GIFs keep their recipe in a comment block ffmpeg doesn't print
+  if (!info.recipe && ext === 'gif' && blob.size < 64e6) info.recipe = gifComments(new Uint8Array(await blob.arrayBuffer())).map(findRecipe).find(Boolean) ?? null;
   let thumb = '';
   if (info.hasVideo)
     try {
@@ -426,6 +437,8 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
   try {
     const prep = await prepare(project, width, progress, signal, false, disk);
     check(signal);
+    // the recipe rides along in the file, so anyone can load the mosh from the video
+    o = { ...o, comment: o.comment ?? (await encodeRecipe(project, prep.frames.length)) };
     progress('Moshing', 0);
     const frames = disk ? await applyBitstreamDisk(prep, project, cutsOf(project), loadFrames) : applyBitstream(prep, project, cutsOf(project));
     const avi = disk ? null : writeMoshedBlob(prep, frames);
@@ -451,6 +464,8 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     progress('Mixing audio', 0);
     const pcm = o.audio && o.format !== 'gif' && o.format !== 'png' ? await moshedAudio(project, frames.slice(lo, hi), lo) : null;
     const audio = !!pcm;
+    // a size limit (Discord…): aim the bitrate under it
+    if (o.maxMB && (o.format === 'mp4' || o.format === 'webm')) o = { ...o, videoKbps: bitrateFor(o.maxMB, (hi - lo) / fps, audio) };
     // the soundtrack as a.wav: written straight to disk on desktop, an engine input in the browser
     if (pcm && disk) await writeEngineFile(ffmpeg.file!('a.wav'), wavParts(pcm));
     const audioIn: Record<string, () => Promise<Uint8Array>> = pcm && !disk ? { 'a.wav': async () => wav(pcm) } : {};
@@ -462,7 +477,7 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
         await moveEngineFile(ffmpeg.file!('mosh.avi'), ffmpeg.file!('out.avi'));
         return { file: ffmpeg.file!('out.avi'), name: `${base}.avi`, type: 'video/x-msvideo', size: (await fileSize(ffmpeg.file!('out.avi'))) ?? 0 };
       }
-      return await finish(['-i', aviIn, '-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'pcm_s16le', '-shortest', 'out.avi'], {
+      return await finish(['-i', aviIn, '-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'pcm_s16le', '-shortest', ...commentArgs(o.comment), 'out.avi'], {
         mounts: aviMounts,
         inputs: audioIn,
       }, 'out.avi', 'video/x-msvideo', `${base}.avi`);
@@ -535,13 +550,19 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     } finally {
       runner.dispose();
     }
-    if (o.format === 'png') return fromBlob(zip(pngs), `${base}_frames.zip`);
+    if (o.format === 'png') {
+      if (o.comment) pngs.push({ name: 'recipe.txt', data: new TextEncoder().encode(o.comment + '\n') });
+      return fromBlob(zip(pngs), `${base}_frames.zip`);
+    }
     if (o.format === 'gif') {
       const cat = concatBytes(gifJpegs);
-      return await finish(exportArgs(o, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, 'out.gif'), {
+      const r = await ffmpeg.run(exportArgs(o, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, 'out.gif'), {
         inputs: { 'frames.mjpeg': async () => cat },
+        outputs: ['out.gif'],
         onFrame: (x) => progress('Encoding GIF', Math.min(1, x / n)),
-      }, 'out.gif', type, `${base}.gif`);
+      });
+      const gif = o.comment ? gifWithComment(r.out['out.gif'], o.comment) : r.out['out.gif'];
+      return fromBlob(new Blob([gif as BlobPart], { type }), `${base}.gif`);
     }
     // join the pieces (and add the sound) without re-encoding
     progress('Joining', 0);
@@ -551,9 +572,9 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     Object.assign(inputs, audioIn);
     const out = `out.${o.format}`;
     const args = ['-f', 'concat', '-safe', '0', '-i', 'list.txt'];
-    if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', ...(o.format === 'mp4' ? ['-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart'] : ['-c:a', 'libvorbis', '-q:a', '6']), '-shortest');
+    if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', ...(o.format === 'mp4' ? ['-c:a', 'aac', '-b:a', o.videoKbps ? '128k' : '192k', '-movflags', '+faststart'] : o.videoKbps ? ['-c:a', 'libvorbis', '-b:a', '128k'] : ['-c:a', 'libvorbis', '-q:a', '6']), '-shortest');
     else args.push('-c', 'copy');
-    args.push(out);
+    args.push(...commentArgs(o.comment), out);
     try {
       return await finish(args, { inputs }, out, type, `${base}.${o.format}`);
     } finally {

@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { untrack, onDestroy } from 'svelte';
+  import { untrack, onDestroy, onMount } from 'svelte';
   import { store, type CompareMode } from '../lib/store.svelte';
   import { loadExample } from '../lib/media';
   import Icon from './Icon.svelte';
-  import { originalFrames, moshedAudio, type RenderResult } from '../lib/renderer';
+  import { originalFrames, renderPreview, moshedAudio, type RenderResult } from '../lib/renderer';
+  import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
@@ -11,6 +12,7 @@
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
   import { tc, parseTimecode } from '../lib/timecode';
+  import { outputSize } from '../engine/args';
 
   let canvas: HTMLCanvasElement;
   let editCanvas: HTMLCanvasElement;
@@ -148,17 +150,44 @@
     editAudio.dispose();
   });
 
+  /** A snapshot's mosh, one picture per timeline frame (so it lines up with the current render). */
+  async function snapshotFrames(p: Project, width: number): Promise<Uint8Array[]> {
+    const r = await renderPreview(p, width);
+    const out: Uint8Array[] = [];
+    r.frames.forEach((f, i) => {
+      const pos = f.at ?? f.src;
+      out[pos] ??= r.jpegs[i];
+    });
+    // fill holes (dropped frames) with the picture before
+    for (let i = 0; i < out.length; i++) out[i] ??= out[i - 1] ?? r.jpegs[0];
+    return out;
+  }
+  const cmpName = $derived(store.ui.compareSnap ? (snapshots.list.find((s) => s.id === store.ui.compareSnap)?.name ?? 'snapshot') : 'source');
+  onMount(() => {
+    setFrameGrabber(() => {
+      const src = mosh ? canvas : editCanvas;
+      if (!src?.width) return '';
+      const c = document.createElement('canvas');
+      c.width = 192;
+      c.height = Math.max(1, Math.round((src.height * 192) / src.width));
+      c.getContext('2d')!.drawImage(src, 0, 0, c.width, c.height);
+      return c.toDataURL('image/jpeg', 0.7);
+    });
+    return () => setFrameGrabber(null);
+  });
+
   // ---- originals for A/B ----
   $effect(() => {
     const mode = store.ui.compare;
     const r = store.render;
     if (mode === 'off' || !r) return;
     const p = $state.snapshot(store.project) as Project;
-    const key = JSON.stringify([p.clips, p.encoder]);
+    const snap = store.ui.compareSnap ? snapshots.list.find((s) => s.id === store.ui.compareSnap) : null;
+    const key = snap ? 'snap:' + snap.id + ':' + p.encoder.previewWidth : JSON.stringify([p.clips, p.encoder]);
     if (key === origKey) return;
     origKey = key;
     loadingOrig = true;
-    originalFrames(p, p.encoder.previewWidth)
+    (snap ? snapshotFrames(snap.project, p.encoder.previewWidth) : originalFrames(p, p.encoder.previewWidth))
       .then((o) => (originals = o))
       .catch((e) => store.toast('Compare failed: ' + e.message, 'error'))
       .finally(() => (loadingOrig = false));
@@ -413,6 +442,7 @@
     ['edit', 'Edit', 'Always show the live edit preview (no mosh, instant)'],
     ['mosh', 'Mosh', 'Always show the last rendered mosh'],
   ];
+  const guideSize = $derived(outputSize(store.project, store.project.encoder.previewWidth));
   const hasTimeline = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
 </script>
 
@@ -437,6 +467,22 @@
     {/if}
     <canvas bind:this={canvas} class:hidden={!mosh} class:split={store.ui.compare === 'split'}></canvas>
     <canvas bind:this={editCanvas} class="edit" class:hidden={mosh || !hasTimeline}></canvas>
+    {#if store.ui.guides && hasTimeline}
+      {@const g = guideSize}
+      <svg class="guides" viewBox="0 0 {g.w} {g.h}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        {#if store.ui.guides === 'vertical'}
+          <!-- where TikTok / Reels / Shorts put their buttons, captions and header -->
+          <rect x={g.w * 0.06} y={g.h * 0.08} width={g.w * 0.78} height={g.h * 0.66} class="safe" />
+          <rect x="0" y={g.h * 0.78} width={g.w} height={g.h * 0.22} class="cover" />
+          <rect x={g.w * 0.86} y={g.h * 0.35} width={g.w * 0.14} height={g.h * 0.43} class="cover" />
+          <text x={g.w * 0.07} y={g.h * 0.08 + g.h * 0.03} class="gt" font-size={g.h * 0.022}>safe for text</text>
+        {:else}
+          <!-- the profile grid shows the middle 3:4 of a feed post -->
+          <rect x={(g.w - (g.h * 3) / 4) / 2} y="0" width={(g.h * 3) / 4} height={g.h} class="safe" />
+          <text x={(g.w - (g.h * 3) / 4) / 2 + g.h * 0.02} y={g.h * 0.05} class="gt" font-size={g.h * 0.03}>profile grid</text>
+        {/if}
+      </svg>
+    {/if}
     {#if hasTimeline}
       <div class="badge-view mono" class:live={!mosh} title={mosh ? 'Showing the rendered mosh' : 'Live edit preview: your cut as it is, before moshing'}>
         {#if mosh}mosh{:else}edit{#if store.status.busy || store.status.pending}<span class="faint"> · mosh rendering</span>{:else if store.render && !store.renderFresh && !store.ui.autoRender}<span class="faint"> · mosh out of date</span>{/if}{/if}
@@ -458,7 +504,7 @@
       <div class="stage-note mono">{store.status.stage || 'Working'} {Math.round(store.status.progress * 100)}%</div>
     {:else if store.ui.compare !== 'off' && mosh}
       <div class="stage-note mono">
-        {#if loadingOrig}loading source{:else if store.ui.compare === 'split'}source | mosh{:else if store.ui.compare === 'side'}source | mosh{:else}source{/if}
+        {#if loadingOrig}loading {cmpName}{:else if store.ui.compare === 'split' || store.ui.compare === 'side'}{cmpName} | mosh{:else}{cmpName}{/if}
       </div>
     {/if}
     {#if store.status.error}
@@ -554,6 +600,28 @@
     width: calc(100% - 24px);
     height: calc(100% - 24px);
     object-fit: contain;
+  }
+  .guides {
+    position: absolute;
+    inset: 12px;
+    width: calc(100% - 24px);
+    height: calc(100% - 24px);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .guides .safe {
+    fill: none;
+    stroke: rgba(255, 255, 255, 0.75);
+    stroke-width: 1.5px;
+    stroke-dasharray: 6px 5px;
+    vector-effect: non-scaling-stroke;
+  }
+  .guides .cover {
+    fill: rgba(255, 60, 60, 0.18);
+  }
+  .guides .gt {
+    fill: rgba(255, 255, 255, 0.8);
+    font-family: var(--mono, monospace);
   }
   canvas.split {
     cursor: ew-resize;

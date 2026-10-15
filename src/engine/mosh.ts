@@ -6,6 +6,7 @@ import { inRange, isMotion, posOf, copy } from './effects/util';
 import { hashSeed, makeRng } from './rng';
 import type { EffectInstance, Frame, Project } from './types';
 import { transitionEffects } from './timeline';
+import { withChaos } from './chaos';
 
 export interface Prepared {
   info: AviInfo;
@@ -51,7 +52,8 @@ export function allEffects(project: Project): EffectInstance[] {
 
 const bitstreamEffects = (project: Project) => activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'bitstream');
 
-function applyOne(frames: Frame[], e: EffectInstance, prep: Prepared, project: Project, cuts: number[]): Frame[] {
+function applyOne(frames: Frame[], inst: EffectInstance, prep: Prepared, project: Project, cuts: number[]): Frame[] {
+  const e = withChaos(inst, project.chaos);
   const rng = makeRng(hashSeed(project.globalSeed, e.seed, e.id));
   const def = EFFECTS[e.type];
   if (def.kind !== 'bitstream') return frames;

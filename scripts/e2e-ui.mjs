@@ -227,6 +227,75 @@ await step('editor: edit view plays and keeps time', async () => {
   await settle();
 });
 
+await step('chaos dial: Q / Shift Q and drag', async () => {
+  await page.keyboard.press('q');
+  await page.keyboard.press('q');
+  if ((await S(() => window.__moshpit.store.project.chaos)) !== 1.5) throw new Error('Q should push chaos to 150%');
+  await settle();
+  await page.keyboard.press('Shift+Q');
+  await page.keyboard.press('Shift+Q');
+  if ((await S(() => window.__moshpit.store.project.chaos)) !== undefined) throw new Error('Shift+Q should bring chaos back to as made');
+  const dial = page.getByRole('slider', { name: 'Chaos' });
+  const box = await dial.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 60, { steps: 5 });
+  await page.mouse.up();
+  if (!((await S(() => window.__moshpit.store.project.chaos)) > 1.2)) throw new Error('dragging the dial up should make it wilder');
+  await dial.dblclick();
+  if ((await S(() => window.__moshpit.store.project.chaos)) !== undefined) throw new Error('double-click resets the dial');
+  await settle();
+});
+
+await step('snapshots: save, compare, restore', async () => {
+  const before = await S(() => window.__moshpit.store.project.effects.length);
+  await page.getByRole('button', { name: 'Snapshots' }).click();
+  await page.getByRole('button', { name: /Save snapshot/ }).click();
+  await page.locator('.modal .card').first().waitFor({ timeout: 10000 });
+  await page.keyboard.press('Escape');
+  // the shortcut takes one too (nothing changed since, so no duplicate is added)
+  await page.keyboard.press('Control+Shift+S');
+  await S(() => window.__moshpit.store.edit((p) => (p.effects = [])));
+  await page.getByRole('button', { name: 'Snapshots' }).click();
+  await page.locator('.modal .card').first().getByRole('button', { name: 'Restore' }).click();
+  await page.waitForFunction((n) => window.__moshpit.store.project.effects.length === n, before, { timeout: 10000 });
+  if (await S(() => window.__moshpit.store.ui.dialog)) throw new Error('Restore should close the dialog');
+  await settle();
+  await page.getByRole('button', { name: 'Snapshots' }).click();
+  await page.locator('.modal .card').first().getByRole('button', { name: 'Compare' }).click();
+  await page.waitForFunction(() => window.__moshpit.store.ui.compareSnap && !document.querySelector('.stage-note')?.textContent?.includes('loading'), null, { timeout: 120000 });
+  await S(() => ((window.__moshpit.store.ui.compare = 'off'), (window.__moshpit.store.ui.compareSnap = null)));
+});
+
+await step('variations: breed two, next generation, back', async () => {
+  await page.keyboard.press('v');
+  await page.waitForFunction(() => document.querySelectorAll('.modal .cell .pv:not([disabled])').length >= 2, null, { timeout: 180000 });
+  const tiles = page.locator('.modal .cell .pv:not([disabled])');
+  await tiles.nth(0).click();
+  await tiles.nth(1).click();
+  await page.getByRole('button', { name: 'Breed 2' }).click();
+  await page.locator('.modal .gen', { hasText: 'Generation 2' }).waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('.modal .cell .pv:not([disabled])').length >= 4, null, { timeout: 180000 });
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.locator('.modal .gen', { hasText: 'Generation 1' }).waitFor();
+  await page.locator('.modal .cell').first().getByRole('button', { name: 'Use' }).click();
+  await settle();
+});
+
+await step('export: Made for presets', async () => {
+  await page.keyboard.press('e');
+  const sel = page.locator('.modal .social select');
+  await sel.selectOption('discord');
+  await page.locator('.modal', { hasText: 'kbit/s to stay under 10 MB' }).waitFor();
+  if (await page.locator('.modal', { hasText: 'Quality (CRF)' }).count()) throw new Error('a size-limited export has no CRF');
+  await sel.selectOption('vertical');
+  await page.getByRole('button', { name: 'Make it 9:16' }).waitFor();
+  if ((await S(() => window.__moshpit.store.ui.guides)) !== 'vertical') throw new Error('vertical preset shows the safe zones');
+  await sel.selectOption('');
+  await page.keyboard.press('Escape');
+  await S(() => (window.__moshpit.store.ui.guides = null));
+});
+
 await step('light theme + new project + undo', async () => {
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Light theme/ }).click();

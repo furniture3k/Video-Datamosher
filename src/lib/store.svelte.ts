@@ -58,10 +58,14 @@ class Store {
     selectedMedia: null as string | null,
     speed: 1,
     compare: 'off' as CompareMode,
+    /** A/B against this snapshot instead of the clean source */
+    compareSnap: null as string | null,
+    /** safe-zone guides drawn over the player (social export presets) */
+    guides: null as null | 'vertical' | 'feed',
     split: 0.5,
     zoom: 1,
     autoRender: localGet('autoRender', true),
-    dialog: null as null | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
+    dialog: null as null | 'snapshots' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
@@ -401,7 +405,10 @@ class Store {
     if (ok && (this.project.clips.length || this.project.texts.length)) this.scheduleRender(100);
     // Media no longer in the saved project is removed on startup only, so undo
     // within a session can always bring a deleted clip back.
-    pruneFiles(this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])));
+    // (media used by snapshots is kept so they can still be restored)
+    const { snapshotFileIds } = await import('./snapshots.svelte');
+    const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
+    pruneFiles([...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)]);
     const { prepareAll } = await import('./media');
     prepareAll(this.project.media);
   }

@@ -5,6 +5,7 @@
   import { loadExample } from '../lib/media';
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
+  import ChaosDial from './ChaosDial.svelte';
   import { newProject } from '../engine/types';
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
   let loadInput: HTMLInputElement;
@@ -48,6 +49,8 @@
     </div>
     <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  U"><Icon name="nudge" /><span class="lbl">Nudge</span></button>
     <button class="ghost" onclick={() => (store.ui.dialog = 'variations')} disabled={!hasClips} title="Compare several variations side by side  V"><Icon name="grid" /><span class="lbl">Variations</span></button>
+    <ChaosDial />
+    <button class="ghost" onclick={() => (store.ui.dialog = 'snapshots')} title="Snapshots: saved versions to restore or compare  Ctrl+Shift+S saves one"><Icon name="history" /><span class="lbl">Snapshots</span></button>
   </nav>
 
   <label class="seed" title="Every random choice comes from this number. Same seed, same result.">

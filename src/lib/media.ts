@@ -1,6 +1,9 @@
 // Importing media into the library, placing it on the timeline, and background preparation
 // (preview proxies, decoded audio and waveforms).
 import { store } from './store.svelte';
+import { ask } from './ask';
+import { applyShareCode } from './projectio.svelte';
+import { takeSnapshot } from './snapshots.svelte';
 import { putFile, getFile, kvGet, kvSet } from './storage';
 import { probeFile, renderGenerator, makeProxy, extractPcm, proxyKey } from './renderer';
 import { mediaState, rt, PEAKS_PER_SEC } from './mediastate.svelte';
@@ -29,6 +32,7 @@ export async function addFiles(list: FileList | File[], place: Place = 'auto', k
   const files = [...list];
   const added: MediaItem[] = [];
   const wasEmpty = store.project.clips.length === 0;
+  let recipe: { code: string; name: string } | null = null;
   for (const file of files) {
     const ext = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
     const isImage = file.type.startsWith('image/') && !/gif$/i.test(file.type) && !/gif$/.test(ext);
@@ -56,6 +60,7 @@ export async function addFiles(list: FileList | File[], place: Place = 'auto', k
       };
       store.edit((p) => p.media.push(m));
       added.push(m);
+      if (info.recipe && !recipe) recipe = { code: info.recipe, name: file.name };
       prepareMedia(m);
     } catch (e) {
       console.error(e);
@@ -74,6 +79,7 @@ export async function addFiles(list: FileList | File[], place: Place = 'auto', k
       else p = { ...p, start: p.start + clipLen(makeClip(m, p.track)) };
     }
   }
+  if (recipe) offerRecipe(recipe.code, recipe.name);
   return added;
 }
 
@@ -263,4 +269,16 @@ export function prepareAll(media: MediaItem[]) {
 export function forgetMedia(id: string) {
   pcm.delete(id);
   delete mediaState[id];
+}
+
+/** A video exported from moshpit carries its recipe: offer to put that mosh on this timeline. */
+async function offerRecipe(code: string, name: string) {
+  if (!(await ask(`${name} was made in moshpit and carries its mosh recipe. Apply that recipe to your timeline? (Your current effects are kept in a snapshot.)`))) return;
+  try {
+    await takeSnapshot('Before recipe from ' + name, true);
+    await applyShareCode(code);
+    store.toast('Recipe applied.', 'ok');
+  } catch {
+    store.toast('The recipe in that file could not be read.', 'error');
+  }
 }

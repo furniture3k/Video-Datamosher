@@ -4,13 +4,16 @@ import { FlowEngine, CHROMA, type FlowParams } from './flow';
 import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
 import { paramAt } from '../engine/automation';
+import { withChaos } from '../engine/chaos';
 import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project, TextClip } from '../engine/types';
 import { drawTexts, textAlpha } from './text';
 import { Cancelled } from './ffmpeg';
 
 export function pixelEffectsOf(project: Project): EffectInstance[] {
-  return activeEffects(allEffects(project)).filter((e) => EFFECTS[e.type].kind === 'pixel');
+  return activeEffects(allEffects(project))
+    .filter((e) => EFFECTS[e.type].kind === 'pixel')
+    .map((e) => withChaos(e, project.chaos));
 }
 
 const tOf = (src: number, e: EffectInstance) => (src - e.start) / Math.max(1, e.end - e.start - 1);

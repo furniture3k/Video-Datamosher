@@ -12,6 +12,7 @@
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
+  import { SOCIAL_PRESETS, bitrateFor } from '../engine/social';
 
   const marked = markedRange();
   let onlyRange = $state(!!marked);
@@ -31,6 +32,34 @@
   const duration = $derived(store.duration);
   const pixels = $derived(mosh.w * mosh.h * duration * store.project.encoder.fps);
   const heavy = $derived(pixels > 1920 * 1080 * 24 * 90 || (outW >= 2560 && duration > 20));
+  let social = $state(localGet<string>('exportSocial', ''));
+  const sp = $derived(SOCIAL_PRESETS.find((p) => p.id === social) ?? null);
+  const span = $derived(onlyRange && marked ? marked[1] - marked[0] : duration);
+  const tooLong = $derived(!!sp?.maxSec && span > sp.maxSec + 0.05);
+  const wrongShape = $derived(!!sp?.aspect && store.project.encoder.aspect !== sp.aspect);
+  const sizedKbps = $derived(o.maxMB && (o.format === 'mp4' || o.format === 'webm') ? bitrateFor(o.maxMB, span, o.audio && hasAudio) : 0);
+  function useSocial(id: string) {
+    social = id;
+    localSet('exportSocial', id);
+    const p = SOCIAL_PRESETS.find((x) => x.id === id);
+    if (!p) {
+      o.maxMB = undefined;
+      return;
+    }
+    Object.assign(o, p.opts);
+    // GIFs can't aim at a size: the limit is shown as a warning instead
+    o.maxMB = p.opts.format === 'gif' ? undefined : p.maxMB;
+    store.ui.guides = p.guides ?? null;
+  }
+  function fitShape() {
+    if (!sp?.aspect) return;
+    const aspect = sp.aspect;
+    store.edit((p) => {
+      p.encoder.aspect = aspect;
+      for (const c of p.clips) if (c.track === 'v1' && c.fit === 'fit') c.fit = 'fill';
+    });
+    store.toast(`The project is now ${aspect}. Clips on the main track fill the frame; adjust their position in the Clip tab.`, 'ok', 6000);
+  }
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
   const FORMATS = [
@@ -84,9 +113,34 @@
 
 <Modal title="Export" onclose={() => (running ? cancel() : null, (store.ui.dialog = null))}>
   <div class="col">
+    <label class="row social">
+      <span class="label">Made for</span>
+      <select value={social} onchange={(e) => useSocial((e.target as HTMLSelectElement).value)} disabled={running}>
+        <option value="">Custom settings</option>
+        {#each SOCIAL_PRESETS as p}<option value={p.id}>{p.name}</option>{/each}
+      </select>
+    </label>
+    {#if sp}
+      <div class="small muted">{sp.note}{#if sizedKbps} Video bitrate {sizedKbps} kbit/s to stay under {sp.maxMB} MB.{/if}</div>
+      {#if wrongShape}
+        <div class="small warn row">
+          <span class="grow">{sp.name} wants {sp.aspect}; this project is {store.project.encoder.aspect === 'auto' ? 'the shape of its first clip' : store.project.encoder.aspect}. It will be exported as it is.</span>
+          <button onclick={fitShape} disabled={running}>Make it {sp.aspect}</button>
+        </div>
+      {/if}
+      {#if tooLong}
+        <div class="small warn">This is {fmt(span)} long; {sp.name} takes up to {fmt(sp.maxSec!)}. Mark an In–Out range (I and O) to export a part.</div>
+      {/if}
+      {#if sp.guides}
+        <label class="row small"><input type="checkbox" checked={store.ui.guides === sp.guides} onchange={(e) => (store.ui.guides = (e.target as HTMLInputElement).checked ? sp!.guides! : null)} />Show the app's safe zones in the player</label>
+      {/if}
+      {#if sp.opts.format === 'gif' && sp.maxMB}
+        <div class="small faint">GIFs can't be aimed at a size. If it comes out over {sp.maxMB} MB, lower the colours, frame rate or size.</div>
+      {/if}
+    {/if}
     <div class="formats">
       {#each FORMATS as f}
-        <button class="fmt" class:on={o.format === f.id} onclick={() => (o.format = f.id)} disabled={running}>
+        <button class="fmt" class:on={o.format === f.id} onclick={() => ((o.format = f.id), sp && sp.opts.format !== f.id && useSocial(''))} disabled={running}>
           <b>{f.label}</b><span class="small muted">{f.desc}</span>
         </button>
       {/each}
@@ -124,7 +178,9 @@
       {/if}
     {/if}
     {#if o.format === 'mp4' || o.format === 'webm'}
-      <Field label="Quality (CRF)" min={0} max={40} step={1} value={o.crf} help="Lower = better quality and bigger file. 18 is visually lossless." onchange={(v: number) => (o.crf = v)} />
+      {#if !o.maxMB}
+        <Field label="Quality (CRF)" min={0} max={40} step={1} value={o.crf} help="Lower = better quality and bigger file. 18 is visually lossless." onchange={(v: number) => (o.crf = v)} />
+      {/if}
       {#if o.format === 'mp4'}
         <Field
           type="select"
@@ -233,6 +289,13 @@
     background: var(--surface-3);
     box-shadow: inset 0 -2px 0 var(--accent);
     color: var(--text);
+  }
+  .social select {
+    flex: 1;
+  }
+  .warn.row {
+    gap: 8px;
+    align-items: center;
   }
   .prog {
     display: flex;

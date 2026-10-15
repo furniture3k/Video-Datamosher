@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Chaos dial**: one knob that pushes every effect calmer or wilder (<kbd>Q</kbd> / <kbd>Shift Q</kbd>).
+- **Breed variations**: pick favourites in Variations and breed them, generation after generation.
+- **Snapshots**: named versions you can restore or A/B against the current mosh; automatic ones
+  before anything replaces your stack.
+- **Recipes inside exports**: videos, GIFs and PNG zips carry their mosh recipe, and dropping
+  one into moshpit offers to apply it.
+- **Made for** export presets (TikTok / Reels / Shorts, Instagram, YouTube, X, Discord, GIF) with
+  size targets, length and shape warnings, and safe-zone guides.
+
 ## 1.2.0
 
 - **Timeline and playhead in sync.** Effects keep their length by default, so output frame N is
