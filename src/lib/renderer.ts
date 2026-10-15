@@ -301,7 +301,8 @@ export async function renderPreview(project: Project, width: number, progress?: 
   } else jpegs = await decode(project, blob, 4, frames.length, 'Decoding', progress);
   check(signal);
   lastDecode = { key: dkey, frames, jpegs };
-  const runner = new PostRunner(project, 0.85, false, audio);
+  const clean = needsClean(project) ? new CleanFrames(project, writeMoshedBlob(prep, prep.frames), prep.frames.length) : undefined;
+  const runner = new PostRunner(project, 0.85, false, audio, clean);
   const post = runner.active;
   try {
     if (post) jpegs = await runner.run(jpegs, frames, 0, (p) => progress?.('Pixel effects', p), signal);
@@ -314,6 +315,45 @@ export async function renderPreview(project: Project, width: number, progress?: 
 }
 
 /** Decoded frames of the clean prepared video (for A/B compare). */
+/**
+ * The clean (un-moshed) picture at any timeline position, decoded a stretch at a time from the
+ * prepared stream. Subject Guard puts it back where the mask says.
+ */
+export class CleanFrames {
+  private cache = new Map<number, Uint8Array>();
+  private loading: Promise<void> | null = null;
+  constructor(
+    private project: Project,
+    /** the clean stream: in memory, or an engine file on desktop */
+    private src: Blob | string,
+    private total: number,
+    private span = 96,
+  ) {}
+  async get(pos: number): Promise<Uint8Array | null> {
+    pos = Math.max(0, Math.min(this.total - 1, pos));
+    if (!this.cache.has(pos)) {
+      while (this.loading) await this.loading;
+      if (!this.cache.has(pos)) {
+        const to = Math.min(this.total, pos + this.span);
+        this.loading = decode(this.project, this.src, 4, to, 'Clean frames', undefined, { from: pos, to }).then((js) => {
+          // keep memory bounded: only the latest stretch
+          if (this.cache.size > this.span * 3) this.cache.clear();
+          js.forEach((j, i) => this.cache.set(pos + i, j));
+        });
+        try {
+          await this.loading;
+        } finally {
+          this.loading = null;
+        }
+      }
+    }
+    return this.cache.get(pos) ?? null;
+  }
+}
+
+/** Does any active effect need clean frames? */
+const needsClean = (p: Project) => p.effects.some((e) => e.enabled && e.type === 'mask');
+
 export async function originalFrames(project: Project, width: number): Promise<Uint8Array[]> {
   const key = JSON.stringify({ c: project.clips, e: project.encoder, width });
   const hit = origCache.get(key);
@@ -622,7 +662,12 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
     }
 
     const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
-    const runner = new PostRunner(project, 0.95, true, audioFx);
+    let clean: CleanFrames | undefined;
+    if (needsClean(project)) {
+      if (disk) await assembleAvi(ffmpeg.file!('clean.avi'), prep, prep.frames);
+      clean = new CleanFrames(project, disk ? 'clean.avi' : writeMoshedBlob(prep, prep.frames), prep.frames.length);
+    }
+    const runner = new PostRunner(project, 0.95, true, audioFx, clean);
     const post = runner.active;
     const n = hi - lo;
 

@@ -4,6 +4,8 @@ import type { BitstreamEffect } from './types';
 import type { EffectInstance, Frame } from '../types';
 import { copy, defuseStartCodes, inRange, isMotion, num, posOf, str, tOf, bool } from './util';
 import { BEND_MODES, bendBytes, type BendMode } from '../dsp';
+import { parseVol, parsePVop, writePVop, clampField, type Vol } from '../mpeg4mv';
+import { rasterizeField, type Stroke } from '../flowfield';
 
 // ---------- sequencer ----------
 
@@ -160,4 +162,86 @@ export const databend: BitstreamEffect = {
   },
 };
 
-export const moreBitstreamEffects: BitstreamEffect[] = [sequencer, databend];
+
+
+// ---------- motion-vector editing ----------
+
+const vols = new WeakMap<Uint8Array, Vol | null>();
+/** The stream's VOL header (in the first prepared frame), parsed once. */
+function volOf(source: Frame[]): Vol | null {
+  const d = source[0]?.data;
+  if (!d) return null;
+  if (!vols.has(d)) {
+    try {
+      vols.set(d, parseVol(d));
+    } catch {
+      vols.set(d, null);
+    }
+  }
+  return vols.get(d) ?? null;
+}
+
+export const vectorEdit: BitstreamEffect = {
+  kind: 'bitstream',
+  type: 'mvedit',
+  name: 'Vector Edit',
+  icon: 'MVX',
+  color: '#6fd0c8',
+  description: 'Rewrites the motion vectors inside the compressed frames: amplify, turn, swap or drift the motion, or paint it with the brush. The real datamosh vectors, not an imitation. Needs the Xvid (MPEG-4) codec with 4MV and quarter-pel off (the defaults).',
+  span: 3,
+  params: [
+    { key: 'amplify', label: 'Amplify', type: 'number', min: -4, max: 4, step: 0.05, default: 2, intensity: 'up', help: 'Multiplies every vector. Negative values reverse the motion.' },
+    { key: 'rotate', label: 'Turn', type: 'number', min: -180, max: 180, step: 1, default: 0, unit: '°', help: 'Turns every vector, so things move sideways to how they really moved.' },
+    { key: 'swap', label: 'Swap X / Y', type: 'bool', default: false, help: 'Sideways motion becomes up-and-down and the other way round.' },
+    { key: 'driftX', label: 'Drift X', type: 'number', min: -32, max: 32, step: 0.5, default: 0, unit: 'px', help: 'Constant sideways motion added to every block.' },
+    { key: 'driftY', label: 'Drift Y', type: 'number', min: -32, max: 32, step: 0.5, default: 0, unit: 'px', help: 'Constant vertical motion added to every block (positive = down).' },
+    { key: 'jitter', label: 'Jitter', type: 'number', min: 0, max: 16, step: 0.5, default: 0, intensity: 'up', unit: 'px', help: 'Random motion added to each block.' },
+    { key: 'quantize', label: 'Quantise', type: 'number', min: 0, max: 16, step: 0.5, default: 0, unit: 'px', help: 'Snaps vectors to a grid: stepped, blocky motion.', advanced: true },
+    { key: 'paint', label: 'Painted flow', type: 'number', min: 0, max: 4, step: 0.05, default: 1, help: 'How much the strokes painted with the brush add (paint on the player like Flow Paint).' },
+  ],
+  apply(frames, e, ctx) {
+    const vol = volOf(ctx.source);
+    if (!vol) return frames;
+    const strokes = (e.data?.strokes as Stroke[] | undefined) ?? [];
+    const mbw = Math.ceil(vol.width / 16);
+    const mbh = Math.ceil(vol.height / 16);
+    // the painted field, sampled at macroblock centres (in half pixels per frame)
+    const painted = strokes.length ? rasterizeField(strokes, mbw, mbh, vol.width / vol.height) : null;
+    return frames.map((f) => {
+      if (f.type !== 'P' || !inRange(f, e)) return f;
+      const t = tOf(f, e);
+      try {
+        const p = parsePVop(f.data, vol);
+        const amp = num(e, 'amplify', t);
+        const a = (num(e, 'rotate', t) * Math.PI) / 180;
+        const [c, s] = [Math.cos(a), Math.sin(a)];
+        const swap = bool(e, 'swap', t);
+        const dx = num(e, 'driftX', t) * 2;
+        const dy = num(e, 'driftY', t) * 2;
+        const jit = num(e, 'jitter', t) * 2;
+        const q = num(e, 'quantize', t) * 2;
+        const pk = num(e, 'paint', t);
+        const mv = p.field.mv.map((v, i) => {
+          if (!v) return null;
+          let x = amp * (c * v[0] - s * v[1]);
+          let y = amp * (s * v[0] + c * v[1]);
+          if (swap) [x, y] = [y, x];
+          x += dx + (jit ? (ctx.rng() * 2 - 1) * jit : 0);
+          y += dy + (jit ? (ctx.rng() * 2 - 1) * jit : 0);
+          if (painted) {
+            x += painted[i * 2] * vol.width * 2 * pk;
+            y += painted[i * 2 + 1] * vol.width * 2 * pk;
+          }
+          if (q > 0) ((x = Math.round(x / q) * q), (y = Math.round(y / q) * q));
+          return [x, y] as [number, number];
+        });
+        return { ...f, data: writePVop(f.data, p, clampField(mv, p.field.fcode)), tag: 'glitch' as const };
+      } catch {
+        // a frame this can't read (other codec settings) stays as it was
+        return f;
+      }
+    });
+  },
+};
+
+export const moreBitstreamEffects: BitstreamEffect[] = [sequencer, databend, vectorEdit];

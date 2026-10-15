@@ -36,4 +36,5 @@ import * as timeline from './engine/timeline';
 import * as media from './lib/media';
 import * as captions from './lib/captions.svelte';
 import * as motion from './lib/motion.svelte';
-Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline, media, captions, motion });
+import * as segment from './lib/segment';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline, media, captions, motion, segment });

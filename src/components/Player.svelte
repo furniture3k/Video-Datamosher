@@ -8,6 +8,7 @@
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
   import { trackClip } from '../lib/motion.svelte';
+  import { rasterizeField, type Stroke } from '../engine/flowfield';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
@@ -430,6 +431,69 @@
     const k = Math.min(rc.width / shown.width, rc.height / shown.height);
     return [(e.clientX - (rc.left + (rc.width - shown.width * k) / 2)) / (shown.width * k), (e.clientY - (rc.top + (rc.height - shown.height * k) / 2)) / (shown.height * k)];
   }
+  // ---- flow painting
+  const paintFx = $derived(store.ui.paintEffect ? store.project.effects.find((x) => x.id === store.ui.paintEffect && (x.type === 'flowPaint' || x.type === 'mvedit')) : undefined);
+  let liveStroke = $state<[number, number][]>([]);
+  /** The picture's box inside the stage, in stage pixels. */
+  function pictureBox() {
+    const shown = mosh ? canvas : editCanvas;
+    const sr = wrap.getBoundingClientRect();
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    const w = shown.width * k;
+    const h = shown.height * k;
+    return { left: rc.left - sr.left + (rc.width - w) / 2, top: rc.top - sr.top + (rc.height - h) / 2, width: w, height: h };
+  }
+  function paintStroke(e: PointerEvent) {
+    const fx = paintFx;
+    if (!fx) return;
+    const pts: [number, number][] = [pictureUV(e)];
+    liveStroke = pts;
+    const move = (ev: PointerEvent) => {
+      const p = pictureUV(ev);
+      const l = pts[pts.length - 1];
+      if (Math.hypot(p[0] - l[0], p[1] - l[1]) <= 0.008) return;
+      pts.push(p);
+      liveStroke = [...pts];
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      liveStroke = [];
+      const b = store.ui.brush;
+      const stroke = { tool: b.tool, pts: pts.map(([x, y]) => [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]), radius: b.radius, strength: b.strength };
+      const id = fx.id;
+      store.edit((p) => {
+        const x = p.effects.find((y) => y.id === id);
+        if (x) x.data = { ...(x.data ?? {}), strokes: [...((x.data?.strokes as unknown[]) ?? []), stroke] };
+      });
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
+  /** Arrows showing the painted field. */
+  const fieldArrows = $derived.by(() => {
+    if (!paintFx) return [];
+    const strokes = (paintFx.data?.strokes as Stroke[] | undefined) ?? [];
+    const { w, h } = outputSize(store.project, store.project.encoder.previewWidth);
+    const gw = 24;
+    const gh = Math.max(4, Math.round((24 * h) / w));
+    const f = rasterizeField(strokes, gw, gh, w / h);
+    // drawn to scale with each other, the strongest one grid cell long
+    let max = 0;
+    for (let k = 0; k < f.length; k += 2) max = Math.max(max, Math.hypot(f[k], f[k + 1]));
+    const out: { x: number; y: number; dx: number; dy: number }[] = [];
+    if (max < 1e-5) return out;
+    const s = 0.9 / gw / max;
+    for (let j = 0; j < gh; j++)
+      for (let i = 0; i < gw; i++) {
+        const k = (j * gw + i) * 2;
+        if (Math.hypot(f[k], f[k + 1]) < max * 0.05) continue;
+        out.push({ x: (i + 0.5) / gw, y: (j + 0.5) / gh, dx: f[k] * s, dy: ((f[k + 1] * w) / h) * s });
+      }
+    return out;
+  });
+
   /** The box being drawn around something to track, in stage pixels. */
   let trackRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
   function drawTrackBox(e: PointerEvent) {
@@ -516,12 +580,13 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stage"
-    class:picking={store.ui.eyedropper || !!store.ui.trackPick}
+    class:picking={store.ui.eyedropper || !!store.ui.trackPick || !!paintFx}
     bind:this={wrap}
     onpointerdown={(e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
       if (store.ui.eyedropper) return pickKeyColour(e);
       if (store.ui.trackPick) return drawTrackBox(e);
+      if (paintFx) return paintStroke(e);
       if (store.ui.compare === 'split') {
         draggingSplit = true;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -536,6 +601,16 @@
     {/if}
     <canvas bind:this={canvas} class:hidden={!mosh} class:split={store.ui.compare === 'split'}></canvas>
     <canvas bind:this={editCanvas} class="edit" class:hidden={mosh || !hasTimeline}></canvas>
+    {#if paintFx && hasTimeline}
+      {@const pb = pictureBox()}
+      <svg class="paintlayer" style="left:{pb.left}px;top:{pb.top}px;width:{pb.width}px;height:{pb.height}px" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+        {#each fieldArrows as a}
+          <line x1={a.x} y1={a.y} x2={a.x + a.dx} y2={a.y + a.dy} class="arrow" />
+        {/each}
+        {#if liveStroke.length > 1}<polyline points={liveStroke.map(([x, y]) => `${x},${y}`).join(' ')} class="stroke" />{/if}
+      </svg>
+      <div class="stage-note mono picknote">painting {store.ui.brush.tool}: drag on the picture · Esc to stop</div>
+    {/if}
     {#if trackRect}
       <div class="trackbox" style="left:{trackRect.x}px;top:{trackRect.y}px;width:{trackRect.w}px;height:{trackRect.h}px"></div>
     {/if}
@@ -701,6 +776,24 @@
   .guides .gt {
     fill: rgba(255, 255, 255, 0.8);
     font-family: var(--mono, monospace);
+  }
+  .paintlayer {
+    position: absolute;
+    pointer-events: none;
+    z-index: 3;
+    overflow: visible;
+  }
+  .paintlayer .arrow {
+    stroke: rgba(126, 196, 224, 0.9);
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+    stroke-linecap: round;
+  }
+  .paintlayer .stroke {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 3px;
+    vector-effect: non-scaling-stroke;
   }
   .trackbox {
     position: absolute;

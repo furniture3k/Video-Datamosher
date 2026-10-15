@@ -94,4 +94,61 @@ export const rawBend: PixelEffectDef = {
   ],
 };
 
-export const pixelEffects: PixelEffectDef[] = [vectorWarp, chromaDrift, pixelSort, rawBend];
+export const subjectGuard: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'mask',
+  name: 'Subject Guard',
+  icon: 'SUB',
+  color: '#e8e2d0',
+  description: 'Keeps part of the picture clean while the rest moshes: a person, a tracked object, the bright or dark parts, or a colour. Put it last in the stack. Or flip it, so only the subject melts.',
+  params: [
+    {
+      key: 'source',
+      label: 'Subject',
+      type: 'select',
+      default: 'person',
+      options: [
+        { value: 'person', label: 'People', hint: 'Finds people in the clean footage with a small AI model that runs on this device (downloaded once).' },
+        { value: 'track', label: 'A tracked object', hint: 'An oval that follows a track made in the Clip tab (Track an object).' },
+        { value: 'luma', label: 'Bright parts', hint: 'Everything brighter than the threshold. Lower the threshold to keep more.' },
+        { value: 'dark', label: 'Dark parts', hint: 'Everything darker than the threshold.' },
+        { value: 'chroma', label: 'A colour', hint: 'Everything close to a colour (pick it below).' },
+      ],
+      help: 'What counts as the subject.',
+    },
+    {
+      key: 'keep',
+      label: 'Keep clean',
+      type: 'select',
+      default: 'subject',
+      options: [
+        { value: 'subject', label: 'The subject', hint: 'The subject stays sharp while the world around it melts.' },
+        { value: 'background', label: 'Everything else', hint: 'Only the subject moshes; the background stays clean.' },
+      ],
+      help: 'Which side of the mask is protected from the mosh.',
+    },
+    { show: (p) => p.source === 'luma' || p.source === 'dark' || p.source === 'chroma', key: 'threshold', label: 'Threshold', type: 'number', min: 0, max: 1, step: 0.01, default: 0.55, help: 'Where the mask starts (brightness, or distance from the colour).' },
+    { show: (p) => p.source === 'track', key: 'size', label: 'Oval size', type: 'number', min: 0.02, max: 0.8, step: 0.01, default: 0.18, help: 'Size of the oval around the tracked point, as a share of the frame.' },
+    { key: 'feather', label: 'Feather', type: 'number', min: 0, max: 0.2, step: 0.005, default: 0.03, help: 'Soft edge, as a share of the frame.' },
+    { key: 'expand', label: 'Grow / shrink', type: 'number', min: -0.4, max: 0.4, step: 0.01, default: 0.05, help: 'Grows (+) or shrinks (−) the subject a little.' },
+    { key: 'mix', label: 'Strength', type: 'number', min: 0, max: 1, step: 0.01, default: 1, intensity: 'down', help: 'How much of the clean picture comes back. Lower values let some mosh bleed into the subject.' },
+  ],
+};
+
+export const flowPaint: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'flowPaint',
+  name: 'Flow Paint',
+  icon: 'PNT',
+  color: '#7ec4e0',
+  description: 'Paint where the picture should flow: brush strokes push, swirl, pinch or bulge the image, and it smears along them like a P-frame bloom. Select it and paint on the player.',
+  params: [
+    { key: 'strength', label: 'Strength', type: 'number', min: 0, max: 4, step: 0.05, default: 1, intensity: 'up', help: 'Multiplies every painted stroke.' },
+    { key: 'follow', label: 'Real motion', type: 'number', min: -3, max: 3, step: 0.05, default: 0, help: 'How much of the footage\'s own motion is added to the painted flow (0 = only the paint).' },
+    { key: 'residual', label: 'Residual', type: 'number', min: 0, max: 1, step: 0.01, default: 0.08, intensity: 'down', help: 'How much real new detail leaks in each frame. 0 = pure smear.' },
+    { key: 'refresh', label: 'Refresh', type: 'number', min: 0, max: 1, step: 0.01, default: 0, intensity: 'down', help: 'Blends back toward the clean video each frame (shorter trails).' },
+    { key: 'turbulence', label: 'Turbulence', type: 'number', min: 0, max: 8, step: 0.1, default: 0, intensity: 'up', help: 'Swirly noise on top of the paint.' },
+  ],
+};
+
+export const pixelEffects: PixelEffectDef[] = [vectorWarp, chromaDrift, pixelSort, rawBend, flowPaint, subjectGuard];

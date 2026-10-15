@@ -78,6 +78,7 @@ uniform sampler2D canvasTex; uniform sampler2D cur; uniform sampler2D prev; unif
 uniform vec2 size; uniform float amplify; uniform float rot; uniform float swapXY;
 uniform vec2 drift; uniform float turb; uniform float quant; uniform float thresh;
 uniform float residual; uniform float refresh; uniform float mixAmt; uniform float time;
+uniform sampler2D paint; uniform float paintAmt; uniform float paintMax;
 void main(){
   vec2 d = texture(mv, uv).xy * 64. - 32.;          // measured sample offset (px)
   vec2 v = d;
@@ -90,6 +91,9 @@ void main(){
   // vectors are sample offsets in texture space (y up): content moving by m means v = -m.
   // drift.y > 0 means "flow downwards on screen", i.e. sample from above.
   v += vec2(-drift.x, drift.y);
+  // painted flow: how the content should move on screen (y down), as a share of the width
+  vec2 pv = (texture(paint, uv).xy - 0.5) * 2.0 * paintMax * size.x;
+  v += paintAmt * vec2(-pv.x, pv.y);
   v += turb * vec2(sin(p.y*0.045 + time*1.7) + sin(p.x*0.021 - time), cos(p.x*0.04 + time*1.3) + cos(p.y*0.017 + time*0.7));
   if (quant > 0.) v = floor(v/quant + 0.5) * quant;
   vec2 off = v / size;
@@ -109,8 +113,12 @@ export class FlowEngine {
   private mv: Target | null = null;
   private mvBlock = 0;
   private started = false;
+  /** a flat (no flow) field for when nothing is painted */
+  private noPaint: Target;
   time = 0;
   constructor(public gl: GL, public w: number, public h: number) {
+    this.noPaint = gl.target(2, 2);
+    gl.uploadPixels(this.noPaint, new Uint8Array(16).map((_, i) => (i % 4 === 3 ? 255 : 128)));
     this.prev = gl.target(w, h);
     this.cur = gl.target(w, h);
     this.canvasA = gl.target(w, h);
@@ -122,7 +130,7 @@ export class FlowEngine {
   }
 
   /** Feed the next source frame (as a texture target already filled). Returns the output target. */
-  step(input: Target, p: FlowParams): Target {
+  step(input: Target, p: FlowParams, paint?: { field: Target; amount: number; max: number }): Target {
     const gl = this.gl;
     // shift cur -> prev, input -> cur
     gl.pass(COPY, this.prev, { src: this.cur.tex });
@@ -145,7 +153,7 @@ export class FlowEngine {
     gl.pass(
       WARP,
       this.canvasB,
-      { canvasTex: this.canvasA.tex, cur: this.cur.tex, prev: this.prev.tex, mv: this.mv.tex },
+      { canvasTex: this.canvasA.tex, cur: this.cur.tex, prev: this.prev.tex, mv: this.mv.tex, paint: (paint?.field ?? this.noPaint).tex },
       {
         size: [this.w, this.h],
         amplify: p.amplify,
@@ -159,6 +167,8 @@ export class FlowEngine {
         refresh: p.refresh,
         mixAmt: p.mix,
         time: this.time,
+        paintAmt: paint?.amount ?? 0,
+        paintMax: paint?.max ?? 0,
       },
     );
     [this.canvasA, this.canvasB] = [this.canvasB, this.canvasA];
@@ -171,7 +181,7 @@ export class FlowEngine {
   }
 
   dispose() {
-    this.gl.dispose(this.prev, this.cur, this.canvasA, this.canvasB, this.mv);
+    this.gl.dispose(this.prev, this.cur, this.canvasA, this.canvasB, this.mv, this.noPaint);
   }
 }
 
