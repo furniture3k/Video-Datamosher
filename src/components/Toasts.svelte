@@ -4,7 +4,12 @@
 
 <div class="toasts" aria-live="polite">
   {#each store.toasts as t (t.id)}
-    <div class="toast {t.kind}">{t.text}</div>
+    <div class="toast {t.kind}" class:act={!!t.action}>
+      <span>{t.text}</span>
+      {#if t.action}
+        <button class="small" onclick={() => (t.action!.run(), (store.toasts = store.toasts.filter((x) => x.id !== t.id)))}>{t.action.label}</button>
+      {/if}
+    </div>
   {/each}
 </div>
 
@@ -27,6 +32,15 @@
     padding: 7px 12px;
     font-size: 12.5px;
     box-shadow: var(--shadow);
+  }
+  .toast.act {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: auto;
+  }
+  .toast.act span {
+    flex: 1;
   }
   .toast.error {
     border-left-color: var(--danger);

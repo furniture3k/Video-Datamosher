@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportProblem } from '../lib/report';
   import { untrack, onDestroy, onMount } from 'svelte';
   import { store, type CompareMode } from '../lib/store.svelte';
   import { loadExample, addFiles } from '../lib/media';
@@ -716,7 +717,7 @@
     {/if}
     {#if store.status.error}
       <div class="error small">
-        <div class="row"><b class="grow">Render failed</b><button onclick={() => store.doRender(true)}>Retry</button></div>
+        <div class="row"><b class="grow">Render failed</b><button onclick={() => reportProblem('The mosh failed to render.')}>Report</button><button onclick={() => store.doRender(true)}>Retry</button></div>
         <div>{store.status.error.split('\n')[0]}</div>
         <details><summary class="faint">Details</summary><pre>{store.status.error}</pre></details>
       </div>

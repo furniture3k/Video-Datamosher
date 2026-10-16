@@ -50,6 +50,48 @@ export class Cancelled extends Error {
   }
 }
 
+let core: Promise<{ coreURL: string; wasmURL: string }> | null = null;
+/**
+ * The engine files as blob URLs, downloaded once per session with a byte count for the status line
+ * (instances are recycled every few jobs and reuse them).
+ */
+function coreUrls(status: (s: string) => void) {
+  core ??= (async () => {
+    const base = new URL('ffmpeg/', document.baseURI).href;
+    const get = async (name: string, type: string, onBytes?: (n: number, total: number) => void) => {
+      const r = await fetch(base + name);
+      if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+      const total = Number(r.headers.get('content-length')) || 0;
+      if (!r.body || !onBytes) return URL.createObjectURL(new Blob([await r.arrayBuffer()], { type }));
+      const reader = r.body.getReader();
+      const parts: Uint8Array[] = [];
+      let n = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value);
+        n += value.length;
+        onBytes(n, total);
+      }
+      return URL.createObjectURL(new Blob(parts as BlobPart[], { type }));
+    };
+    const mb = (n: number) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
+    let last = 0;
+    const [coreURL, wasmURL] = await Promise.all([
+      get('ffmpeg-core.js', 'text/javascript'),
+      get('ffmpeg-core.wasm', 'application/wasm', (n, total) => {
+        const now = performance.now();
+        if (now - last < 120) return;
+        last = now;
+        status(total ? `Loading video engine ${mb(n)} / ${mb(total)} MB` : `Loading video engine ${mb(n)} MB`);
+      }),
+    ]);
+    return { coreURL, wasmURL };
+  })();
+  core.catch(() => (core = null));
+  return core;
+}
+
 class FFmpegService implements Engine {
   private ff: FFmpeg | null = null;
   private loading: Promise<FFmpeg> | null = null;
@@ -75,9 +117,9 @@ class FFmpegService implements Engine {
         this.currentLog.push(message);
         this.logListeners.forEach((l) => l(message));
       });
-      const base = new URL('ffmpeg/', document.baseURI).href;
       try {
-        await ff.load({ coreURL: base + 'ffmpeg-core.js', wasmURL: base + 'ffmpeg-core.wasm' });
+        const { coreURL, wasmURL } = await coreUrls((s) => this.onStatus(s));
+        await ff.load({ coreURL, wasmURL });
       } catch (e) {
         this.onStatus('');
         throw new Error('Could not load the video engine (' + ((e as Error)?.message ?? e) + '). Check your connection and reload.');

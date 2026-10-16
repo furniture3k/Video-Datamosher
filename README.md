@@ -47,7 +47,13 @@ A quick first video:
 
 It opens in its own window with no browser bars, and the whole app, including the video engine, is kept on the device, so it starts and works offline. Updates arrive the next time it's opened online.
 
-**Desktop app (Windows, macOS, Linux).** The same editor in a native window, running a native FFmpeg instead of the browser one. Native FFmpeg uses every CPU core, so preparing and exporting are many times faster, 1440p and 4K are practical, and output can be 30 minutes long (10 minutes in the browser). Exports are saved with the normal Save dialog. Download it from [Releases](https://github.com/furniture3k/Video-Datamosher/releases):
+Installed, it also works with the rest of the system:
+
+- **Open with moshpit.** In Chrome and Edge, videos, GIFs and sound files get moshpit in their **Open with** menu.
+- **Share to moshpit.** On Android, share a video from the gallery or another app straight into moshpit. The export dialog has **Share…** on phones and tablets.
+- **Save dialog.** In Chrome and Edge, **Save project** asks where to put the file and <kbd>Ctrl</kbd> <kbd>S</kbd> saves to the same file again.
+
+**Desktop app (Windows, macOS, Linux).** The same editor in a native window, running a native FFmpeg instead of the browser one. Native FFmpeg uses every CPU core, so preparing and exporting are many times faster, 1440p and 4K are practical, and output can be 30 minutes long (10 minutes in the browser). Exports are saved with the normal Save dialog. Videos opened with the desktop app (Open with, or dropped on its icon) go into the open project. Download it from [Releases](https://github.com/furniture3k/Video-Datamosher/releases):
 
 | | File |
 |---|---|
@@ -156,6 +162,8 @@ Phones get their own editor, laid out like the mobile editors you already know r
 - **Moshed sound.** On tracks that follow the mosh, each frame plays its own slice of sound, so repeats and shuffles are audible. Bitcrush and sample-rate reduction are available.
 - **Live.** Real-time warp of a camera, screen or video, with recording back into the project.
 - Unlimited undo, autosave (including media) and project files.
+- **Storage** (⋯ menu) shows what your media, preview copies and snapshots take, and cleans up what nothing uses. If moshpit closes in the middle of a render (usually out of memory), it starts with auto-render paused instead of crashing again.
+- **Report a problem** (⋯ menu) opens a GitHub bug report with the version, browser and the engine's last messages filled in, without your media or file names.
 
 ![Presets: 16 starting points, each showing the effects it uses](docs/presets.png)
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import * as haptics from '../lib/haptics';
   // Phone timeline, in the style of mobile editors: the playhead stays in the middle and the
   // footage scrolls under it. Swipe to scrub, pinch to zoom, tap to select, drag the white
   // handles to trim, press and hold a clip to move it.
@@ -111,7 +112,7 @@
     p.timer = window.setTimeout(() => {
       press = null;
       if (placed.length < 2) return;
-      navigator.vibrate?.(15);
+      haptics.grab();
       store.selectClip(id);
       drag = { k: 'reorder', id, x: e.clientX, insert: placed.findIndex((q) => q.clip.id === id), before: clone($state.snapshot(store.project)) as Project };
     }, 380);
@@ -139,6 +140,7 @@
     e.preventDefault();
     const orig = ck === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     drag = { k: 'trim', id, ck, edge, x0: e.clientX, orig: clone($state.snapshot(orig)) as Clip | TextClip, before: clone($state.snapshot(store.project)) as Project };
+    haptics.grab();
     listen();
   }
 
@@ -225,7 +227,9 @@
     }
     if (d.k === 'reorder') {
       d.x = e.clientX;
-      d.insert = nearestCut(d.before, timeAt(e.clientX));
+      const insert = nearestCut(d.before, timeAt(e.clientX));
+      if (insert !== d.insert) haptics.tick();
+      d.insert = insert;
       // keep the finger's spot in view near the edges
       const r = sc.getBoundingClientRect();
       if (e.clientX < r.left + 40) sc.scrollLeft -= 8;

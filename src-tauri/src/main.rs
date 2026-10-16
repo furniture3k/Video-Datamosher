@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod engine;
+mod opened;
 
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
 use tauri::{Manager, Url, WebviewWindowBuilder};
@@ -18,10 +19,15 @@ fn is_app_url(url: &Url) -> bool {
 
 fn main() {
     tauri::Builder::default()
+        // opening a file with moshpit while it runs hands the file to the open window
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| opened::deliver(app, opened::from_args(args.into_iter().skip(1)))))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             app.manage(engine::Engine::new()?);
+            let opened = opened::Opened::default();
+            opened.add(opened::from_args(std::env::args().skip(1)));
+            app.manage(opened);
             let config = app.config().app.windows.first().cloned().ok_or("no window config")?;
             let opener = app.handle().clone();
             let opener2 = app.handle().clone();
@@ -68,12 +74,16 @@ fn main() {
             engine::engine_assemble,
             engine::save_path,
             engine::reveal,
+            opened::opened_files,
+            opened::read_opened_file,
         ])
         .build(tauri::generate_context!())
         .expect("error while building moshpit")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                app.state::<engine::Engine>().cleanup();
-            }
+        .run(|app, event| match event {
+            tauri::RunEvent::Exit => app.state::<engine::Engine>().cleanup(),
+            // macOS: "Open With", or a file dropped on the Dock icon
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            tauri::RunEvent::Opened { urls } => opened::deliver(app, urls.iter().filter_map(|u| u.to_file_path().ok()).collect()),
+            _ => {}
         });
 }

@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { ask } from '../lib/ask';
   import { store } from '../lib/store.svelte';
-  import { saveProjectFile, loadProjectFile } from '../lib/projectio.svelte';
+  import { saveProjectFile, loadProjectFile, startNewProject } from '../lib/projectio.svelte';
+  import { hasSavePicker } from '../lib/storage';
+  import { reportProblem } from '../lib/report';
   import { loadExample } from '../lib/media';
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
   import ChaosDial from './ChaosDial.svelte';
   import Logo from './Logo.svelte';
   import { closeCompound } from '../lib/compound.svelte';
-  import { newProject } from '../engine/types';
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
   let loadInput: HTMLInputElement;
   let menuOpen = $state(false);
@@ -87,24 +87,15 @@
     <button class="icon ghost" onclick={(e) => (e.stopPropagation(), (menuOpen = !menuOpen))} aria-label="More" title="More"><Icon name="more" /></button>
     {#if menuOpen}
       <div class="menu" role="menu">
-        <button class="ghost" onclick={saveProjectFile}><Icon name="save" />Save project<span class="kbd">Ctrl S</span></button>
+        <button class="ghost" onclick={() => saveProjectFile()}><Icon name="save" />Save project<span class="kbd">Ctrl S</span></button>
+        {#if hasSavePicker()}<button class="ghost" onclick={() => saveProjectFile(true)}><Icon name="save" />Save project as…</button>{/if}
         <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
         <button class="ghost" onclick={() => (store.ui.dialog = 'share')}><Icon name="link" />Share code…</button>
         <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'bake')}><Icon name="film" />Bake the mosh into a clip…</button>
         <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'captions')}><Icon name="text" />Auto captions…</button>
         <hr />
         <button class="ghost" onclick={() => loadExample()}><Icon name="gen" />Load example</button>
-        <button
-          class="ghost"
-          onclick={async () => {
-            if (await ask('Start a new project? Media, clips and effects will be cleared.')) {
-              store.set({ ...newProject(), encoder: $state.snapshot(store.project.encoder), name: 'Untitled' });
-              store.ui.selectedClips = [];
-              store.seek(0);
-              store.render = null;
-            }
-          }}><Icon name="file" />New project</button
-        >
+        <button class="ghost" onclick={startNewProject}><Icon name="file" />New project</button>
         <hr />
         <button class="ghost" onclick={() => store.setPref('autoRender', !store.ui.autoRender)}
           ><Icon name={store.ui.autoRender ? 'check' : 'x'} />Auto-render</button
@@ -115,7 +106,11 @@
         <button class="ghost" onclick={() => store.setPref('theme', store.ui.theme === 'dark' ? 'light' : 'dark')}
           ><Icon name="theme" />{store.ui.theme === 'dark' ? 'Light' : 'Dark'} theme</button
         >
+        <button class="ghost" onclick={() => (store.ui.dialog = 'storage')}><Icon name="storage" />Storage…</button>
+        <hr />
         <button class="ghost" onclick={() => (store.ui.dialog = 'help')}><Icon name="help" />Help & shortcuts<span class="kbd">?</span></button>
+        <button class="ghost" onclick={() => (store.ui.dialog = 'whatsnew')}><Icon name="sparkle" />What's new</button>
+        <button class="ghost" onclick={() => reportProblem()}><Icon name="bug" />Report a problem…</button>
       </div>
     {/if}
   </div>

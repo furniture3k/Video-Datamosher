@@ -37,7 +37,7 @@ if (import.meta.env.PROD && !isDesktop && 'serviceWorker' in navigator && (locat
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('offline support unavailable:', e));
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (hadController) store.toast('moshpit was updated. Reload to use the new version.', 'info', 8000);
+    if (hadController) store.toast('moshpit was updated. Reload to use the new version.', 'info', 15000, { label: 'Reload', run: () => location.reload() });
   });
 }
 
@@ -59,3 +59,7 @@ import * as captions from './lib/captions.svelte';
 import * as motion from './lib/motion.svelte';
 import * as segment from './lib/segment';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline, media, captions, motion, segment });
+import * as report from './lib/report';
+import * as incoming from './lib/incoming';
+import * as recovery from './lib/recovery';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { report, incoming, recovery });

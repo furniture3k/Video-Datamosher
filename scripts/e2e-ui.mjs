@@ -811,6 +811,47 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+await step('menu: what\'s new, storage, report a problem', async () => {
+  await page.locator('.menu-wrap > button').click();
+  await page.locator('.menu button', { hasText: "What's new" }).click();
+  const notes = await page.locator('.modal').innerText();
+  const version = await S(() => document.querySelector('.modal h4')?.textContent ?? '');
+  if (!/\d+\.\d+\.\d+/.test(version) || notes.length < 80) throw new Error('what\'s new shows no release notes');
+  await page.keyboard.press('Escape');
+  await page.locator('.menu-wrap > button').click();
+  await page.locator('.menu button', { hasText: 'Storage' }).click();
+  await page.locator('.modal .r', { hasText: 'Media in this project' }).waitFor({ timeout: 20000 });
+  await page.keyboard.press('Escape');
+  // the bug report link carries diagnostics but none of the person's file names
+  const url = await S(() => window.__moshpit.report.reportUrl('test'));
+  const q = new URL(url).searchParams;
+  if (q.get('template') !== 'bug_report.yml' || !/moshpit \d/.test(q.get('diagnostics') ?? '')) throw new Error('report link is missing its details: ' + url.slice(0, 200));
+  const names = await S(() => window.__moshpit.store.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.name] : [])));
+  for (const n of names) if (q.get('diagnostics').includes(n)) throw new Error('report leaks a file name: ' + n);
+});
+
+await step('incoming: a project file dropped or opened with the app is opened', async () => {
+  const clips = await S(() => window.__moshpit.store.project.clips.length);
+  await S(async () => {
+    const p = JSON.stringify({ ...window.__moshpit.store.project, name: 'Opened from outside' });
+    await window.__moshpit.incoming.openFiles([new File([p], 'outside.mosh.json', { type: 'application/json' })]);
+  });
+  if ((await S(() => window.__moshpit.store.project.name)) !== 'Opened from outside') throw new Error('project file was not opened');
+  if ((await S(() => window.__moshpit.store.project.clips.length)) !== clips) throw new Error('opening the project lost clips');
+});
+
+await step('crash recovery: a stale render flag pauses auto-render after a reload', async () => {
+  await S(() => localStorage.setItem('moshpit:busy', JSON.stringify({ kind: 'render', at: Date.now() - 60000, tab: 'gone' })));
+  await page.reload();
+  await page.waitForFunction(() => window.__moshpit?.store);
+  await page.locator('.toast', { hasText: 'closed while it was rendering' }).waitFor({ timeout: 20000 });
+  if (await S(() => window.__moshpit.store.ui.autoRender)) throw new Error('auto-render was not paused');
+  await page.locator('.toast button', { hasText: 'Resume auto-render' }).click();
+  if (!(await S(() => window.__moshpit.store.ui.autoRender))) throw new Error('resume did not turn auto-render back on');
+  if (await S(() => localStorage.getItem('moshpit:busy') && JSON.parse(localStorage.getItem('moshpit:busy')).tab === 'gone')) throw new Error('stale flag was not cleared');
+  await idle();
+});
+
 await browser.close();
 server.close();
 console.log(failed ? `\n${failed} step(s) failed` : '\nUI sweep passed');

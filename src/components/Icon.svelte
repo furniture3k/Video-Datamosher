@@ -2,6 +2,9 @@
   // 16px line icons, drawn for this app. Stroke = currentColor.
   const P: Record<string, string> = {
     magnet: '<path d="M4 2.5v5a4 4 0 0 0 8 0v-5M4 5.5h2.5M9.5 5.5H12M6.5 2.5v5a1.5 1.5 0 0 0 3 0v-5"/>',
+    bug: '<path d="M5.5 5.5a2.5 2.5 0 0 1 5 0M4.5 6.5h7v3.5a3.5 3.5 0 0 1-7 0zM8 6.5v7M2 8.5h2.5M11.5 8.5H14M2.5 12.5l2.2-1M13.5 12.5l-2.2-1M2.5 4.5l2 1.5M13.5 4.5l-2 1.5"/>',
+    storage: '<ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/>',
+    sparkle: '<path d="M8 1.5l1.4 4.1 4.1 1.4-4.1 1.4L8 12.5 6.6 8.4 2.5 7l4.1-1.4zM12.5 11v3M11 12.5h3"/>',
     text: '<path d="M3 4V2.5h10V4M8 2.5v11M6 13.5h4"/>',
     music: '<path d="M6 12V3.5l7-1.5V10.5"/><circle cx="4.5" cy="12" r="1.5"/><circle cx="11.5" cy="10.5" r="1.5"/>',
     film: '<path d="M2.5 3h11v10h-11zM5 3v10M11 3v10M2.5 6H5M2.5 10H5M11 6h2.5M11 10h2.5"/>',
