@@ -20,6 +20,9 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      # no serious accessibility problems on the website, the home screen, the editor and its dialogs
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run test:a11y
 
   desktop:
     # the desktop app (Tauri + native FFmpeg), driven through WebDriver on Linux

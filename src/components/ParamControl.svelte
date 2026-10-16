@@ -92,6 +92,7 @@
     <input
       type="range"
       aria-label={def.label}
+      aria-valuetext="{value}{def.unit ? ' ' + def.unit : ''}"
       title="Double-click to reset"
       min={isLog ? 0 : def.min}
       max={isLog ? 1 : def.max}

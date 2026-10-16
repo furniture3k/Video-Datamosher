@@ -9,7 +9,7 @@
   --line-2: #323238;
   --text: #ededee;
   --text-2: #a4a4ac;
-  --text-3: #6d6d76;
+  --text-3: #8b8b94;
   --accent: #c8f031;
   --accent-ink: #0b0d02;
   --accent-soft: rgba(200, 240, 49, 0.13);
@@ -40,8 +40,8 @@
   --line-2: #c0c0c6;
   --text: #17171a;
   --text-2: #55555d;
-  --text-3: #8a8a93;
-  --accent: #4f7400;
+  --text-3: #5f5f67;
+  --accent: #466600;
   --accent-ink: #fff;
   --accent-soft: rgba(79, 116, 0, 0.12);
   --danger: #d63a2c;
@@ -225,9 +225,17 @@ textarea:focus {
 }
 button:focus-visible,
 input:focus-visible,
-select:focus-visible {
-  outline: 1px solid var(--accent);
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+/* the dialog itself takes focus when it has nothing else to focus: no ring around the whole box */
+[role='dialog']:focus-visible {
+  outline: none;
 }
 input[type='checkbox'] {
   accent-color: var(--accent);
@@ -359,7 +367,8 @@ input.switch:checked::after {
 .kbd {
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--text-2);
+  color: inherit;
+  opacity: 0.85;
   border: 1px solid var(--line-2);
   border-radius: 2px;
   padding: 0 4px;
@@ -409,5 +418,17 @@ html {
   select,
   textarea {
     font-size: 16px;
+  }
+}
+
+/* less movement for people who ask for it: animations and transitions finish at once */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
