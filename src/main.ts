@@ -79,3 +79,11 @@ setTimeout(() => {
     .then((n) => n && console.info(`moved ${n} media files to the file system`))
     .catch((e) => console.warn('moving media files', e));
 }, 8000);
+import * as maps from './lib/maps';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { maps });
+import { EFFECTS } from './engine/effects';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { effects: EFFECTS });
+import * as text from './lib/text';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { text });
+import * as commands from './lib/commands.svelte';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { commands });

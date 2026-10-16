@@ -53,4 +53,5 @@ the browser caches them:
 |---|---|---|---|
 | transformers.js (`@huggingface/transformers` 3.8.1) and Whisper models (`Xenova/whisper-*`) | Auto captions | Apache-2.0 (library); MIT (Whisper weights) | https://github.com/huggingface/transformers.js |
 | MediaPipe Tasks Vision 0.10.21 and the selfie segmentation model | Subject Guard (people) | Apache-2.0 | https://github.com/google-ai-edge/mediapipe |
+| Depth Anything V2 Small (`onnx-community/depth-anything-v2-small`), through transformers.js | Subject Guard (depth map) | Apache-2.0 | https://github.com/DepthAnything/Depth-Anything-V2 |
 

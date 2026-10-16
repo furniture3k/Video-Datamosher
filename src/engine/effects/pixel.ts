@@ -113,8 +113,12 @@ export const subjectGuard: PixelEffectDef = {
         { value: 'luma', label: 'Bright parts', hint: 'Everything brighter than the threshold. Lower the threshold to keep more.' },
         { value: 'dark', label: 'Dark parts', hint: 'Everything darker than the threshold.' },
         { value: 'chroma', label: 'A colour', hint: 'Everything close to a colour (pick it below).' },
+        { value: 'gradient', label: 'Map: a gradient', hint: 'A fade across the picture: clean on one side, moshed on the other. Automate its position to sweep the mosh across.' },
+        { value: 'paint', label: 'Map: paint it', hint: 'Paint on the player where the picture stays clean.' },
+        { value: 'media', label: 'Map: a picture or video', hint: 'A picture or video from the project, in grey: white stays clean, black moshes. Videos loop.' },
+        { value: 'depth', label: 'Map: depth', hint: 'How near things are, from a small AI model that runs on this device (downloaded once): near stays clean, far moshes.' },
       ],
-      help: 'What counts as the subject.',
+      help: 'What counts as the subject. The maps blend: grey parts mosh half way.',
     },
     {
       key: 'keep',
@@ -128,6 +132,22 @@ export const subjectGuard: PixelEffectDef = {
       help: 'Which side of the mask is protected from the mosh.',
     },
     { show: (p) => p.source === 'luma' || p.source === 'dark' || p.source === 'chroma', key: 'threshold', label: 'Threshold', type: 'number', min: 0, max: 1, step: 0.01, default: 0.55, help: 'Where the mask starts (brightness, or distance from the colour).' },
+    {
+      show: (p) => p.source === 'gradient',
+      key: 'shape',
+      label: 'Gradient',
+      type: 'select',
+      default: 'linear',
+      options: [
+        { value: 'linear', label: 'Linear', hint: 'A straight fade across the picture.' },
+        { value: 'radial', label: 'Radial', hint: 'A circle: clean in the middle, moshed around it.' },
+      ],
+      help: 'The shape of the fade.',
+    },
+    { show: (p) => p.source === 'gradient' && p.shape !== 'radial', key: 'angle', label: 'Angle', type: 'number', min: -180, max: 180, step: 1, default: 0, unit: '°', help: 'Which way the fade runs (0°: clean on the left).' },
+    { show: (p) => p.source === 'gradient', key: 'gx', label: 'Centre X', type: 'number', min: -0.5, max: 1.5, step: 0.01, default: 0.5, help: 'Where the middle of the fade is, across. Automate it to sweep.' },
+    { show: (p) => p.source === 'gradient', key: 'gy', label: 'Centre Y', type: 'number', min: -0.5, max: 1.5, step: 0.01, default: 0.5, help: 'Where the middle of the fade is, down.' },
+    { show: (p) => p.source === 'gradient', key: 'spread', label: 'Spread', type: 'number', min: 0.02, max: 2, step: 0.01, default: 0.5, help: 'How wide the fade is (radial: the size of the clean circle).' },
     { show: (p) => p.source === 'track', key: 'size', label: 'Oval size', type: 'number', min: 0.02, max: 0.8, step: 0.01, default: 0.18, help: 'Size of the oval around the tracked point, as a share of the frame.' },
     { key: 'feather', label: 'Feather', type: 'number', min: 0, max: 0.2, step: 0.005, default: 0.03, help: 'Soft edge, as a share of the frame.' },
     { key: 'expand', label: 'Grow / shrink', type: 'number', min: -0.4, max: 0.4, step: 0.01, default: 0.05, help: 'Grows (+) or shrinks (−) the subject a little.' },
@@ -151,4 +171,79 @@ export const flowPaint: PixelEffectDef = {
   ],
 };
 
-export const pixelEffects: PixelEffectDef[] = [vectorWarp, chromaDrift, pixelSort, rawBend, flowPaint, subjectGuard];
+// ---------- retro looks (shaders in src/lib/retro.ts) ----------
+
+export const vhs: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'vhs',
+  name: 'VHS',
+  icon: 'VHS',
+  color: '#c98fd6',
+  description: 'An old tape: lines that wobble, a tracking band rolling up the picture, colour bleeding to the right and tape noise.',
+  params: [
+    { key: 'tracking', label: 'Tracking', type: 'number', min: 0, max: 1, step: 0.01, default: 0.4, intensity: 'up', help: 'The band of torn lines rolling up the picture, and the noise at the bottom.' },
+    { key: 'bleed', label: 'Colour bleed', type: 'number', min: 0, max: 30, step: 0.5, default: 8, unit: 'px', intensity: 'up', help: 'How far colour smears to the right of the picture.' },
+    { key: 'wobble', label: 'Wobble', type: 'number', min: 0, max: 2, step: 0.01, default: 0.6, intensity: 'up', help: 'Lines drifting from side to side.' },
+    { key: 'noise', label: 'Noise', type: 'number', min: 0, max: 1, step: 0.01, default: 0.25, intensity: 'up', help: 'Tape hiss in the picture, and white specks.' },
+    { key: 'colour', label: 'Colour', type: 'number', min: 0, max: 2, step: 0.01, default: 0.85, help: 'How much colour is left (below 1: washed out).' },
+  ],
+};
+
+export const crt: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'crt',
+  name: 'CRT',
+  icon: 'CRT',
+  color: '#8fd6b4',
+  description: 'An old screen: curved glass, scanlines, red-green-blue stripes, glow and dark corners.',
+  params: [
+    { key: 'curve', label: 'Curve', type: 'number', min: 0, max: 1, step: 0.01, default: 0.4, help: 'How much the glass bulges.' },
+    { key: 'scan', label: 'Scanlines', type: 'number', min: 0, max: 1, step: 0.01, default: 0.6, intensity: 'up', help: 'Dark lines between the picture\'s lines.' },
+    { key: 'mask', label: 'Stripes', type: 'number', min: 0, max: 1, step: 0.01, default: 0.35, intensity: 'up', help: 'The red, green and blue stripes of the screen.' },
+    { key: 'glow', label: 'Glow', type: 'number', min: 0, max: 1, step: 0.01, default: 0.4, help: 'Bright parts bloom.' },
+    { key: 'vignette', label: 'Dark corners', type: 'number', min: 0, max: 1, step: 0.01, default: 0.4, help: 'Corners fade to black.' },
+  ],
+};
+
+export const grain: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'grain',
+  name: 'Film Grain',
+  icon: 'GRN',
+  color: '#d6c08f',
+  description: 'Film grain that dances every frame, strongest in the midtones, with an optional faded-film look.',
+  params: [
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 0.35, intensity: 'up', help: 'How strong the grain is.' },
+    { key: 'grain', label: 'Grain size', type: 'number', min: 1, max: 6, step: 0.1, default: 1.5, unit: 'px', help: 'Size of each grain.' },
+    { key: 'colour', label: 'Colour grain', type: 'bool', default: false, help: 'Each colour gets its own grain (like colour film) instead of the same for all.' },
+    { key: 'fade', label: 'Faded', type: 'number', min: 0, max: 1, step: 0.01, default: 0.2, help: 'Lifts the blacks and softens the whites, like old prints.' },
+  ],
+};
+
+export const posterize: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'posterize',
+  name: 'Posterise',
+  icon: 'PST',
+  color: '#e0a36a',
+  description: 'Only a few levels per colour, with a retro dither pattern between them, and chunky pixels if you like.',
+  params: [
+    { key: 'levels', label: 'Levels', type: 'int', min: 2, max: 16, default: 4, intensity: 'down', help: 'Levels per colour: 2 is harsh, 8 is subtle.' },
+    {
+      key: 'dither',
+      label: 'Dither',
+      type: 'select',
+      default: 'bayer',
+      options: [
+        { value: 'none', label: 'None', hint: 'Flat bands of colour.' },
+        { value: 'bayer', label: 'Pattern', hint: 'An ordered crosshatch, like old computers.' },
+        { value: 'noise', label: 'Noise', hint: 'Random speckle between the levels.' },
+      ],
+      help: 'How the in-between colours are faked.',
+    },
+    { key: 'pixel', label: 'Pixel size', type: 'int', min: 1, max: 16, default: 1, unit: 'px', intensity: 'up', help: 'Draws the picture in bigger pixels first.' },
+    { key: 'mix', label: 'Mix', type: 'number', min: 0, max: 1, step: 0.01, default: 1, help: 'Dry/wet mix.' },
+  ],
+};
+
+export const pixelEffects: PixelEffectDef[] = [vectorWarp, chromaDrift, pixelSort, rawBend, flowPaint, vhs, crt, grain, posterize, subjectGuard];

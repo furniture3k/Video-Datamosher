@@ -19,6 +19,7 @@
   import VariationsDialog from './dialogs/VariationsDialog.svelte';
   import HelpDialog from './dialogs/HelpDialog.svelte';
   import ShareDialog from './dialogs/ShareDialog.svelte';
+  import BatchDialog from './dialogs/BatchDialog.svelte';
   import AddEffectDialog from './dialogs/AddEffectDialog.svelte';
   import GenerateDialog from './dialogs/GenerateDialog.svelte';
   import RecordDialog from './dialogs/RecordDialog.svelte';
@@ -194,6 +195,7 @@
 {#if store.ui.dialog === 'variations'}<VariationsDialog />{/if}
 {#if store.ui.dialog === 'help'}<HelpDialog />{/if}
 {#if store.ui.dialog === 'share'}<ShareDialog />{/if}
+{#if store.ui.dialog === 'batch'}<BatchDialog />{/if}
 {#if store.ui.dialog === 'addEffect'}<AddEffectDialog />{/if}
 {#if store.ui.dialog === 'generate'}<GenerateDialog />{/if}
 {#if store.ui.dialog === 'record'}<RecordDialog />{/if}

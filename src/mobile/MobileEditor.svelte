@@ -5,7 +5,7 @@
   import { store } from '../lib/store.svelte';
   import { addFiles, addToTimeline, loadExample } from '../lib/media';
   import * as edit from '../lib/edit';
-  import { saveProjectFile, loadProjectFile, startNewProject } from '../lib/projectio.svelte';
+  import { saveProjectFile, loadProjectFile, startNewProject, saveRecipeFile, pickRecipeFile } from '../lib/projectio.svelte';
   import { reportProblem } from '../lib/report';
   import * as haptics from '../lib/haptics';
   import { goHome } from '../lib/projects.svelte';
@@ -207,6 +207,8 @@
             <button onclick={() => ((sheet = null), saveProjectFile())}><Icon name="save" />Save project</button>
             <button onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
             <button onclick={() => ((sheet = null), (store.ui.dialog = 'share'))}><Icon name="link" />Share code…</button>
+            <button onclick={() => ((sheet = null), saveRecipeFile())}><Icon name="save" />Save recipe file…</button>
+            <button onclick={() => ((sheet = null), pickRecipeFile())}><Icon name="folder" />Open recipe file…</button>
             <button disabled={!hasClips} onclick={() => ((sheet = null), (store.ui.dialog = 'bake'))}><Icon name="film" />Bake the mosh into a clip…</button>
             <button disabled={!hasClips} onclick={() => ((sheet = null), (store.ui.dialog = 'captions'))}><Icon name="cc" />Auto captions…</button>
             <button onclick={() => ((sheet = null), (store.ui.dialog = 'live'))}><Icon name="live" />Live mode…</button>

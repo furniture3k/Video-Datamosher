@@ -4,7 +4,7 @@ import * as edit from './edit';
 import { chaos, mutate } from '../engine/presets';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
-import { saveProjectFile, startNewProject } from './projectio.svelte';
+import { saveProjectFile, startNewProject, saveRecipeFile, pickRecipeFile } from './projectio.svelte';
 import { goHome } from './projects.svelte';
 import { reportProblem } from './report';
 import { COMMANDS, type CommandInfo } from './commandlist';
@@ -151,6 +151,9 @@ const ACTIONS: Record<string, Action> = {
   'new-project': { run: () => startNewProject() },
   home: { run: () => goHome() },
   'share-code': { run: dialog('share') },
+  'save-recipe': { run: () => saveRecipeFile() },
+  'open-recipe': { run: () => pickRecipeFile() },
+  batch: { run: dialog('batch') },
   record: { run: dialog('record') },
   generate: { run: dialog('generate') },
 

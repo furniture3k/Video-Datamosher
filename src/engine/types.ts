@@ -240,7 +240,13 @@ export interface TextClip {
   highlight?: string;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
+  /** how it comes in (clean titles; titles that melt with the video stay still) */
+  anim?: TextAnim;
+  /** how long it takes to come in (s) */
+  animIn?: number;
 }
+
+export type TextAnim = 'none' | 'type' | 'glitch' | 'slide' | 'pop';
 
 export type Aspect = 'auto' | '16:9' | '4:3' | '1:1' | '9:16' | '4:5' | '21:9';
 

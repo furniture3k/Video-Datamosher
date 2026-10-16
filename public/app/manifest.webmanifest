@@ -58,6 +58,9 @@
           ".m4a",
           ".flac",
           ".ogg"
+        ],
+        "application/x-moshpit-recipe": [
+          ".moshrecipe"
         ]
       }
     }

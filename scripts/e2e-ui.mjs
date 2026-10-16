@@ -74,12 +74,12 @@ await step('demo', async () => {
   await settle();
 });
 
-const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'mvedit', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend', 'flowPaint', 'mask']);
+const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'mvedit', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend', 'flowPaint', 'vhs', 'crt', 'grain', 'posterize', 'mask']);
 for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
     await page.keyboard.press('Shift+A');
-    const name = { kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', mask: 'Subject Guard' }[t];
+    const name = { kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', vhs: 'VHS', crt: 'CRT', grain: 'Film Grain', posterize: 'Posterise', mask: 'Subject Guard' }[t];
     // Simple mode lists the essentials; searching finds every effect
     await page.locator('.modal input[aria-label="Search effects"]').fill(name);
     await page.locator('.modal .item').filter({ hasText: name }).first().click();
@@ -686,9 +686,9 @@ await step('export: crossfade loop keeps its sound', async () => {
   await page.keyboard.press('Escape');
 });
 
-/** Mean difference (0..255) between frame `i` of the render and the clean footage at the same place. */
-const diffFromClean = (i) =>
-  S(async (i) => {
+/** Mean difference (0..255) between frame `i` of the render and the clean footage at the same place (or its left / right half). */
+const diffFromClean = (i, half = '') =>
+  S(async ([i, half]) => {
     const st = window.__moshpit.store;
     const r = st.render;
     const orig = await window.__moshpit.renderer.originalFrames(JSON.parse(JSON.stringify(st.project)), r.w);
@@ -702,9 +702,15 @@ const diffFromClean = (i) =>
     const a = await pix(r.jpegs[i]);
     const b = await pix(orig[Math.min(orig.length - 1, f.at ?? f.src)]);
     let d = 0;
-    for (let k = 0; k < a.length; k += 4) d += Math.abs(a[k] - b[k]) + Math.abs(a[k + 1] - b[k + 1]) + Math.abs(a[k + 2] - b[k + 2]);
-    return d / (a.length / 4) / 3;
-  }, i);
+    let n = 0;
+    for (let k = 0; k < a.length; k += 4) {
+      const x = (k / 4) % 64;
+      if ((half === 'left' && x >= 28) || (half === 'right' && x < 36)) continue;
+      d += Math.abs(a[k] - b[k]) + Math.abs(a[k + 1] - b[k + 1]) + Math.abs(a[k + 2] - b[k + 2]);
+      n++;
+    }
+    return d / n / 3;
+  }, [i, half]);
 
 await step('subject guard: the guarded part stays clean while the rest moshes', async () => {
   const setFx = (guard) =>
@@ -733,6 +739,114 @@ await step('subject guard: the guarded part stays clean while the rest moshes', 
   await S(() => (window.__moshpit.store.ui.selectedEffect = 'gg'));
   await page.locator('.tabs button', { hasText: 'Effects' }).click();
   await page.locator('.sh', { hasText: 'Subject' }).waitFor();
+});
+
+await step('mosh maps: a gradient, a painted map, a picture and depth keep the left side clean', async () => {
+  // a picture: white on the left, black on the right
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-map-'));
+  const png = path.join(dir, 'halfmap.png');
+  execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=320x180', '-vf', "geq=lum='if(lt(X,W/2),255,0)':cb=128:cr=128", '-frames:v', '1', png]);
+  await page.locator('aside input[type=file][multiple]').first().setInputFiles(png);
+  await page.locator('.item', { hasText: 'halfmap.png' }).waitFor({ timeout: 60000 });
+  await S(() =>
+    window.__moshpit.maps.setDepthModel(async () => {
+      // near on the left
+      const c = document.createElement('canvas');
+      c.width = 32;
+      c.height = 18;
+      const g = c.getContext('2d');
+      g.fillStyle = '#000';
+      g.fillRect(0, 0, 32, 18);
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, 16, 18);
+      return c;
+    }),
+  );
+  const setMap = (params, data) =>
+    S(([params, data]) => {
+      const st = window.__moshpit.store;
+      const total = st.totalFrames;
+      // keep the clip, drop the image from the timeline (it's only a map)
+      const mediaId = st.project.media.find((m) => m.source.name === 'halfmap.png')?.id;
+      st.edit((p) => {
+        p.clips = p.clips.filter((c) => c.mediaId !== mediaId);
+        p.effects = [
+          { id: 'mk', type: 'kill', enabled: true, solo: false, start: 0, end: total, seed: 1, params: { mode: 'all', replace: 'prev' }, auto: {}, locks: [] },
+          { id: 'mb', type: 'bloom', enabled: true, solo: false, start: 0, end: total, seed: 2, params: { target: 'every', interval: 2, length: 'fill', timing: 'fit' }, auto: {}, locks: [] },
+          { id: 'mm', type: 'mask', enabled: true, solo: false, start: 0, end: total, seed: 3, params: { keep: 'subject', feather: 0, expand: 0, mix: 1, shape: 'linear', angle: 0, gx: 0.5, gy: 0.5, spread: 0.1, ...params }, auto: {}, locks: [], data: data === 'media' ? { mediaId } : data },
+        ];
+      });
+    }, [params, data]);
+  const i = await S(() => Math.floor(window.__moshpit.store.render.frames.length * 0.8));
+  const results = {};
+  for (const [name, params, data] of [
+    ['gradient', { source: 'gradient' }, undefined],
+    ['paint', { source: 'paint' }, { maskStrokes: [{ pts: [[0.2, 0], [0.2, 1]], radius: 0.25 }] }],
+    ['media', { source: 'media' }, 'media'],
+    ['depth', { source: 'depth' }, undefined],
+  ]) {
+    await setMap(params, data);
+    await settle();
+    const l = await diffFromClean(i, 'left');
+    const r = await diffFromClean(i, 'right');
+    results[name] = [Math.round(l * 10) / 10, Math.round(r * 10) / 10];
+    if (!(r > 8 && l < r * 0.4)) throw new Error(`${name}: left ${l.toFixed(1)} vs right ${r.toFixed(1)} ` + JSON.stringify(results));
+  }
+  // painting the map on the player
+  await setMap({ source: 'paint' }, { maskStrokes: [] });
+  await S(() => (window.__moshpit.store.ui.selectedEffect = 'mm'));
+  await page.locator('.tabs button', { hasText: 'Effects' }).click();
+  await page.getByRole('button', { name: 'Paint clean' }).click();
+  const box = await page.locator('.paintlayer').boundingBox();
+  await page.mouse.move(box.x + box.width * 0.2, box.y + box.height * 0.2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.8, { steps: 8 });
+  await page.mouse.up();
+  await page.locator('.paintlayer .maskimg').waitFor();
+  if ((await S(() => window.__moshpit.store.project.effects.find((e) => e.id === 'mm').data.maskStrokes.length)) !== 1) throw new Error('the painted stroke was not kept');
+  await page.keyboard.press('Escape');
+  await S(() => window.__moshpit.maps.setDepthModel(null));
+  await settle();
+});
+
+await step('text animations: each one draws less (or moves) while coming in, then the whole title', async () => {
+  const r = await S(() => {
+    const { drawText } = window.__moshpit.text;
+    const base = { id: 't', text: 'HELLO MOSH', start: 1, duration: 3, size: 0.2, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, animIn: 1 };
+    const lit = (anim, t) => {
+      const c = document.createElement('canvas');
+      c.width = 320;
+      c.height = 180;
+      const g = c.getContext('2d');
+      drawText(g, { ...base, anim }, 320, 180, 1, t);
+      const d = g.getImageData(0, 0, 320, 180).data;
+      let n = 0;
+      let sy = 0;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 128) (n++, (sy += Math.floor((i - 3) / 4 / 320)));
+      return { n, y: n ? sy / n : 0 };
+    };
+    const out = {};
+    for (const a of ['none', 'type', 'glitch', 'slide', 'pop']) out[a] = { early: lit(a, 1.25), done: lit(a, 2.5) };
+    return out;
+  });
+  const full = r.none.done.n;
+  if (!(full > 500)) throw new Error('title did not draw: ' + JSON.stringify(r));
+  for (const a of ['type', 'glitch', 'slide', 'pop']) if (Math.abs(r[a].done.n - full) > full * 0.02) throw new Error(`${a} did not settle into the title: ` + JSON.stringify(r[a]));
+  if (!(r.type.early.n < full * 0.6)) throw new Error('typewriter shows too much early on: ' + JSON.stringify(r.type));
+  if (!(r.pop.early.n < full * 0.9)) throw new Error('pop is not smaller early on: ' + JSON.stringify(r.pop));
+  if (!(r.slide.early.y > r.slide.done.y + 2)) throw new Error('slide does not rise: ' + JSON.stringify(r.slide));
+  if (Math.abs(r.glitch.early.n - full) < full * 0.02 && Math.abs(r.glitch.early.y - r.none.done.y) < 0.5) throw new Error('glitch looks like the plain title: ' + JSON.stringify(r.glitch));
+  // the setting in the Clip tab
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.edit((p) => p.texts.push({ id: 'tt', text: 'TITLE', start: 0, duration: 2, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false }));
+    st.ui.selectedClips = ['tt'];
+  });
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  await page.locator('.field', { hasText: 'Comes in' }).locator('select').selectOption('glitch');
+  if ((await S(() => window.__moshpit.store.project.texts.find((t) => t.id === 'tt').anim)) !== 'glitch') throw new Error('animation not set from the Clip tab');
+  await S(() => window.__moshpit.store.edit((p) => (p.texts = p.texts.filter((t) => t.id !== 'tt'))));
+  await settle();
 });
 
 await step('flow paint: paint a stroke on the player and it moves the picture', async () => {
@@ -1110,6 +1224,56 @@ await step('export queue: exports in the background while editing carries on', a
   await page.screenshot({ path: path.resolve('test-results/export-queue.png') });
   await page.locator('.queue .job.done button[aria-label="Remove from the list"]').click();
   await page.locator('.queue').waitFor({ state: 'detached' });
+});
+
+await step('recipe files: save one, clear the mosh, open it again; batch two videos through the queue', async () => {
+  await page.goto(url);
+  await page.waitForFunction(() => window.__moshpit?.store && !window.__moshpit.store.status.engine, null, { timeout: 120000 });
+  await page.getByRole('button', { name: 'Load example' }).click();
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.some((c) => c.transition), null, { timeout: 120000 });
+  // the example's mosh is in its transitions; recipes carry the effect stack
+  await S(() => {
+    const st = window.__moshpit.store;
+    const total = st.totalFrames;
+    st.edit((p) => p.effects.push({ id: 'rb', type: 'bloom', enabled: true, solo: false, start: Math.round(total * 0.2), end: Math.round(total * 0.6), seed: 7, params: { target: 'every', interval: 3, length: 'fill', timing: 'fit' }, auto: {}, locks: [] }, { id: 'rv', type: 'vhs', enabled: true, solo: false, start: 0, end: total, seed: 8, params: { tracking: 0.4, bleed: 8, wobble: 0.6, noise: 0.25, colour: 0.85 }, auto: {}, locks: [] }));
+  });
+  await settle();
+  const before = await S(() => window.__moshpit.store.project.effects.map((e) => e.type).join());
+  // save: a download where there's no Save dialog
+  await S(() => (window.showSaveFilePicker = undefined));
+  const dl = page.waitForEvent('download');
+  await S(() => window.__moshpit.commands.runCommand('save-recipe'));
+  const d = await dl;
+  if (!d.suggestedFilename().endsWith('.moshrecipe')) throw new Error('recipe file name: ' + d.suggestedFilename());
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-recipe-')), d.suggestedFilename());
+  await d.saveAs(file);
+  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (saved.moshpit !== 'recipe' || !saved.recipe.fx.length) throw new Error('recipe file contents: ' + JSON.stringify(saved).slice(0, 200));
+  // clear the effects, then open the recipe
+  await S(() => window.__moshpit.store.edit((p) => (p.effects = [])));
+  const chooser = page.waitForEvent('filechooser');
+  await S(() => window.__moshpit.commands.runCommand('open-recipe'));
+  await (await chooser).setFiles(file);
+  await page.waitForFunction((b) => window.__moshpit.store.project.effects.map((e) => e.type).join() === b, before);
+  await settle();
+
+  // batch: two short videos, as WebM
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-batch-'));
+  const vids = ['one.mp4', 'two.mp4'].map((n, i) => {
+    const f = path.join(dir, n);
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=s=320x180:r=24:d=${2 + i}`, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', f]);
+    return f;
+  });
+  await S(() => window.__moshpit.commands.runCommand('batch'));
+  const vchooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Choose videos…' }).click();
+  await (await vchooser).setFiles(vids);
+  await page.locator('.modal .field', { hasText: 'Format' }).locator('select').selectOption('webm');
+  await page.getByRole('button', { name: 'Export 2 videos' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.queue .job').length === 2, null, { timeout: 60000 });
+  await page.waitForFunction(() => document.querySelectorAll('.queue .job.done').length === 2, null, { timeout: 400000 });
+  const names = await page.locator('.queue .job.done a[download]').evaluateAll((as) => as.map((a) => a.getAttribute('download')));
+  if (!(names.some((n) => n.startsWith('one')) && names.some((n) => n.startsWith('two')) && names.every((n) => n.endsWith('.webm')))) throw new Error('batch exports: ' + names.join(', '));
 });
 
 await step('website: landing page, gallery and docs', async () => {

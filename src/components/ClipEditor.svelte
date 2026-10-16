@@ -1,6 +1,8 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
   import Field from './Field.svelte';
+  import { TEXT_ANIMS } from '../lib/text';
+  import type { TextAnim } from '../engine/types';
   import Icon from './Icon.svelte';
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type TextClip, type Transform, type TransitionType } from '../engine/types';
@@ -229,6 +231,17 @@
     <Field type="bool" label="Shadow" value={text.shadow} help="Soft drop shadow for readability." onchange={setT('shadow')} />
     <Field type="bool" label="Background box" value={text.box} help="Dark box behind the text." onchange={setT('box')} />
     <Field label="Fade" unit="s" min={0} max={3} step={0.05} value={text.fade} help="Fade in and out." onchange={setT('fade')} />
+    <Field
+      type="select"
+      label="Comes in"
+      value={text.anim ?? 'none'}
+      options={TEXT_ANIMS}
+      help={text.moshed ? 'Titles that melt with the video stay still: turn off Melt with the video to animate it.' : 'How the title arrives.'}
+      onchange={(v: TextAnim) => store.edit(() => (text.anim = v))}
+    />
+    {#if text.anim && text.anim !== 'none' && !text.moshed}
+      <Field label="Takes" unit="s" min={0.1} max={4} step={0.05} value={text.animIn ?? 0.6} help="How long it takes to come in." onchange={(v: number) => store.edit(() => (text.animIn = v), 'animIn' + text.id)} />
+    {/if}
     <Field type="bool" label="Melt with the video" value={text.moshed} help="Burn the text into the footage before moshing, so it smears and melts with everything else. Off = clean text on top." onchange={(v: boolean) => store.edit(() => (text.moshed = v))} />
     <button class="ghost" onclick={() => deleteSelected()}><Icon name="trash" />Delete text</button>
   </div>

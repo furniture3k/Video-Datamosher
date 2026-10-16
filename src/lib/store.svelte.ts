@@ -77,6 +77,8 @@ class Store {
     /** Flow Paint effect being painted on the player, and the brush */
     paintEffect: null as string | null,
     brush: { tool: 'push' as import('../engine/flowfield').FlowTool, radius: 0.12, strength: 0.012 },
+    /** painting a Mosh Map: erase (moshes again) instead of paint (stays clean) */
+    maskErase: false,
     /** id of the clip to track: the next box drawn on the player is followed through it */
     trackPick: null as string | null,
     /** scopes panel under the player */
@@ -89,7 +91,7 @@ class Store {
     /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
     // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
     previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history' | 'batch',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,

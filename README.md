@@ -94,13 +94,17 @@ Picture effects run on the decoded frames:
 | `SRT` | Pixel Sort | Sorts runs of pixels by brightness. |
 | `RAW` | Raw Bend | The Audacity trick on the picture: the RGB values go through echo, reverb, phaser, bitcrush, reverse or amplify. |
 | `PNT` | Flow Paint | Paint on the player where the picture should flow (push, swirl, pinch, bulge) and it smears along the strokes. |
-| `SUB` | Subject Guard | Keeps people (found by a small on-device model), a tracked object, the bright or dark parts, or a colour clean while everything else moshes. Or the reverse. |
+| `VHS` | VHS | Wobbling lines, a rolling tracking band, colour bleeding to the right and tape noise. |
+| `CRT` | CRT | Curved glass, scanlines, red-green-blue stripes, glow and dark corners. |
+| `GRN` | Film Grain | Grain that dances every frame, strongest in the midtones, and an optional faded-print look. |
+| `PST` | Posterise | A few levels per colour with an ordered or noise dither, and bigger pixels. |
+| `SUB` | Subject Guard | Keeps people (found by a small on-device model), a tracked object, the bright or dark parts, or a colour clean while everything else moshes. Or the reverse. Or follows a **Mosh Map**: a gradient (automate it to sweep), a map you paint on the player, a picture or video, or the depth of the scene (an on-device model). |
 
 Effects that repeat or insert frames (Bloom, Stutter, Echo, Motion Transfer's insert mode, Frame Drop) have a **Timing** setting. **Keep length** (the default) makes the repeats replace the frames after them, so the effect lasts exactly as long as its bar and the picture, the sound and the playhead stay in sync. **Stretch** inserts them instead, so the video gets longer (slow, syrupy melts). Every setting has a description underneath it; the **?** button in the Inspector hides them.
 
 **Which effect do I want?** The **Add effect** picker groups them by what you'll see, describes each one in plain words and draws a little strip of frames showing what it does to the video (which frames get repeated, moved, removed or damaged). In **Simple** mode it shows the nine that look the most different from each other; **Show all effects** (or searching) lists the rest. Bloom, Echo, Stutter, Shuffle and Reverse all rework the same motion frames, so on calm footage they can look alike: they come apart on footage with strong, one-direction movement, and on the beat.
 
-There are 21 presets to start from, and you can save your own.
+There are 21 presets to start from, and you can save your own. **⋯ → Save recipe file** keeps a mosh as a `.moshrecipe` file for other videos, and **⋯ → Batch** puts it on many videos at once and exports them all in the background.
 
 ## Editing
 

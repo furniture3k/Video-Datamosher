@@ -29,6 +29,35 @@ const AUDIO_EXT = /^(mp3|wav|m4a|aac|ogg|oga|opus|flac|aif|aiff|wma)$/;
 /** Where dropped media should land. */
 export type Place = { track: 'v1'; index: number } | { track: string; start: number } | 'auto' | 'none';
 
+/**
+ * Read a file into a media item: probe it, keep the file in storage and make its thumbnail. Not
+ * added to any project (addFiles does that; batches make their own projects). Null when it holds
+ * neither picture nor sound. `recipe`: a mosh recipe found in the file's metadata.
+ */
+export async function readMedia(file: File, knownDuration?: number): Promise<{ m: MediaItem; recipe: string | null } | null> {
+  const ext = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
+  const isImage = file.type.startsWith('image/') && !/gif$/i.test(file.type) && !/gif$/.test(ext);
+  const { info, thumb } = await probeFile(file, ext);
+  if (!info.hasVideo && !info.hasAudio) return null;
+  const id = uid();
+  await putFile(id, file);
+  askPersistOnce();
+  let duration = isImage ? 3600 : info.duration || knownDuration || 5;
+  if (!isFinite(duration) || duration <= 0) duration = knownDuration || 5;
+  const m: MediaItem = {
+    id,
+    source: { kind: 'file', fileId: id, name: file.name, mime: file.type, isImage, ext },
+    duration,
+    width: info.width,
+    height: info.height,
+    fps: info.fps,
+    hasAudio: info.hasAudio && !isImage,
+    hasVideo: info.hasVideo && !(AUDIO_EXT.test(ext) && !info.width),
+    thumb: await blobToDataUrl(thumb),
+  };
+  return { m, recipe: info.recipe ?? null };
+}
+
 /** `recipes: false`: don't offer to apply a recipe found in the files (our own bakes). */
 export async function addFiles(list: FileList | File[], place: Place = 'auto', knownDuration?: number, opts: { recipes?: boolean } = {}): Promise<MediaItem[]> {
   const files = [...list];
@@ -36,34 +65,17 @@ export async function addFiles(list: FileList | File[], place: Place = 'auto', k
   const wasEmpty = store.project.clips.length === 0;
   let recipe: { code: string; name: string } | null = null;
   for (const file of files) {
-    const ext = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
-    const isImage = file.type.startsWith('image/') && !/gif$/i.test(file.type) && !/gif$/.test(ext);
     store.status.engine = `Reading ${file.name}…`;
     try {
-      const { info, thumb } = await probeFile(file, ext);
-      if (!info.hasVideo && !info.hasAudio) {
+      const r = await readMedia(file, knownDuration);
+      if (!r) {
         store.toast(`${file.name}: no video or sound found`, 'error');
         continue;
       }
-      const id = uid();
-      await putFile(id, file);
-      askPersistOnce();
-      let duration = isImage ? 3600 : info.duration || knownDuration || 5;
-      if (!isFinite(duration) || duration <= 0) duration = knownDuration || 5;
-      const m: MediaItem = {
-        id,
-        source: { kind: 'file', fileId: id, name: file.name, mime: file.type, isImage, ext },
-        duration,
-        width: info.width,
-        height: info.height,
-        fps: info.fps,
-        hasAudio: info.hasAudio && !isImage,
-        hasVideo: info.hasVideo && !(AUDIO_EXT.test(ext) && !info.width),
-        thumb: await blobToDataUrl(thumb),
-      };
+      const m = r.m;
       store.edit((p) => p.media.push(m));
       added.push(m);
-      if (info.recipe && !recipe && opts.recipes !== false) recipe = { code: info.recipe, name: file.name };
+      if (r.recipe && !recipe && opts.recipes !== false) recipe = { code: r.recipe, name: file.name };
       prepareMedia(m);
     } catch (e) {
       console.error(e);
