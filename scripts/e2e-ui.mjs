@@ -156,10 +156,23 @@ await step('share code round trip', async () => {
 });
 
 await step('save + load project file', async () => {
-  const dl = page.waitForEvent('download');
+  // Chromium has a Save dialog: stand in for it and keep what gets written
+  await S(() => {
+    window.__saved = { asked: 0, writes: [] };
+    window.showSaveFilePicker = async (o) => {
+      window.__saved.asked++;
+      return { name: o.suggestedName, createWritable: async () => ({ write: async (b) => window.__saved.writes.push(await b.text()), close: async () => {} }) };
+    };
+  });
   await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => window.__saved.writes.length === 1);
+  // Ctrl S again saves to the same file without asking
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => window.__saved.writes.length === 2);
+  if ((await S(() => window.__saved.asked)) !== 1) throw new Error('Ctrl S asked where to save twice');
   const f = path.join(os.tmpdir(), 'p.mosh.json');
-  await (await dl).saveAs(f);
+  fs.writeFileSync(f, await S(() => window.__saved.writes[1]));
+  await S(() => delete window.showSaveFilePicker);
   await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
   await page.locator('input[type=file][accept*=json]').setInputFiles(f);
   await page.waitForFunction(() => window.__moshpit.store.project.effects.length > 0);
