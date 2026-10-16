@@ -15,7 +15,9 @@ Nothing is uploaded. Decoding and encoding happen locally with [ffmpeg.wasm](htt
 
 ## Getting started
 
-Open the site, drop in some videos and a song (or use **Load example**), cut them together on the timeline, put a **Melt** on a cut and press <kbd>Space</kbd>.
+Open the site and you're on the home screen: start a **New project**, import some clips, or start from a **template** (pick your clips and the mosh is set up for you) or an **example** (generated footage, nothing to import). Clips dropped into an empty project are melted straight away so there's something to see; cut them together on the timeline, change the mosh, and press <kbd>Space</kbd>.
+
+Every project is saved on this device by itself and listed on the home screen with a picture of where you left off; the logo takes you back there.
 
 To run it locally:
 

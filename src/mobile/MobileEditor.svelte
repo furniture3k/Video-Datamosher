@@ -8,6 +8,7 @@
   import { saveProjectFile, loadProjectFile, startNewProject } from '../lib/projectio.svelte';
   import { reportProblem } from '../lib/report';
   import * as haptics from '../lib/haptics';
+  import { goHome } from '../lib/projects.svelte';
   import { VIDEO_TRACK } from '../engine/types';
   import { BLEND_TRANSITIONS, MOSH_TRANSITIONS, clipLen, layoutVideo, isMoshTransition } from '../engine/timeline';
   import { EFFECTS } from '../engine/effects';
@@ -118,12 +119,12 @@
       <input class="name" value={store.project.name} aria-label="Project name" spellcheck="false" onchange={(e) => store.edit((p) => (p.name = (e.target as HTMLInputElement).value))} />
     {/if}
     <span class="busy" class:on={store.status.busy}>{store.status.busy ? Math.round(store.status.progress * 100) + '%' : ''}</span>
-    <button class="primary export" disabled={!hasClips} onclick={() => (store.ui.dialog = 'export')}>Export</button>
+    <button class="primary export" data-tour="export" disabled={!hasClips} onclick={() => (store.ui.dialog = 'export')}>Export</button>
   </header>
 
-  <section class="preview"><Player compact /></section>
+  <section class="preview" data-tour="preview"><Player compact /></section>
 
-  <section class="work">
+  <section class="work" data-tour="timeline">
     <MobileTimeline onadd={() => fileInput.click()} onaction={action} />
 
     {#if sheet}
@@ -199,6 +200,8 @@
           </div>
         {:else if sheet === 'menu'}
           <div class="menu">
+            <button onclick={() => ((sheet = null), goHome())}><Icon name="grid" />All projects</button>
+            <hr />
             <button onclick={() => ((sheet = null), saveProjectFile())}><Icon name="save" />Save project</button>
             <button onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
             <button onclick={() => ((sheet = null), (store.ui.dialog = 'share'))}><Icon name="link" />Share code…</button>
@@ -222,7 +225,7 @@
     {/if}
   </section>
 
-  <nav class="tools" aria-label="Tools">
+  <nav class="tools" aria-label="Tools" data-tour="tools">
     {#if mode !== 'root'}
       <button class="back" aria-label="Back" onclick={deselect}><Icon name="back" size={20} /></button>
     {/if}

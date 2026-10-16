@@ -14,6 +14,8 @@ export interface Snapshot {
   project: Project;
   /** small JPEG data URL of the player frame */
   thumb: string;
+  /** the saved project it belongs to */
+  projectId?: string;
 }
 
 const KEY = 'snapshots';
@@ -38,6 +40,24 @@ let grabber: (() => string) | null = null;
 export function setFrameGrabber(fn: (() => string) | null) {
   grabber = fn;
 }
+/** A small JPEG of what the player shows now ('' when there's no player or nothing on it). */
+export function grabFrame(): string {
+  try {
+    return grabber?.() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** This project's snapshots. */
+export const ofProject = (list: Snapshot[]) => list.filter((s) => !s.projectId || s.projectId === store.projectId);
+
+/** Forget a deleted project's snapshots. */
+export async function deleteProjectSnapshots(projectId: string) {
+  await loadSnapshots();
+  snapshots.list = snapshots.list.filter((s) => s.projectId !== projectId);
+  await save();
+}
 
 /** Media and LUT files referenced by snapshots (kept when unused files are cleaned up). */
 export async function snapshotFileIds(): Promise<string[]> {
@@ -49,27 +69,26 @@ export async function takeSnapshot(name?: string, auto = false): Promise<Snapsho
   await loadSnapshots();
   const live = $state.snapshot(store.project) as Project;
   if (!live.clips.length && !live.effects.length) return null;
+  // the project gets its place in the list first, so the snapshot can belong to it
+  await store.flush();
   // stored without media thumbnails (they're big and come back with the media)
   const project: Project = { ...live, media: live.media.map((m) => ({ ...m, thumb: undefined })) };
   // nothing changed since the last snapshot: don't pile up copies
   const json = JSON.stringify(project);
-  const last = snapshots.list[0];
+  const last = ofProject(snapshots.list)[0];
   if (last && JSON.stringify(last.project) === json) return last;
-  let thumb = '';
-  try {
-    thumb = grabber?.() ?? '';
-  } catch {
-    /* thumbnail optional */
-  }
+  const thumb = grabFrame();
   const s: Snapshot = {
     id: uid(),
-    name: name ?? `Snapshot ${snapshots.list.filter((x) => !x.auto).length + 1}`,
+    name: name ?? `Snapshot ${ofProject(snapshots.list).filter((x) => !x.auto).length + 1}`,
     at: Date.now(),
     auto,
     project,
     thumb,
+    projectId: store.projectId ?? undefined,
   };
-  const autos = snapshots.list.filter((x) => x.auto);
+  // the automatic ones are capped per project
+  const autos = ofProject(snapshots.list).filter((x) => x.auto);
   const dropped = auto && autos.length >= MAX_AUTO ? new Set(autos.slice(MAX_AUTO - 1).map((x) => x.id)) : null;
   snapshots.list = [s, ...snapshots.list.filter((x) => !dropped?.has(x.id))];
   await save();

@@ -4,6 +4,7 @@ import { addFiles } from './media';
 import { loadProjectFile } from './projectio.svelte';
 import { store } from './store.svelte';
 import { isDesktop } from './platform';
+import { startProject } from './projects.svelte';
 
 const isProject = (f: File) => /\.json$/i.test(f.name) || f.type === 'application/json';
 
@@ -14,6 +15,8 @@ export async function openFiles(files: File[]) {
   // a project replaces the timeline, so open it first and add media to it after
   if (projects.length) await loadProjectFile(projects[0]);
   if (projects.length > 1) store.toast('Opened the first project; one at a time.', 'info');
+  // from the home screen, media starts a new project; in the editor it joins the open one
+  if (!projects.length && media.length && store.ui.home) await startProject();
   if (media.length) await addFiles(media);
 }
 

@@ -11,6 +11,7 @@ import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
 import { busy } from './recovery';
+import { saveProject, loadProject, migrateAutosave, currentProjectId, setCurrentProjectId, newProjectId, hasContent, loadIndex } from './projectindex';
 
 /** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -31,6 +32,8 @@ export interface Toast {
 
 class Store {
   project = $state<Project>(newProject());
+  /** which saved project is open (null: a new one, saved once there's something in it) */
+  projectId = $state<string | null>(null);
   render = $state.raw<RenderResult | null>(null);
   ui = $state({
     advanced: localGet('advanced', false),
@@ -89,6 +92,12 @@ class Store {
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
+    /** the home screen (projects, templates, examples) instead of the editor */
+    home: false,
+    /** imported clips on an empty timeline get a melt (or a bloom) straight away */
+    autoMosh: localGet('autoMosh', true),
+    /** start on the home screen (else straight into the last project) */
+    startHome: localGet('startHome', true),
     /** vibrate on phones when clips are picked up, trimmed and cut */
     haptics: localGet('haptics', true),
   });
@@ -457,20 +466,58 @@ class Store {
   private saveTimer = 0;
   autosave() {
     clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => {
-      const p = $state.snapshot(this.project) as Project;
-      // inside a compound: save the whole project, with the open edits folded back in
-      kvSet('autosave', this.seqStack.length ? rootWithInner(this.seqStack, p) : p);
-    }, 1000);
+    this.saveTimer = window.setTimeout(() => this.flush(), 1000);
+  }
+
+  /** The whole project as saved: inside a compound, with the open edits folded back in. */
+  rootProject(): Project {
+    const p = $state.snapshot(this.project) as Project;
+    return this.seqStack.length ? rootWithInner(this.seqStack, p) : p;
+  }
+
+  /** Save the open project now (before switching to another one or going home). */
+  async flush() {
+    clearTimeout(this.saveTimer);
+    const p = this.rootProject();
+    if (!this.projectId) {
+      // a new project joins the list once there's something in it
+      if (!hasContent(p)) return;
+      this.projectId = newProjectId();
+      setCurrentProjectId(this.projectId);
+    }
+    await saveProject(this.projectId, p);
+  }
+
+  /** Show another project in the editor (null id: a new one). The open one is saved first. */
+  async openProject(id: string | null, p: Project) {
+    await this.flush();
+    clearTimeout(this.renderTimer);
+    if (this.renderSignal) this.renderSignal.cancelled = true;
+    this.renderQueued = false;
+    this.seqStack = [];
+    this.project = migrate(p);
+    this.projectId = id;
+    setCurrentProjectId(id);
+    this.render = null;
+    this.renderKey = '';
+    this.status.error = '';
+    Object.assign(this.ui, { selectedClips: [], selectedEffect: null, selectedTransition: null, selectedMedia: null, inPoint: null, outPoint: null, playhead: 0, time: 0, playing: false, compareSnap: null, compare: 'off' });
+    this.resetHistory();
+    if (this.ui.autoRender && (this.project.clips.length || this.project.texts.length)) this.scheduleRender(100);
+    const { prepareAll } = await import('./media');
+    prepareAll(this.project.media);
   }
 
   /** Load the autosaved project; `render` false skips the start-up render (after a crash). */
   async restore(render = true) {
-    const p = await kvGet<Project>('autosave');
+    // the project open last time (the single autosave of older versions becomes the first one)
+    const id = (await migrateAutosave()) ?? currentProjectId();
+    const p = id ? await loadProject(id) : undefined;
     let ok = false;
     if (p)
       try {
         this.project = migrate(p);
+        this.projectId = id;
         ok = true;
       } catch (e) {
         console.warn('autosave not restored', e);
@@ -493,10 +540,12 @@ class Store {
     const { snapshotFileIds } = await import('./snapshots.svelte');
     const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
     const lutFiles = (this.project.luts ?? []).map((l) => 'lut:' + l.id);
-    return [...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)];
+    // every saved project's media too, not just the open one's
+    const others = (await loadIndex().catch(() => [])).flatMap((m) => m.files);
+    return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)];
   }
 
-  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics'>(k: K, v: (typeof this.ui)[K]) {
+  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics' | 'startHome' | 'autoMosh'>(k: K, v: (typeof this.ui)[K]) {
     this.ui[k] = v;
     localSet(k, v);
     if (k === 'autoRender' && v) this.scheduleRender(50);

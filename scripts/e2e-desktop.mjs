@@ -101,6 +101,13 @@ try {
     if (!/ffmpeg version/.test(info.version)) throw new Error('unexpected engine info');
   });
   await step('load example and render', async () => {
+    // start in the editor (not the home screen), without the tour or the automatic first mosh
+    await exec(() => {
+      for (const [k, v] of Object.entries({ startHome: false, seenWelcome: true, autoMosh: false })) localStorage.setItem('moshpit:' + k, JSON.stringify(v));
+      window.__moshpitMounted = false;
+      setTimeout(() => location.reload(), 50);
+    });
+    await waitFor(() => window.__moshpitMounted, 60000);
     await waitFor(() => [...document.querySelectorAll('button')].some((b) => /Load example/.test(b.textContent)), 60000);
     await exec(() => [...document.querySelectorAll('button')].find((b) => /Load example/.test(b.textContent)).click());
     await waitFor(() => window.__moshpit.store.project.clips.some((c) => c.transition));

@@ -19,6 +19,10 @@ const url = `http://localhost:${server.address().port}/`;
 const exe = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] });
+// start in the editor (not the home screen), without the first-run tour or the automatic first mosh
+await ctx.addInitScript(() => {
+  for (const [k, v] of Object.entries({ startHome: false, seenWelcome: true, autoMosh: false })) localStorage.setItem('moshpit:' + k, JSON.stringify(v));
+});
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 6).join('\n')));
@@ -751,10 +755,18 @@ await step('flow paint: paint a stroke on the player and it moves the picture', 
 await step('light theme + new project + undo', async () => {
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Light theme/ }).click();
+  // a new project leaves the old one in the list: go home and open it again
+  const before = await S(() => ({ id: window.__moshpit.store.projectId, clips: window.__moshpit.store.project.clips.length }));
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /New project/ }).click();
-  await page.waitForTimeout(300);
-  await page.keyboard.press('Control+z');
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.length === 0);
+  await page.locator('header .brand').click();
+  await page.locator('[data-testid=home]').waitFor();
+  const card = page.locator('.card.project').filter({ has: page.locator('.thumb') }).first();
+  await card.waitFor();
+  await page.locator('.card.project .open').first().click();
+  await page.waitForFunction((id) => window.__moshpit.store.projectId === id && !window.__moshpit.store.ui.home, before.id);
+  if ((await S(() => window.__moshpit.store.project.clips.length)) !== before.clips) throw new Error('reopened project lost clips');
   await settle();
 });
 
@@ -863,6 +875,88 @@ await step('crash recovery: a stale render flag pauses auto-render after a reloa
   if (!(await S(() => window.__moshpit.store.ui.autoRender))) throw new Error('resume did not turn auto-render back on');
   if (await S(() => localStorage.getItem('moshpit:busy') && JSON.parse(localStorage.getItem('moshpit:busy')).tab === 'gone')) throw new Error('stale flag was not cleared');
   await idle();
+});
+
+await step('home: open an example, then come back to the list', async () => {
+  await S(() => window.__moshpit.projects.goHome());
+  await page.locator('[data-testid=home]').waitFor();
+  const n0 = await page.locator('.card.project').count();
+  await page.locator('.starter', { hasText: 'Vortex' }).last().click();
+  await page.waitForFunction(() => !window.__moshpit.store.ui.home && window.__moshpit.store.project.effects.length > 0, null, { timeout: 120000 });
+  await settle();
+  if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error('example did not render');
+  await page.locator('header .brand').click();
+  await page.locator('[data-testid=home]').waitFor();
+  await page.waitForFunction((n) => document.querySelectorAll('.card.project').length === n + 1, n0);
+  // the card got a picture of the project
+  if (!(await page.locator('.card.project').first().locator('img').count())) throw new Error('project card has no picture');
+});
+
+await step('template: melt transitions with sample footage', async () => {
+  await page.locator('.starter', { hasText: 'Melt transitions' }).click();
+  await page.getByRole('button', { name: 'Try with sample footage' }).click();
+  await page.waitForFunction(() => !window.__moshpit.store.ui.home && window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length === 3, null, { timeout: 120000 });
+  const melts = await S(() => window.__moshpit.store.project.clips.filter((c) => c.transition?.type === 'melt').length);
+  if (melts !== 2) throw new Error('expected a melt on both cuts, got ' + melts);
+  await settle();
+});
+
+await step('home: rename, duplicate and delete a project', async () => {
+  await S(() => window.__moshpit.projects.goHome());
+  await page.locator('[data-testid=home]').waitFor();
+  const count = () => page.locator('.card.project').count();
+  const n0 = await count();
+  const first = page.locator('.card.project').first();
+  await first.locator('.more').click();
+  await page.locator('.card.project .menu button', { hasText: 'Duplicate' }).click();
+  await page.waitForFunction((n) => document.querySelectorAll('.card.project').length === n + 1, n0);
+  await page.locator('.card.project', { hasText: ' copy' }).first().locator('.more').click();
+  await page.locator('.card.project .menu button', { hasText: 'Rename' }).click(); // the prompt answers "Test preset"
+  await page.locator('.card.project', { hasText: 'Test preset' }).waitFor();
+  await page.locator('.card.project', { hasText: 'Test preset' }).locator('.more').click();
+  await page.locator('.card.project .menu button', { hasText: 'Delete' }).click();
+  await page.waitForFunction((n) => document.querySelectorAll('.card.project').length === n, n0);
+  if (await page.locator('.card.project', { hasText: 'Test preset' }).count()) throw new Error('deleted project still listed');
+});
+
+await step('first mosh: clips imported into an empty project get melted', async () => {
+  await S(() => window.__moshpit.store.setPref('autoMosh', true));
+  await page.getByRole('button', { name: 'New project' }).first().click();
+  await page.waitForFunction(() => !window.__moshpit.store.ui.home);
+  await S(async () => {
+    const m = window.__moshpit;
+    const files = [];
+    for (const g of ['testsrc2', 'mandelbrot']) files.push(new File([await m.renderer.renderGenerator(g, 2, 320, 180, 24)], g + '.mp4', { type: 'video/mp4' }));
+    await m.media.addFiles(files);
+  });
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.some((c) => c.transition?.type === 'melt'), null, { timeout: 30000 });
+  await page.locator('.toast button', { hasText: 'Undo' }).click();
+  if (await S(() => window.__moshpit.store.project.clips.some((c) => c.transition))) throw new Error('Undo did not take the first mosh off');
+  await S(() => window.__moshpit.store.setPref('autoMosh', false));
+  await settle();
+});
+
+await step('tour: steps through the editor and is remembered', async () => {
+  await S(() => (window.__moshpit.store.ui.welcome = true));
+  await page.locator('.tour .card').waitFor();
+  for (let i = 0; i < 6 && (await page.locator('.tour').count()); i++) {
+    const hole = await page.locator('.tour .hole').boundingBox();
+    if (!hole || hole.width < 20) throw new Error('tour step has nothing lit up');
+    await page.locator('.tour .card button.primary').click();
+  }
+  if (await page.locator('.tour').count()) throw new Error('tour did not finish');
+  if ((await S(() => localStorage.getItem('moshpit:seenWelcome'))) !== 'true') throw new Error('tour not remembered');
+});
+
+await step('home on a phone: fits the screen', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await S(() => window.__moshpit.projects.goHome());
+  await page.locator('[data-testid=home]').waitFor();
+  const overflow = await S(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  if (overflow) throw new Error('home overflows the phone screen sideways');
+  await page.locator('.card.project .open').first().click();
+  await page.waitForFunction(() => !window.__moshpit.store.ui.home);
+  await page.setViewportSize({ width: 1440, height: 900 });
 });
 
 await browser.close();

@@ -8,16 +8,11 @@
 
   /**
    * Called once at start-up. After an update, returns true and the dialog shows what changed since
-   * the version this browser last ran. A first visit just records the version.
+   * the version this browser last ran. A first visit (nothing saved yet) just records the version.
    */
-  export function checkWhatsNew(): boolean {
-    let used = false;
-    try {
-      used = Object.keys(localStorage).some((k) => k.startsWith('moshpit:') && k !== 'moshpit:busy');
-    } catch {
-      /* no storage */
-    }
-    // people who used moshpit before this dialog existed last saw 1.4.0
+  export function checkWhatsNew(used: boolean): boolean {
+    // `used`: there's saved work, so this isn't a first visit. People who used moshpit before this
+    // dialog existed last saw 1.4.0
     const seen = localGet<string>('lastVersion', used ? '1.4.0' : VERSION);
     localSet('lastVersion', VERSION);
     if (compareVersions(seen, VERSION) >= 0) return false;
