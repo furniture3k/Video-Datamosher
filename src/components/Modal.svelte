@@ -23,47 +23,106 @@
   .backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(0, 0, 0, 0.6);
     display: grid;
     place-items: center;
     z-index: 100;
     padding: 16px;
+    animation: fade 0.14s ease-out;
   }
   .modal {
-    width: min(520px, 100%);
+    width: min(540px, 100%);
     max-height: calc(100vh - 32px);
     display: flex;
     flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--line-2);
-    border-radius: var(--r);
+    border-radius: var(--r-lg);
     box-shadow: var(--shadow);
+    overflow: hidden;
+    animation: rise 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
   }
   .modal.wide {
-    width: min(980px, 100%);
+    width: min(1000px, 100%);
   }
   .head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 40px;
-    padding: 0 6px 0 14px;
+    height: 48px;
+    flex: none;
+    padding: 0 8px 0 18px;
     border-bottom: 1px solid var(--line);
   }
   h3 {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 650;
   }
   .content {
-    padding: 14px;
+    padding: 16px 18px;
     overflow: auto;
+    overscroll-behavior: contain;
   }
   .foot {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 6px;
-    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 18px;
     border-top: 1px solid var(--line);
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.99);
+    }
+  }
+  @keyframes sheet {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  /* phones: dialogs are bottom sheets, thumb-reachable, like a mobile editor */
+  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
+    .backdrop {
+      place-items: end stretch;
+      padding: 0;
+    }
+    .modal,
+    .modal.wide {
+      width: 100%;
+      max-height: 88vh;
+      border-radius: 16px 16px 0 0;
+      border-bottom: none;
+      padding-bottom: env(safe-area-inset-bottom);
+      animation: sheet 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .head::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 6px;
+      width: 36px;
+      height: 4px;
+      margin-left: -18px;
+      border-radius: 2px;
+      background: var(--line-2);
+    }
+    .head {
+      position: relative;
+      height: 52px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .backdrop,
+    .modal {
+      animation: none !important;
+    }
   }
 </style>

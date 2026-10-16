@@ -1,6 +1,28 @@
 import { mount } from 'svelte';
 import './app.css';
 import App from './App.svelte';
+import { isDesktop } from './lib/platform';
+
+// Behave like an app, not a web page: no browser right-click menu (the timeline and media
+// panel have their own), no pinch-zooming the interface, no dropping a file to navigate away.
+const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable || !!t.closest('.selectable'));
+window.addEventListener('contextmenu', (e) => {
+  if (!typing(e.target)) e.preventDefault();
+});
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+// Safari's own pinch gesture would zoom the whole interface
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+// In the desktop app the window is the editor: page zoom, reload and print would only break it.
+// (In a browser tab those stay the browser's.)
+if (isDesktop) window.addEventListener('wheel', (e) => e.ctrlKey && e.preventDefault(), { passive: false });
+if (isDesktop) window.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  // reload, print, find, save-page and the browser's own zoom are not part of the editor
+  if (e.key === 'F5' || (mod && ['r', 'p', 'f', 'g', 'u', 'j'].includes(e.key.toLowerCase()) && !e.altKey) || (mod && e.key === '0')) {
+    if (!typing(e.target) || e.key === 'F5' || e.key.toLowerCase() === 'r') e.preventDefault();
+  }
+});
 
 const target = document.getElementById('app')!;
 target.innerHTML = ''; // remove the boot screen
@@ -11,7 +33,6 @@ document.body.removeAttribute('style'); // boot-screen colours; the theme takes 
 export default app;
 
 // Installable web app: keep the app on the device so it opens offline (not in the desktop app or dev server).
-import { isDesktop } from './lib/platform';
 if (import.meta.env.PROD && !isDesktop && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('offline support unavailable:', e));

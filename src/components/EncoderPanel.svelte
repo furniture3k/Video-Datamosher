@@ -65,11 +65,15 @@
   />
   <Field
     type="select"
-    label="Preview width"
-    value={e.previewWidth}
-    options={[240, 320, 480, 640, 854].map((w) => ({ value: w, label: `${w}px` }))}
-    help="Lower = faster previews while you experiment. The mosh looks the same, just smaller."
-    onchange={setE('previewWidth')}
+    label="Preview quality"
+    value={store.ui.previewRes}
+    options={[
+      { value: 'full', label: 'Full: same as the export' },
+      { value: 'half', label: 'Half: faster' },
+      { value: 'quarter', label: 'Quarter: fastest' },
+    ]}
+    help="How sharp the moshed preview in the player is. Full shows exactly what you'll export; half and quarter render faster on slow machines and long timelines. Also in the player's quality button."
+    onchange={(v: 'full' | 'half' | 'quarter') => store.setPref('previewRes', v)}
   />
   <Field
     type="select"

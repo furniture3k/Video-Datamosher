@@ -1,7 +1,7 @@
 {
   "name": "moshpit",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Video editor with a datamosher built in, for the browser and desktop",
   "license": "GPL-3.0-or-later",
   "homepage": "https://furniture3k.github.io/Video-Datamosher/",

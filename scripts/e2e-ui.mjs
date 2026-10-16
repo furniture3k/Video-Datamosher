@@ -68,7 +68,10 @@ for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
     await page.keyboard.press('Shift+A');
-    await page.locator('.modal .item').filter({ hasText: await S((t) => ({ kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', mask: 'Subject Guard' })[t], t) }).first().click();
+    const name = { kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', mask: 'Subject Guard' }[t];
+    // Simple mode lists the essentials; searching finds every effect
+    await page.locator('.modal input[aria-label="Search effects"]').fill(name);
+    await page.locator('.modal .item').filter({ hasText: name }).first().click();
     await settle();
     const n = await S(() => window.__moshpit.store.render.frames.length);
     if (!n) throw new Error('no frames');
@@ -283,7 +286,8 @@ await step('variations: breed two, next generation, back', async () => {
   const tiles = page.locator('.modal .cell .pv:not([disabled])');
   await tiles.nth(0).click();
   await tiles.nth(1).click();
-  await page.getByRole('button', { name: 'Breed 2' }).click();
+  // Breed waits for every tile to finish rendering
+  await page.getByRole('button', { name: 'Breed 2' }).click({ timeout: 180000 });
   await page.locator('.modal .gen', { hasText: 'Generation 2' }).waitFor();
   await page.waitForFunction(() => document.querySelectorAll('.modal .cell .pv:not([disabled])').length >= 4, null, { timeout: 180000 });
   await page.getByRole('button', { name: 'Back' }).click();
@@ -472,11 +476,16 @@ await step('NLE: keyframes, speed ramp, scopes', async () => {
   if (Math.abs((await clipLength()) - len0) < 0.05) throw new Error('ramp did not change the clip length');
   await settle();
   // scopes
-  // (the keyboard shortcut is Shift+S; focus is still in the inspector here, so use the button)
-  await page.getByRole('button', { name: 'Scopes', exact: true }).click();
+  // (the keyboard shortcut is Shift+S; focus is still in the inspector here, so use the player's menu)
+  const scopes = async () => {
+    await page.getByRole('button', { name: 'More player options' }).click();
+    await page.locator('.pmenu .mitem', { hasText: 'Scopes' }).click();
+  };
+  await scopes();
   await page.locator('.scopes canvas').waitFor();
   for (const k of ['Parade', 'Vector', 'Histogram', 'Waveform']) await page.locator('.scopes button', { hasText: k }).click();
-  await page.getByRole('button', { name: 'Scopes', exact: true }).click();
+  await scopes();
+  if (await page.locator('.scopes canvas').count()) throw new Error('scopes did not close');
 });
 
 await step('NLE: adjustment layer, chroma key with eyedropper, LUT import', async () => {
@@ -658,7 +667,7 @@ const diffFromClean = (i) =>
   S(async (i) => {
     const st = window.__moshpit.store;
     const r = st.render;
-    const orig = await window.__moshpit.renderer.originalFrames(JSON.parse(JSON.stringify(st.project)), st.project.encoder.previewWidth);
+    const orig = await window.__moshpit.renderer.originalFrames(JSON.parse(JSON.stringify(st.project)), r.w);
     const f = r.frames[i];
     const pix = async (j) => {
       const b = await createImageBitmap(new Blob([j], { type: 'image/jpeg' }), { resizeWidth: 64, resizeHeight: 36 });
@@ -775,17 +784,28 @@ await step('timeline lanes line up with headers and the playhead', async () => {
   if (Math.abs(pos[0] - pos[1]) > 1) throw new Error(`playhead at ${pos[0]} but the cut (${cut.t}s) is drawn at ${pos[1]}`);
 });
 
-await step('phone layout: one panel at a time, timeline usable', async () => {
+await step('phone layout: mobile editor, timeline and tool sheets usable', async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(400);
-  for (const tab of ['Media', 'Inspector', 'Timeline']) {
-    await page.locator('.mtabs button', { hasText: tab }).click();
-    await page.waitForTimeout(150);
-  }
-  const box = await page.locator('footer .v-lane').boundingBox();
-  if (!box || box.y + box.height > 844 || box.height < 30) throw new Error('timeline not on screen: ' + JSON.stringify(box));
-  const a = await alignment();
-  if (a.gap > 0.5 || a.height > 0.5) throw new Error('phone: track headers and lanes misaligned: ' + JSON.stringify(a));
+  const clip = await page.locator('.mtl .clip').first().boundingBox();
+  if (!clip || clip.y + clip.height > 844 || clip.height < 40) throw new Error('timeline clips not on screen: ' + JSON.stringify(clip));
+  // the playhead stays in the middle: scrubbing the timeline moves time
+  const t0 = await S(() => window.__moshpit.store.ui.time);
+  await S(() => (document.querySelector('.mtl .scroller').scrollLeft += 60));
+  await page.waitForTimeout(200);
+  if ((await S(() => window.__moshpit.store.ui.time)) === t0) throw new Error('scrolling the phone timeline did not move the playhead');
+  // the bottom tools change with the selection and open sheets over the timeline
+  await page.locator('.mtl .clip').first().click();
+  await page.locator('.tools .tool', { hasText: 'Speed' }).click();
+  await page.locator('.sheet').waitFor();
+  await page.locator('.sheet .chip', { hasText: '2×' }).click();
+  if ((await S(() => window.__moshpit.store.selectedClip?.speed)) !== 2) throw new Error('speed sheet did not set the speed');
+  await page.keyboard.press('Control+Z');
+  await page.locator('.sheet .done').click();
+  await page.locator('.tools .back').click();
+  await page.locator('.tools .tool', { hasText: 'Media' }).click();
+  await page.locator('.sheet').waitFor();
+  await page.locator('.sheet .done').click();
   const overflow = await S(() => document.documentElement.scrollWidth > window.innerWidth + 1 || document.documentElement.scrollHeight > window.innerHeight + 1);
   if (overflow) throw new Error('page overflows the phone screen');
   await page.setViewportSize({ width: 1440, height: 900 });

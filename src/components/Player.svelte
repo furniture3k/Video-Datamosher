@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack, onDestroy, onMount } from 'svelte';
   import { store, type CompareMode } from '../lib/store.svelte';
-  import { loadExample } from '../lib/media';
+  import { loadExample, addFiles } from '../lib/media';
+  import Logo from './Logo.svelte';
   import Icon from './Icon.svelte';
   import { originalFrames, renderPreview, moshedAudio, type RenderResult } from '../lib/renderer';
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
@@ -18,6 +19,8 @@
   import { tc, parseTimecode } from '../lib/timecode';
   import { outputSize } from '../engine/args';
 
+  /** phones: a bigger picture and a simpler transport (time, play, undo / redo) */
+  let { compact = false }: { compact?: boolean } = $props();
   let canvas: HTMLCanvasElement;
   let editCanvas: HTMLCanvasElement;
   let wrap: HTMLDivElement;
@@ -168,6 +171,20 @@
     return out;
   }
   const cmpName = $derived(store.ui.compareSnap ? (snapshots.list.find((s) => s.id === store.ui.compareSnap)?.name ?? 'snapshot') : 'source');
+  // the edit preview is drawn as sharp as the stage is on screen
+  onMount(() => {
+    const ro = new ResizeObserver(() => {
+      if (!wrap) return;
+      const tw = Math.round(wrap.clientWidth * (window.devicePixelRatio || 1));
+      preview ??= new EditPreview(editCanvas);
+      if (Math.abs(preview.targetWidth - tw) > 32) {
+        preview.targetWidth = tw;
+        if (!mosh && !store.ui.playing) drawEdit();
+      }
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  });
   onMount(() => {
     setFrameGrabber(() => {
       const src = mosh ? canvas : editCanvas;
@@ -188,11 +205,11 @@
     if (mode === 'off' || !r) return;
     const p = $state.snapshot(store.project) as Project;
     const snap = store.ui.compareSnap ? snapshots.list.find((s) => s.id === store.ui.compareSnap) : null;
-    const key = snap ? 'snap:' + snap.id + ':' + p.encoder.previewWidth : JSON.stringify([p.clips, p.encoder]);
+    const key = snap ? 'snap:' + snap.id + ':' + r.w : JSON.stringify([p.clips, p.encoder, r.w]);
     if (key === origKey) return;
     origKey = key;
     loadingOrig = true;
-    (snap ? snapshotFrames(snap.project, p.encoder.previewWidth) : originalFrames(p, p.encoder.previewWidth))
+    (snap ? snapshotFrames(snap.project, r.w) : originalFrames(p, r.w))
       .then((o) => (originals = o))
       .catch((e) => store.toast('Compare failed: ' + e.message, 'error'))
       .finally(() => (loadingOrig = false));
@@ -549,7 +566,9 @@
     store.toast(`Key colour ${hex}`, 'ok', 1500);
   }
 
+  let importInput = $state<HTMLInputElement>();
   let draggingSplit = false;
+  let tapAt: { x: number; y: number; t: number } | null = null;
   function splitMove(e: PointerEvent) {
     if (!draggingSplit) return;
     // the canvas is letterboxed (object-fit: contain): measure against the picture itself
@@ -573,8 +592,25 @@
     ['mosh', 'Mosh', 'Always show the last rendered mosh'],
   ];
   const guideSize = $derived(outputSize(store.project, store.project.encoder.previewWidth));
+  const totalTc = $derived(tc(store.duration, store.project.encoder.fps));
+  const shortTime = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+  let pmenu = $state(false);
+  const RES_LABEL = { full: 'Full', half: '1/2', quarter: '1/4' } as const;
+  const RES_TIP = { full: 'full, exactly as it will export', half: 'half resolution, faster', quarter: 'quarter resolution, fastest' } as const;
+  function cycleRes() {
+    const order = ['full', 'half', 'quarter'] as const;
+    store.setPref('previewRes', order[(order.indexOf(store.ui.previewRes) + 1) % 3]);
+    store.toast(`Preview quality: ${RES_TIP[store.ui.previewRes]}`, 'info', 1800);
+  }
+  function fullscreen() {
+    const el = wrap.parentElement!;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else (el.requestFullscreen?.() ?? Promise.reject()).catch(() => store.toast('Full screen is not available here.', 'error'));
+  }
   const hasTimeline = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
 </script>
+
+<svelte:window onclick={() => (pmenu = false)} />
 
 <div class="player">
   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -587,6 +623,10 @@
       if (store.ui.eyedropper) return pickKeyColour(e);
       if (store.ui.trackPick) return drawTrackBox(e);
       if (paintFx) return paintStroke(e);
+      if (compact && hasTimeline && store.ui.compare === 'off') {
+        tapAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+        return;
+      }
       if (store.ui.compare === 'split') {
         draggingSplit = true;
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -594,7 +634,11 @@
       }
     }}
     onpointermove={splitMove}
-    onpointerup={() => (draggingSplit = false)}
+    onpointerup={(e) => {
+      draggingSplit = false;
+      if (tapAt && Math.hypot(e.clientX - tapAt.x, e.clientY - tapAt.y) < 10 && performance.now() - tapAt.t < 400) store.ui.playing = !store.ui.playing;
+      tapAt = null;
+    }}
   >
     {#if store.status.busy}
       <div class="progress" style="width:{Math.max(2, Math.round(store.status.progress * 100))}%"></div>
@@ -644,12 +688,22 @@
     {#if !hasTimeline && !store.status.busy}
       <div class="empty">
         {#if store.project.media.length}
-          <p class="muted">The timeline is empty.</p>
-          <p class="muted small">Drag clips from the Media panel onto the timeline below.</p>
+          <p class="et">The timeline is empty</p>
+          <p class="muted small">{compact ? 'Tap + to put clips on the timeline.' : 'Drag clips from the Media panel onto the timeline, or press + on one.'}</p>
         {:else}
-          <p>No footage.</p>
-          <p class="muted small">Import a clip from the Media panel or drop files anywhere.<br />Two clips with lots of motion make the best melts.</p>
-          <button onclick={() => loadExample()}>Load example</button>
+          <Logo size={44} />
+          <p class="et">Make something melt</p>
+          <ol class="steps small">
+            <li><span><b>Add</b> two or more clips. Lots of motion melts best.</span></li>
+            <li><span><b>Mosh</b>: put a <i>Melt</i> on a cut, or pick a preset.</span></li>
+            <li><span><b>Export</b> when it looks right.</span></li>
+          </ol>
+          <div class="row">
+            <button class="primary" onclick={() => importInput?.click()}><Icon name="import" />Import media</button>
+            <button onclick={() => loadExample()}>Load example</button>
+          </div>
+          {#if !compact}<p class="faint small">or drop files anywhere</p>{/if}
+          <input bind:this={importInput} type="file" multiple accept="video/*,image/*,audio/*,.mkv,.avi,.mov,.gif,.mp3,.wav,.m4a,.flac,.ogg" hidden onchange={(e) => (addFiles((e.target as HTMLInputElement).files!), ((e.target as HTMLInputElement).value = ''))} />
         {/if}
       </div>
     {/if}
@@ -669,67 +723,95 @@
     {/if}
   </div>
 
+  {#if compact}
+    <div class="transport compact">
+      <div class="left mono"><span class="ctime">{shortTime(store.ui.time)}</span><span class="total">/ {shortTime(store.duration)}</span></div>
+      <button class="play" aria-label={store.ui.playing ? 'Pause' : 'Play'} disabled={!hasTimeline} onclick={() => (store.ui.playing = !store.ui.playing)}>
+        <Icon name={store.ui.playing ? 'pause' : 'play'} size={18} />
+      </button>
+      <div class="right">
+        <button class="icon ghost" aria-label="Undo" disabled={!store.historySize.undo} onclick={() => store.undo()}><Icon name="undo" size={18} /></button>
+        <button class="icon ghost" aria-label="Redo" disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" size={18} /></button>
+        <button class="icon ghost" aria-label="Full screen" disabled={!hasTimeline} onclick={fullscreen}><Icon name="fullscreen" size={18} /></button>
+      </div>
+    </div>
+  {:else}
   <div class="transport">
-    {#if tcEdit !== null}
-      <!-- svelte-ignore a11y_autofocus -->
-      <input
-        class="tc mono tcin"
-        autofocus
-        value={tcEdit}
-        aria-label="Go to time"
-        onkeydown={(e) => {
-          if (e.key === 'Enter') goTimecode((e.target as HTMLInputElement).value);
-          if (e.key === 'Escape') tcEdit = null;
-          e.stopPropagation();
-        }}
-        onblur={() => (tcEdit = null)}
-      />
-    {:else}
-      <button class="tc mono" title="Playhead (hours:minutes:seconds:frames). Click to type a time: 1:30, 00:01:12:05, +2 (seconds later) or -10f (frames back)." onclick={() => (tcEdit = timecode)}>{timecode}</button>
-    {/if}
-    <div class="frameinfo mono small">
-      {#if mosh}<span class="faint">{n ? store.ui.playhead + 1 : 0}/{n}</span>{/if}
-      {#if cur}
-        <span class="ftype" class:i={cur.type === 'I'}>{cur.type}</span>
-        <span class="faint">{TAG_LABEL[cur.tag]}</span>
+    <div class="left">
+      {#if tcEdit !== null}
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          class="tc mono tcin"
+          autofocus
+          value={tcEdit}
+          aria-label="Go to time"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') goTimecode((e.target as HTMLInputElement).value);
+            if (e.key === 'Escape') tcEdit = null;
+            e.stopPropagation();
+          }}
+          onblur={() => (tcEdit = null)}
+        />
+      {:else}
+        <button class="tc mono" title="Playhead (hours:minutes:seconds:frames). Click to type a time: 1:30, 00:01:12:05, +2 (seconds later) or -10f (frames back)." onclick={() => (tcEdit = timecode)}>{timecode}</button>
       {/if}
+      <span class="total mono">/ {totalTc}</span>
+      <div class="frameinfo mono small">
+        {#if mosh}<span class="faint" title="Output frame">{n ? store.ui.playhead + 1 : 0}/{n}</span>{/if}
+        {#if cur}
+          <span class="ftype" class:i={cur.type === 'I'} title="Frame type: I = full picture, P = motion only">{cur.type}</span>
+          <span class="faint">{TAG_LABEL[cur.tag]}</span>
+        {/if}
+      </div>
     </div>
 
     <div class="buttons">
-      <button class="icon ghost" title="Start  Home" aria-label="Start" onclick={toStart}><Icon name="start" /></button>
+      <button class="icon ghost hide-s" title="Start  Home" aria-label="Start" onclick={toStart}><Icon name="start" /></button>
       <button class="icon ghost" title="Previous frame  ←" aria-label="Previous frame" onclick={() => step(-1)}><Icon name="prev" /></button>
       <button class="play" title="Play / pause  Space" aria-label={store.ui.playing ? 'Pause' : 'Play'} disabled={!hasTimeline} onclick={() => (store.ui.playing = !store.ui.playing)}>
-        <Icon name={store.ui.playing ? 'pause' : 'play'} />
+        <Icon name={store.ui.playing ? 'pause' : 'play'} size={18} />
       </button>
       <button class="icon ghost" title="Next frame  →" aria-label="Next frame" onclick={() => step(1)}><Icon name="next" /></button>
-      <button class="icon ghost" title="End  End" aria-label="End" onclick={toEnd}><Icon name="end" /></button>
+      <button class="icon ghost hide-s" title="End  End" aria-label="End" onclick={toEnd}><Icon name="end" /></button>
     </div>
 
     <div class="right">
-      <button class="icon ghost" class:on={store.ui.loopOn} title="Loop  /  (plays the In–Out range when one is marked with I and O)" aria-label="Loop" onclick={() => (store.ui.loopOn = !store.ui.loopOn)}><Icon name="loop" /></button>
-      <select bind:value={store.ui.speed} title="Playback speed (sound plays at 1× only)" aria-label="Playback speed">
-        {#each [0.25, 0.5, 1, 1.5, 2] as s}<option value={s}>{s}×</option>{/each}
-      </select>
-      <button class="icon ghost" class:on={muted} title="Mute preview" aria-label="Mute" onclick={() => ((muted = !muted), muted && stopAudio())}><Icon name={muted ? 'mute' : 'sound'} /></button>
-      <span class="divider"></span>
-      <div class="seg" role="group" aria-label="Preview">
+      <div class="seg view" role="group" aria-label="Preview">
         {#each VIEWS as [v, label, tip]}
           <button class:on={store.ui.view === v} title={tip} onclick={() => store.setPref('view', v)}>{label}</button>
         {/each}
       </div>
-      <span class="divider"></span>
-      <span class="label cmp-label">A/B</span>
-      <div class="seg" role="group" aria-label="Compare with source  C">
-        {#each COMPARE as [m, label]}
-          <button class:on={store.ui.compare === m} onclick={() => (store.ui.compare = m)}>{label}</button>
-        {/each}
+      <button class="ghost qual mono" title="Preview quality: {RES_TIP[store.ui.previewRes]}. Click to change." aria-label="Preview quality" onclick={cycleRes}>{RES_LABEL[store.ui.previewRes]}</button>
+      <button class="icon ghost" class:on={store.ui.loopOn} title="Loop  /  (plays the In–Out range when one is marked with I and O)" aria-label="Loop" onclick={() => (store.ui.loopOn = !store.ui.loopOn)}><Icon name="loop" /></button>
+      <button class="icon ghost" class:on={muted} title="Mute preview" aria-label="Mute" onclick={() => ((muted = !muted), muted && stopAudio())}><Icon name={muted ? 'mute' : 'sound'} /></button>
+      <button class="icon ghost" title="Full screen" aria-label="Full screen" disabled={!hasTimeline} onclick={fullscreen}><Icon name="fullscreen" /></button>
+      <div class="pmenu-wrap">
+        <button class="icon ghost" class:on={store.ui.compare !== 'off' || store.ui.scopes || store.ui.speed !== 1} aria-label="More player options" title="Speed, compare, scopes, save frame" onclick={(e) => (e.stopPropagation(), (pmenu = !pmenu))}><Icon name="more" /></button>
+        {#if pmenu}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="pmenu" onclick={(e) => e.stopPropagation()}>
+            <div class="prow"><span class="label">Speed</span>
+              <div class="seg">
+                {#each [0.25, 0.5, 1, 2] as sp}<button class:on={store.ui.speed === sp} onclick={() => (store.ui.speed = sp)}>{sp}×</button>{/each}
+              </div>
+            </div>
+            <div class="prow"><span class="label" title="Compare the mosh with the clean source  C">Compare</span>
+              <div class="seg" role="group" aria-label="Compare with source  C">
+                {#each COMPARE as [m, label]}
+                  <button class:on={store.ui.compare === m} onclick={() => (store.ui.compare = m)}>{label}</button>
+                {/each}
+              </div>
+            </div>
+            <button class="ghost mitem" class:on={store.ui.scopes} disabled={!hasTimeline} onclick={() => ((pmenu = false), (store.ui.scopes = !store.ui.scopes))}><Icon name="grid" />Scopes<span class="kbd">Shift S</span></button>
+            <button class="ghost mitem" disabled={!hasTimeline} onclick={() => ((pmenu = false), snapshot())}><Icon name="still" />Save this frame as PNG</button>
+            <button class="ghost mitem" disabled={!hasTimeline} onclick={() => ((pmenu = false), store.doRender(true))}><Icon name="render" />Render the mosh now<span class="kbd">Enter</span></button>
+          </div>
+        {/if}
       </div>
-      <span class="divider"></span>
-      <button class="icon ghost" class:on={store.ui.scopes} title="Scopes: waveform, parade, vectorscope, histogram  Shift S" aria-label="Scopes" disabled={!hasTimeline} onclick={() => (store.ui.scopes = !store.ui.scopes)}><Icon name="grid" /></button>
-      <button class="icon ghost" title="Save this frame as PNG" aria-label="Save frame" disabled={!hasTimeline} onclick={snapshot}><Icon name="still" /></button>
-      <button class="icon ghost render-btn" title="Render now  Enter" aria-label="Render now" disabled={!hasTimeline} onclick={() => store.doRender(true)}><Icon name="render" /></button>
     </div>
   </div>
+  {/if}
 </div>
 
 <style>
@@ -750,16 +832,16 @@
   }
   canvas {
     position: absolute;
-    inset: 12px;
-    width: calc(100% - 24px);
-    height: calc(100% - 24px);
+    inset: 10px;
+    width: calc(100% - 20px);
+    height: calc(100% - 20px);
     object-fit: contain;
   }
   .guides {
     position: absolute;
-    inset: 12px;
-    width: calc(100% - 24px);
-    height: calc(100% - 24px);
+    inset: 10px;
+    width: calc(100% - 20px);
+    height: calc(100% - 20px);
     pointer-events: none;
     z-index: 1;
   }
@@ -851,10 +933,51 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     text-align: center;
     padding: 24px;
     line-height: 1.5;
+    z-index: 1;
+  }
+  .et {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .steps {
+    margin: 0 0 6px;
+    padding: 0;
+    list-style: none;
+    counter-reset: s;
+    text-align: left;
+    color: var(--text-2);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .steps li {
+    counter-increment: s;
+    display: flex;
+    gap: 8px;
+  }
+  .steps li::before {
+    content: counter(s);
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font: 600 10px var(--mono);
+    background: var(--surface-3);
+    color: var(--text);
+  }
+  .steps b {
+    color: var(--text);
+  }
+  .empty .row button {
+    height: 34px;
+    padding: 0 16px;
   }
   .error {
     position: absolute;
@@ -884,14 +1007,18 @@
     padding: 6px 10px;
     border-top: 1px solid var(--line);
     background: var(--surface);
+    min-height: 46px;
+  }
+  .left {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-width: 0;
   }
   .tc {
-    font-size: 20px;
+    font-size: 17px;
     letter-spacing: 0.02em;
     color: var(--text);
-    grid-column: 1;
-    grid-row: 1;
-    justify-self: start;
     background: none;
     border: none;
     padding: 0 2px;
@@ -900,24 +1027,28 @@
   }
   .tc:hover {
     color: var(--accent);
+    background: none !important;
   }
   .tcin {
-    width: 150px;
+    width: 140px;
     border: 1px solid var(--accent);
     background: var(--bg);
   }
+  .total {
+    color: var(--text-3);
+    font-size: 12px;
+    white-space: nowrap;
+  }
   .frameinfo {
-    grid-column: 1;
-    grid-row: 1;
-    justify-self: start;
-    margin-left: 158px;
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
+    margin-left: 6px;
   }
   .ftype {
     padding: 0 4px;
     border: 1px solid var(--line-2);
+    border-radius: 3px;
     color: var(--text-2);
   }
   .ftype.i {
@@ -925,107 +1056,113 @@
     border-color: var(--f-i);
   }
   .buttons {
-    grid-column: 2;
     display: flex;
     align-items: center;
     gap: 2px;
   }
   .play {
-    width: 40px;
-    height: 30px;
+    width: 38px;
+    height: 38px;
     padding: 0;
-    margin: 0 4px;
+    margin: 0 6px;
+    border-radius: 50%;
+    background: var(--text);
+    border-color: var(--text);
+    color: var(--bg);
+  }
+  .play:hover:not(:disabled) {
+    background: var(--accent) !important;
+    border-color: var(--accent);
+    color: var(--accent-ink);
   }
   .right {
-    grid-column: 3;
     justify-self: end;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
   }
-  .right select {
-    width: 62px;
-  }
-  .divider {
-    width: 1px;
-    height: 16px;
-    background: var(--line-2);
+  .qual {
+    font-size: 11px;
+    min-width: 40px;
+    padding: 0 6px;
+    color: var(--text-2);
+    border: 1px solid var(--line-2);
     margin: 0 4px;
+  }
+  .pmenu-wrap {
+    position: relative;
+  }
+  .pmenu {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px;
+    min-width: 250px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow);
+  }
+  .prow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 2px 2px 6px;
+  }
+  .mitem {
+    justify-content: flex-start;
+    color: var(--text);
+  }
+  .mitem .kbd {
+    margin-left: auto;
   }
   @media (max-width: 1280px) {
     .frameinfo {
       display: none;
     }
-    .cmp-label {
+  }
+  @media (max-width: 1180px) and (min-width: 861px) {
+    .hide-s,
+    .total {
       display: none;
     }
   }
-  /* the centre column gets narrow on laptops: A/B compare stays on the C key */
-  @media (max-width: 1240px) and (min-width: 861px) {
-    .seg[aria-label^='Compare'],
-    .seg[aria-label^='Compare'] + .divider {
-      display: none;
-    }
-    .transport {
-      grid-template-columns: auto 1fr;
-      row-gap: 4px;
-    }
-    .buttons {
-      grid-column: 2;
-      justify-self: end;
-    }
-    .right {
-      grid-column: 1 / -1;
-      grid-row: 2;
-      justify-self: stretch;
-      justify-content: space-between;
-    }
+  .transport.compact {
+    grid-template-columns: 1fr auto 1fr;
+    padding: 4px 8px;
+    min-height: 48px;
+    border-top: none;
+    background: var(--bg);
+  }
+  .compact .left {
+    align-items: baseline;
+    font-size: 13px;
+  }
+  .compact .ctime {
+    color: var(--text);
+  }
+  .compact .play {
+    width: 42px;
+    height: 42px;
+  }
+  .compact .right {
+    gap: 4px;
+  }
+  .compact .right button {
+    width: 36px;
+    height: 36px;
   }
   @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
-    .stage {
-      flex: none;
-      height: min(56vw, 38vh);
-    }
-    .tc {
-      font-size: 16px;
-    }
-    .transport {
-      grid-template-columns: auto 1fr;
-      row-gap: 6px;
-    }
-    .buttons {
-      grid-column: 2;
-      justify-self: end;
-    }
-    .right {
-      grid-column: 1 / -1;
-      justify-self: stretch;
-      justify-content: space-between;
-      flex-wrap: wrap;
-    }
-    .divider,
-    .render-btn,
-    .cmp-label {
-      display: none;
-    }
-  }
-  @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-    .stage {
-      height: auto;
-      flex: 1;
-      min-height: 140px;
-    }
-    .player {
+    canvas,
+    .guides {
+      inset: 0;
+      width: 100%;
       height: 100%;
-    }
-    .seg[aria-label^='Compare'] {
-      display: none;
-    }
-  }
-  @media (max-width: 520px) {
-    /* A/B compare is a desktop tool; keep the phone transport to two rows */
-    .seg[aria-label^='Compare'] {
-      display: none;
     }
   }
 </style>

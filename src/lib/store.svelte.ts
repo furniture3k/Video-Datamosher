@@ -5,6 +5,8 @@ import { timelineFrames, timelineDuration, cutFrames, remapToFootage, layoutVide
 import { migrate } from '../engine/migrate';
 import { rootWithInner } from '../engine/compound';
 import { renderPreview, renderKey, proxyKey, Cancelled, type RenderResult } from './renderer';
+import { outputSize } from '../engine/args';
+import { isDesktop } from './platform';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
@@ -13,6 +15,10 @@ import { EFFECTS } from '../engine/effects';
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 
 export type CompareMode = 'off' | 'split' | 'side' | 'hold';
+export type PreviewRes = 'full' | 'half' | 'quarter';
+export const PREVIEW_RES: Record<PreviewRes, number> = { full: 1, half: 0.5, quarter: 0.25 };
+/** decoded preview frames are kept in memory as JPEGs: stay around this many bytes */
+const PREVIEW_BUDGET = 450e6;
 
 export interface Toast {
   id: number;
@@ -42,8 +48,6 @@ class Store {
     /** timeline zoom in pixels per second (0 = fit) */
     pxPerSec: 0,
     snap: true,
-    /** phones show one panel at a time under the player */
-    mobilePanel: 'timeline' as 'timeline' | 'media' | 'inspector',
     timelineViewW: 800,
     timelineHeight: localGet('timelineHeight', 300),
     playing: false,
@@ -75,6 +79,9 @@ class Store {
     split: 0.5,
     zoom: 1,
     autoRender: localGet('autoRender', true),
+    /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
+    // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
+    previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
     dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
@@ -97,6 +104,21 @@ class Store {
 
   get fps() {
     return this.project.encoder.fps;
+  }
+  /**
+   * Width the mosh preview is rendered at: the mosh resolution itself (so the preview looks exactly
+   * like the export, block size and all) or a half / quarter of it, stepped down on very long
+   * timelines so the decoded frames fit in memory.
+   */
+  get previewWidth() {
+    const enc = this.project.encoder;
+    let w = enc.width * PREVIEW_RES[this.ui.previewRes];
+    const frames = timelineFrames(this.project, enc.fps);
+    const { w: ow, h: oh } = outputSize(this.project, enc.width);
+    // a JPEG at the preview's quality is roughly 0.15 bytes a pixel
+    const fit = Math.sqrt(PREVIEW_BUDGET / Math.max(1, frames * 0.15 * (oh / ow)));
+    w = Math.min(w, fit);
+    return Math.max(240, Math.round(w / 16) * 16);
   }
   get totalFrames() {
     return this.render && this.renderFresh ? this.render.prep.frames.length : timelineFrames(this.project, this.project.encoder.fps);
@@ -384,7 +406,8 @@ class Store {
       this.render = null;
       return;
     }
-    const key = renderKey(this.project);
+    // a different preview resolution renders again, though the result counts as the same mosh
+    const key = renderKey(this.project) + '@' + this.previewWidth;
     if (!force && key === this.renderKey && this.render) return;
     if (this.status.busy) {
       // let the running render notice it is stale, then re-run
@@ -397,7 +420,7 @@ class Store {
     const signal = (this.renderSignal = { cancelled: false });
     const snapshot = $state.snapshot(this.project) as Project;
     try {
-      const r = await renderPreview(snapshot, this.project.encoder.previewWidth, (stage, p) => {
+      const r = await renderPreview(snapshot, this.previewWidth, (stage, p) => {
         this.status.stage = stage;
         this.status.progress = p;
       }, signal);
@@ -460,10 +483,11 @@ class Store {
     ensureCompounds().catch((e: unknown) => console.warn('compound render failed', e));
   }
 
-  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips'>(k: K, v: (typeof this.ui)[K]) {
+  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes'>(k: K, v: (typeof this.ui)[K]) {
     this.ui[k] = v;
     localSet(k, v);
     if (k === 'autoRender' && v) this.scheduleRender(50);
+    if (k === 'previewRes' && this.ui.autoRender) this.scheduleRender(50);
   }
 }
 

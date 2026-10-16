@@ -90,6 +90,8 @@ Picture effects run on the decoded frames:
 
 Effects that repeat or insert frames (Bloom, Stutter, Echo, Motion Transfer's insert mode, Frame Drop) have a **Timing** setting. **Keep length** (the default) makes the repeats replace the frames after them, so the effect lasts exactly as long as its bar and the picture, the sound and the playhead stay in sync. **Stretch** inserts them instead, so the video gets longer (slow, syrupy melts). Every setting has a description underneath it; the **?** button in the Inspector hides them.
 
+**Which effect do I want?** The **Add effect** picker groups them by what you'll see, describes each one in plain words and draws a little strip of frames showing what it does to the video (which frames get repeated, moved, removed or damaged). In **Simple** mode it shows the nine that look the most different from each other; **Show all effects** (or searching) lists the rest. Bloom, Echo, Stutter, Shuffle and Reverse all rework the same motion frames, so on calm footage they can look alike: they come apart on footage with strong, one-direction movement, and on the beat.
+
 There are 21 presets to start from, and you can save your own.
 
 ## Editing
@@ -114,22 +116,25 @@ There are 21 presets to start from, and you can save your own.
 - **Audio tracks.** As many as you like, with waveforms, volume, fades, mute and solo. Each track either **follows the mosh** (stutters, skips and scrambles with the picture) or stays clean. Video clips' own sound can be muted or detached to a track.
 - **Titles.** Text with font, colour, position, shadow, box and fades. Titles sit clean on top or **melt with the video**.
 - **Instant preview.** The player shows your cut immediately, straight from the source files, and switches to the rendered mosh when it's ready (or pick **Edit** / **Mosh** yourself). Only the clips you change are re-prepared.
+- **Sharp preview.** The **Full / 1/2 / 1/4** button under the player sets the mosh preview's resolution against your mosh resolution, like an NLE's playback resolution. **Full** looks exactly like the export (block size and all) and is the default in the desktop app; the browser starts at **1/2**, which renders faster. The edit preview draws from your original files at the size the player is on screen, and only switches to the fast preview copies while you scrub.
 - **Effects stay on their footage.** Moving, trimming, splitting or deleting clips keeps mosh effects, forced keyframes and Motion Transfer sources on the same shots.
 - **Recording.** Record from your camera (front or back) or screen straight onto the timeline.
 - Snapping (<kbd>N</kbd>, or hold <kbd>Shift</kbd> while dragging), zoom (<kbd>Ctrl</kbd>+wheel, <kbd>+</kbd> <kbd>−</kbd>), resizable timeline, right-click menu on clips.
+- **Feels like an app.** Nothing in the interface can be accidentally highlighted, there's no browser right-click menu, and in the desktop app page zoom, reload and print are switched off.
 
 ![Transitions: the Transitions tab, a Bloom melt selected on the timeline and its settings in the inspector](docs/transitions.png)
 
 ## On your phone
 
-The same app works on phones and tablets. The player stays at the top, and a tab bar switches between the **Timeline**, **Media** and **Inspector** panels.
+Phones get their own editor, laid out like the mobile editors you already know rather than a shrunk desktop:
 
-- **Swipe** the timeline to scroll, **tap** to move the playhead or select a clip.
-- **Press and hold** a clip or effect bar to drag it; **hold and let go** for the clip menu (split, duplicate, reverse, delete).
-- Drag a clip's edges to trim it. Use the **+** next to a media item to add it to the timeline.
+- **A big preview** on top. Tap the picture to play or pause.
+- **A timeline with the playhead fixed in the middle.** Swipe to scrub, pinch to zoom. Tap a clip to select it, drag its white handles to trim, press and hold to move it. The small squares on the cuts are transitions: tap one to pick a Melt or a dissolve.
+- **Tools along the bottom that follow what you select**: Media, Mosh, Presets, Randomize, Chaos, Text, Music… with nothing selected; Split, Speed, Volume, Mosh it, Freeze, Reverse, Adjust and Delete with a clip selected; Settings, On/Off and Delete with an effect selected.
+- **Sheets slide up over the timeline**, so the preview stays in view while you change things.
 - **Record** uses the phone's camera, with a button to flip between front and back.
 
-![moshpit on a phone: the timeline, the inspector and the media panel](docs/mobile.png)
+![moshpit on a phone: the preview, the timeline with the playhead in the middle, the clip tools, and the transition sheet](docs/mobile.png)
 
 ## Controls
 

@@ -26,11 +26,21 @@
   import GenerateDialog from './dialogs/GenerateDialog.svelte';
   import RecordDialog from './dialogs/RecordDialog.svelte';
   import LiveMode from './dialogs/LiveMode.svelte';
+  import MobileEditor from './mobile/MobileEditor.svelte';
   import { saveProjectFile } from './lib/projectio.svelte';
   import { localSet } from './lib/storage';
   import * as edit from './lib/edit';
 
   let dragging = $state(false);
+  // phones (and small tablets held either way) get the mobile editor
+  const PHONE = '(max-width: 860px), (max-height: 500px) and (pointer: coarse)';
+  const mq = typeof matchMedia !== 'undefined' ? matchMedia(PHONE) : null;
+  let phone = $state(!!mq?.matches);
+  onMount(() => {
+    const on = () => (phone = !!mq?.matches);
+    mq?.addEventListener('change', on);
+    return () => mq?.removeEventListener('change', on);
+  });
 
   onMount(() => {
     ffmpeg.onStatus = (s) => (store.status.engine = s);
@@ -323,6 +333,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="app"
+  class:phone
   ondragover={(e) => {
     if (e.dataTransfer?.types.includes('Files')) {
       e.preventDefault();
@@ -334,25 +345,22 @@
   }}
   ondrop={onDrop}
 >
-  <TopBar onchaos={runChaos} onmutate={runMutate} />
-  <main>
-    <aside class="left" class:mshow={store.ui.mobilePanel === 'media'}><MediaBin /></aside>
-    <section class="center"><Player /></section>
-    <aside class="right" class:mshow={store.ui.mobilePanel === 'inspector'}><Inspector /></aside>
-  </main>
-  <nav class="mtabs" aria-label="Panels">
-    {#each [['timeline', 'Timeline'], ['media', 'Media'], ['inspector', 'Inspector']] as [id, label]}
-      <button class:on={store.ui.mobilePanel === id} onclick={() => (store.ui.mobilePanel = id as never)}>
-        {label}{#if id === 'inspector' && (store.ui.selectedClips.length || store.ui.selectedTransition || store.ui.selectedEffect)}<span class="dot"></span>{/if}
-      </button>
-    {/each}
-  </nav>
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="resizer" title="Drag to resize the timeline" onpointerdown={resizeDown}></div>
-  <footer class:mshow={store.ui.mobilePanel === 'timeline'} style="--tlh:{store.ui.timelineHeight}px"><Timeline /></footer>
+  {#if phone}
+    <MobileEditor onchaos={runChaos} />
+  {:else}
+    <TopBar onchaos={runChaos} onmutate={runMutate} />
+    <main>
+      <aside class="left"><MediaBin /></aside>
+      <section class="center"><Player /></section>
+      <aside class="right"><Inspector /></aside>
+    </main>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="resizer" title="Drag to resize the timeline" onpointerdown={resizeDown}></div>
+    <footer style="--tlh:{store.ui.timelineHeight}px"><Timeline /></footer>
+  {/if}
 
   {#if dragging}
-    <div class="dropzone"><div class="label">Drop to import</div></div>
+    <div class="dropzone"><div class="label">Drop to add to your project</div></div>
   {/if}
 </div>
 
@@ -410,9 +418,10 @@
   .dropzone {
     position: absolute;
     inset: 0;
-    background: rgba(12, 12, 12, 0.72);
-    outline: 1px solid var(--accent);
-    outline-offset: -12px;
+    background: rgba(11, 11, 13, 0.78);
+    outline: 2px dashed var(--accent);
+    outline-offset: -14px;
+    border-radius: 24px;
     display: grid;
     place-items: center;
     z-index: 50;
@@ -420,7 +429,10 @@
   }
   .dropzone .label {
     color: var(--accent);
-    font-size: 13px;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: normal;
+    text-transform: none;
   }
   @media (max-width: 1100px) {
     main {
@@ -430,95 +442,7 @@
   footer {
     height: var(--tlh);
   }
-  .mtabs {
-    display: none;
-  }
-  /* Phones: player on top, then one panel at a time (timeline / media / inspector) filling the rest */
-  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
-    .app {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-    }
-    main {
-      display: contents;
-    }
-    .center {
-      order: 1;
-      flex: none;
-    }
-    .mtabs {
-      order: 2;
-      display: flex;
-      flex: none;
-      height: 38px;
-      background: var(--surface);
-      border-top: 1px solid var(--line);
-      border-bottom: 1px solid var(--line);
-    }
-    .mtabs button {
-      flex: 1;
-      height: 100%;
-      border: none;
-      border-radius: 0;
-      background: none;
-      color: var(--text-3);
-      font-size: 13px;
-      gap: 5px;
-    }
-    .mtabs button.on {
-      color: var(--text);
-      box-shadow: inset 0 -2px 0 var(--accent);
-    }
-    .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--accent);
-    }
-    .left,
-    .right,
-    footer {
-      order: 3;
-      display: none;
-      flex: 1;
-      min-height: 0;
-      height: auto;
-    }
-    .left.mshow,
-    .right.mshow,
-    footer.mshow {
-      display: block;
-    }
-    .resizer {
-      display: none;
-    }
-  }
-  /* Phones held sideways: player on the left, panels on the right */
-  @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-    .app {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      grid-template-rows: auto auto minmax(0, 1fr);
-    }
-    :global(header) {
-      grid-column: 1 / -1;
-    }
-    .center {
-      grid-column: 1;
-      grid-row: 2 / 4;
-      min-height: 0;
-      overflow: auto;
-    }
-    .mtabs {
-      grid-column: 2;
-      grid-row: 2;
-    }
-    .left,
-    .right,
-    footer {
-      grid-column: 2;
-      grid-row: 3;
-    }
+  .app.phone {
+    display: block;
   }
 </style>
