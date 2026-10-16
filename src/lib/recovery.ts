@@ -21,8 +21,11 @@ let beat = 0;
 
 function write() {
   try {
-    if (!jobs.size) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, JSON.stringify({ kind: [...jobs.values()].includes('export') ? 'export' : 'render', at: Date.now(), tab } satisfies BusyFlag));
+    if (!jobs.size) {
+      // only ever clear our own flag: another tab may be rendering, or may have crashed
+      const raw = localStorage.getItem(KEY);
+      if (raw && (JSON.parse(raw) as BusyFlag).tab === tab) localStorage.removeItem(KEY);
+    } else localStorage.setItem(KEY, JSON.stringify({ kind: [...jobs.values()].includes('export') ? 'export' : 'render', at: Date.now(), tab } satisfies BusyFlag));
   } catch {
     /* storage unavailable: no recovery, nothing else breaks */
   }
@@ -68,6 +71,7 @@ export function crashedSession(now = Date.now()): BusyFlag | null {
 // closing the tab (or reloading) in the middle of a render is not a crash
 if (typeof window !== 'undefined')
   window.addEventListener('pagehide', () => {
+    if (!jobs.size) return;
     jobs.clear();
     write();
   });

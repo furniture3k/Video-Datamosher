@@ -21,7 +21,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] });
 const page = await ctx.newPage();
 const errors = [];
-page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+page.on('pageerror', (e) => errors.push('pageerror: ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 6).join('\n')));
 page.on('console', (m) => m.type() === 'error' && !/Failed to load resource|favicon/.test(m.text()) && errors.push('console: ' + m.text()));
 page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'Test preset' : undefined));
 

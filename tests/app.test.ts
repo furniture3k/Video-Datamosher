@@ -83,3 +83,23 @@ describe('crash recovery flag', () => {
     expect(crashedSession(now + 60000)).toBeNull();
   });
 });
+
+describe('crash recovery flag across tabs', () => {
+  it("a tab with nothing running never clears another tab's flag", async () => {
+    const mem = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+    });
+    vi.stubGlobal('window', { addEventListener: () => {}, setInterval, clearInterval });
+    const { busy } = await import('../src/lib/recovery');
+    const other = JSON.stringify({ kind: 'render', at: Date.now(), tab: 'other' });
+    // our job ends while another tab's flag is the stored one
+    const done = busy('render');
+    mem.set('moshpit:busy', other);
+    done();
+    expect(mem.get('moshpit:busy')).toBe(other);
+    vi.unstubAllGlobals();
+  });
+});
