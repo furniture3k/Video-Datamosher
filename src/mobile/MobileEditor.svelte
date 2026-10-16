@@ -5,9 +5,10 @@
   import { store } from '../lib/store.svelte';
   import { addFiles, addToTimeline, loadExample } from '../lib/media';
   import * as edit from '../lib/edit';
-  import { ask } from '../lib/ask';
-  import { saveProjectFile, loadProjectFile } from '../lib/projectio.svelte';
-  import { newProject, VIDEO_TRACK } from '../engine/types';
+  import { saveProjectFile, loadProjectFile, startNewProject } from '../lib/projectio.svelte';
+  import { reportProblem } from '../lib/report';
+  import * as haptics from '../lib/haptics';
+  import { VIDEO_TRACK } from '../engine/types';
   import { BLEND_TRANSITIONS, MOSH_TRANSITIONS, clipLen, layoutVideo, isMoshTransition } from '../engine/timeline';
   import { EFFECTS } from '../engine/effects';
   import { closeCompound } from '../lib/compound.svelte';
@@ -206,21 +207,15 @@
             <button onclick={() => ((sheet = null), (store.ui.dialog = 'live'))}><Icon name="live" />Live mode…</button>
             <hr />
             <button onclick={() => ((sheet = null), loadExample())}><Icon name="gen" />Load example</button>
-            <button
-              onclick={async () => {
-                sheet = null;
-                if (await ask('Start a new project? Media, clips and effects will be cleared.')) {
-                  store.set({ ...newProject(), encoder: $state.snapshot(store.project.encoder), name: 'Untitled' });
-                  store.ui.selectedClips = [];
-                  store.seek(0);
-                  store.render = null;
-                }
-              }}><Icon name="file" />New project</button
-            >
+            <button onclick={() => ((sheet = null), startNewProject())}><Icon name="file" />New project</button>
             <hr />
             <button onclick={() => store.setPref('advanced', !store.ui.advanced)}><Icon name={store.ui.advanced ? 'check' : 'x'} />Advanced controls</button>
+            {#if 'vibrate' in navigator}<button onclick={() => store.setPref('haptics', !store.ui.haptics)}><Icon name={store.ui.haptics ? 'check' : 'x'} />Vibration</button>{/if}
             <button onclick={() => store.setPref('theme', store.ui.theme === 'dark' ? 'light' : 'dark')}><Icon name="theme" />{store.ui.theme === 'dark' ? 'Light' : 'Dark'} theme</button>
+            <button onclick={() => ((sheet = null), (store.ui.dialog = 'storage'))}><Icon name="storage" />Storage</button>
             <button onclick={() => ((sheet = null), (store.ui.dialog = 'help'))}><Icon name="help" />Help</button>
+            <button onclick={() => ((sheet = null), (store.ui.dialog = 'whatsnew'))}><Icon name="sparkle" />What's new</button>
+            <button onclick={() => ((sheet = null), reportProblem())}><Icon name="bug" />Report a problem</button>
           </div>
         {/if}
       </Sheet>
@@ -246,7 +241,7 @@
         <button class="tool" onclick={() => (sheet = 'audio')}><Icon name="sound" size={22} /><span>Beats</span></button>
         <button class="tool" onclick={() => (store.ui.dialog = 'record')}><Icon name="camera" size={22} /><span>Record</span></button>
       {:else if mode === 'video' || mode === 'audio'}
-        <button class="tool" onclick={() => edit.splitAtPlayhead()}><Icon name="scissors" size={22} /><span>Split</span></button>
+        <button class="tool" onclick={() => (edit.splitAtPlayhead(), haptics.thud())}><Icon name="scissors" size={22} /><span>Split</span></button>
         <button class="tool" onclick={() => (sheet = 'speed')}><Icon name="speed" size={22} /><span>Speed</span></button>
         <button class="tool" onclick={() => (sheet = 'volume')}><Icon name="volume" size={22} /><span>Volume</span></button>
         {#if mode === 'video'}
@@ -260,7 +255,7 @@
         <button class="tool danger" onclick={() => edit.deleteSelected()}><Icon name="trash" size={22} /><span>Delete</span></button>
       {:else if mode === 'text'}
         <button class="tool" onclick={() => (sheet = 'clip')}><Icon name="pen" size={22} /><span>Edit</span></button>
-        <button class="tool" onclick={() => edit.splitAtPlayhead()}><Icon name="scissors" size={22} /><span>Split</span></button>
+        <button class="tool" onclick={() => (edit.splitAtPlayhead(), haptics.thud())}><Icon name="scissors" size={22} /><span>Split</span></button>
         <button class="tool" onclick={() => edit.duplicateSelected()}><Icon name="copy" size={22} /><span>Duplicate</span></button>
         <button class="tool danger" onclick={() => edit.deleteSelected()}><Icon name="trash" size={22} /><span>Delete</span></button>
       {:else if mode === 'fx' && fx}

@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.5.0
+
+- **Loading screen.** The logo melts while moshpit starts, and the video engine shows how much of
+  it has downloaded (Loading video engine 12 / 31 MB) instead of just "loading".
+- **Open with moshpit.** Installed as a web app (Chrome, Edge), moshpit appears in the system's
+  Open with menu for videos, GIFs and sound. The desktop app opens files it's given, and a second
+  launch hands its files to the window that's already open.
+- **Share to moshpit** from the gallery or another app on Android, and **Share…** an export straight
+  from the export dialog on phones and tablets.
+- **Save dialog in the browser** (Chrome, Edge): Save project asks where to put the file, and Ctrl S
+  saves to the same file again. **Save project as…** and **Save as…** for exports.
+- **What's new** after an update (this list), and in the menu.
+- **Report a problem** in the menu (and on render or export errors) opens a GitHub bug report with
+  the app version, browser and the engine's last messages filled in. No media or file names.
+- **Storage**: see how much space your media, preview copies and snapshots take, protect your files
+  from the browser's automatic clean-up, and delete automatic snapshots or unused media.
+- **Crash recovery.** If moshpit closes in the middle of a render or export (usually out of memory),
+  it starts with auto-render paused and says so, instead of crashing again on the same mosh.
+- **Vibration** on Android phones when you pick up, trim or split a clip (Settings → Vibration).
+- Shared links show a preview card with the logo and a melting frame.
+
 ## 1.4.0
 
 - **New look and logo.** A new mark (a frame melting into blocks, with a play button cut out of it),

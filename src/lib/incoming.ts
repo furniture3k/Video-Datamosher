@@ -1,0 +1,76 @@
+// Files arriving from outside the app: dropped on the window, opened with moshpit from the
+// system ("Open with", double-click), shared to it from another app, or passed to the desktop app.
+import { addFiles } from './media';
+import { loadProjectFile } from './projectio.svelte';
+import { store } from './store.svelte';
+import { isDesktop } from './platform';
+
+const isProject = (f: File) => /\.json$/i.test(f.name) || f.type === 'application/json';
+
+/** Project files are opened; everything else goes into the media library. */
+export async function openFiles(files: File[]) {
+  const projects = files.filter(isProject);
+  const media = files.filter((f) => !isProject(f));
+  // a project replaces the timeline, so open it first and add media to it after
+  if (projects.length) await loadProjectFile(projects[0]);
+  if (projects.length > 1) store.toast('Opened the first project; one at a time.', 'info');
+  if (media.length) await addFiles(media);
+}
+
+/** The cache the service worker puts shared files in (see scripts/sw.js). */
+const SHARE_CACHE = 'moshpit-share';
+
+type LaunchParams = { files: { getFile(): Promise<File> }[] };
+type LaunchWindow = { launchQueue?: { setConsumer(fn: (p: LaunchParams) => void): void } };
+
+/** Start listening for files from the system (call once at start-up, after the project is restored). */
+export async function listenForIncoming() {
+  // installed web app: "Open with moshpit" and double-clicked files (file_handlers in the manifest)
+  (window as unknown as LaunchWindow).launchQueue?.setConsumer(async (p) => {
+    if (!p.files?.length) return;
+    const files = await Promise.all(p.files.map((h) => h.getFile()));
+    openFiles(files);
+  });
+
+  // shared from another app (share_target): the service worker stashed the files
+  if (new URLSearchParams(location.search).has('shared') && 'caches' in window) {
+    history.replaceState(null, '', location.pathname);
+    try {
+      const cache = await caches.open(SHARE_CACHE);
+      const keys = await cache.keys();
+      const files: File[] = [];
+      for (const k of keys) {
+        const r = await cache.match(k);
+        if (!r) continue;
+        const name = decodeURIComponent(new URL(k.url).searchParams.get('name') || 'shared');
+        files.push(new File([await r.blob()], name, { type: r.headers.get('content-type') || '' }));
+        await cache.delete(k);
+      }
+      if (files.length) openFiles(files);
+      else store.toast('Nothing came through from the share. Try again, or import the file instead.', 'error', 6000);
+    } catch (e) {
+      console.warn('shared files', e);
+    }
+  }
+
+  // desktop app: files the app was opened with, and files opened while it runs
+  if (isDesktop) {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const { listen } = await import('@tauri-apps/api/event');
+    const take = async () => {
+      const paths = await invoke<string[]>('opened_files').catch(() => [] as string[]);
+      const files: File[] = [];
+      for (const p of paths) {
+        try {
+          const bytes = await invoke<ArrayBuffer>('read_opened_file', { path: p });
+          files.push(new File([bytes], p.split(/[\\/]/).pop() || 'file'));
+        } catch (e) {
+          store.toast(`Could not open ${p}: ${(e as Error)?.message ?? e}`, 'error');
+        }
+      }
+      if (files.length) openFiles(files);
+    };
+    listen('opened-files', () => take());
+    take();
+  }
+}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { reportProblem } from '../lib/report';
   import { untrack, onDestroy, onMount } from 'svelte';
   import { store, type CompareMode } from '../lib/store.svelte';
   import { loadExample, addFiles } from '../lib/media';
@@ -84,7 +85,8 @@
     } catch {
       return;
     }
-    if (tok !== drawToken) return;
+    // a newer frame was asked for, or the player went away (phone ↔ desktop layout) while decoding
+    if (tok !== drawToken || !canvas) return;
     if (!a.width || (b && !b.width)) return; // bitmap was closed meanwhile
     const w = a.width;
     const h = a.height;
@@ -716,7 +718,7 @@
     {/if}
     {#if store.status.error}
       <div class="error small">
-        <div class="row"><b class="grow">Render failed</b><button onclick={() => store.doRender(true)}>Retry</button></div>
+        <div class="row"><b class="grow">Render failed</b><button onclick={() => reportProblem('The mosh failed to render.')}>Report</button><button onclick={() => store.doRender(true)}>Retry</button></div>
         <div>{store.status.error.split('\n')[0]}</div>
         <details><summary class="faint">Details</summary><pre>{store.status.error}</pre></details>
       </div>

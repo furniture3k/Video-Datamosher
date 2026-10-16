@@ -36,5 +36,53 @@
       "sizes": "any",
       "type": "image/svg+xml"
     }
-  ]
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": {
+        "video/*": [
+          ".mp4",
+          ".mov",
+          ".m4v",
+          ".webm",
+          ".mkv",
+          ".avi"
+        ],
+        "image/gif": [
+          ".gif"
+        ],
+        "audio/*": [
+          ".mp3",
+          ".wav",
+          ".m4a",
+          ".flac",
+          ".ogg"
+        ]
+      }
+    }
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "focus-existing",
+      "auto"
+    ]
+  },
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "media",
+          "accept": [
+            "video/*",
+            "image/*",
+            "audio/*"
+          ]
+        }
+      ]
+    }
+  }
 }

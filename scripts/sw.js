@@ -27,10 +27,35 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// Files shared to the installed app from another app (share_target in the manifest) arrive as a
+// form POST. They're parked in a cache and the app is opened with ?shared=1 to pick them up.
+const SHARE = 'moshpit-share';
+async function receiveShare(req) {
+  const back = new URL('./?shared=1', self.registration.scope).href;
+  try {
+    const form = await req.formData();
+    const cache = await caches.open(SHARE);
+    for (const k of await cache.keys()) await cache.delete(k);
+    let i = 0;
+    for (const f of form.getAll('media')) {
+      if (!(f instanceof File)) continue;
+      const key = new URL(`./__shared/${i++}?name=${encodeURIComponent(f.name || 'shared')}`, self.registration.scope).href;
+      await cache.put(key, new Response(f, { headers: { 'content-type': f.type || 'application/octet-stream' } }));
+    }
+  } catch (err) {
+    console.warn('share target', err);
+  }
+  return Response.redirect(back, 303);
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET') return;
   const url = new URL(req.url);
+  if (req.method === 'POST' && url.origin === location.origin && url.pathname.endsWith('/share-target')) {
+    e.respondWith(receiveShare(req));
+    return;
+  }
+  if (req.method !== 'GET') return;
   if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
     e.respondWith(
       caches.open(FONTS).then((c) =>

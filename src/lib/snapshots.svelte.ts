@@ -100,3 +100,13 @@ export async function deleteSnapshot(id: string) {
   if (store.ui.compareSnap === id) store.ui.compareSnap = null;
   await save();
 }
+
+/** Delete every automatic snapshot (named ones stay). Returns how many went. */
+export async function deleteAutoSnapshots(): Promise<number> {
+  await loadSnapshots();
+  const n = snapshots.list.filter((s) => s.auto).length;
+  snapshots.list = snapshots.list.filter((s) => !s.auto);
+  if (store.ui.compareSnap && !snapshots.list.some((s) => s.id === store.ui.compareSnap)) store.ui.compareSnap = null;
+  await save();
+  return n;
+}

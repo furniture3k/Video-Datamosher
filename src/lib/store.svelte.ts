@@ -10,6 +10,7 @@ import { isDesktop } from './platform';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
+import { busy } from './recovery';
 
 /** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -24,6 +25,8 @@ export interface Toast {
   id: number;
   text: string;
   kind: 'info' | 'error' | 'ok';
+  /** a button on the toast (Undo, Report…) */
+  action?: { label: string; run: () => void };
 }
 
 class Store {
@@ -82,10 +85,12 @@ class Store {
     /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
     // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
     previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
+    /** vibrate on phones when clips are picked up, trimmed and cut */
+    haptics: localGet('haptics', true),
   });
   status = $state({ busy: false, pending: false, stage: '', progress: 0, error: '', engine: '' });
   toasts = $state<Toast[]>([]);
@@ -220,9 +225,9 @@ class Store {
     this.commit(key);
   }
 
-  toast(text: string, kind: Toast['kind'] = 'info', ms = 3500) {
+  toast(text: string, kind: Toast['kind'] = 'info', ms = 3500, action?: Toast['action']) {
     const id = Math.random();
-    this.toasts.push({ id, text, kind });
+    this.toasts.push({ id, text, kind, action });
     setTimeout(() => (this.toasts = this.toasts.filter((t) => t.id !== id)), ms);
   }
 
@@ -417,6 +422,7 @@ class Store {
     }
     this.status.busy = true;
     this.status.error = '';
+    const done = busy('render');
     const signal = (this.renderSignal = { cancelled: false });
     const snapshot = $state.snapshot(this.project) as Project;
     try {
@@ -436,6 +442,7 @@ class Store {
         this.status.error = (e as Error).message ?? String(e);
       }
     } finally {
+      done();
       this.status.busy = false;
       this.status.stage = '';
       this.renderSignal = null;
@@ -457,7 +464,8 @@ class Store {
     }, 1000);
   }
 
-  async restore() {
+  /** Load the autosaved project; `render` false skips the start-up render (after a crash). */
+  async restore(render = true) {
     const p = await kvGet<Project>('autosave');
     let ok = false;
     if (p)
@@ -468,22 +476,27 @@ class Store {
         console.warn('autosave not restored', e);
       }
     this.last = this.snapshot();
-    if (ok && (this.project.clips.length || this.project.texts.length)) this.scheduleRender(100);
+    if (render && ok && (this.project.clips.length || this.project.texts.length)) this.scheduleRender(100);
     // Media no longer in the saved project is removed on startup only, so undo
     // within a session can always bring a deleted clip back.
     // (media used by snapshots is kept so they can still be restored)
-    const { snapshotFileIds } = await import('./snapshots.svelte');
-    const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
-    const lutFiles = (this.project.luts ?? []).map((l) => 'lut:' + l.id);
-    pruneFiles([...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)]);
+    pruneFiles(await this.keepFiles());
     const { prepareAll } = await import('./media');
     prepareAll(this.project.media);
     // compounds edited when the app last closed are rendered again
     const { ensureCompounds } = await import('./compound.svelte');
-    ensureCompounds().catch((e: unknown) => console.warn('compound render failed', e));
+    if (render) ensureCompounds().catch((e: unknown) => console.warn('compound render failed', e));
   }
 
-  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes'>(k: K, v: (typeof this.ui)[K]) {
+  /** Stored files still needed: this project's media, preview copies and LUTs, and what snapshots use. */
+  async keepFiles(): Promise<string[]> {
+    const { snapshotFileIds } = await import('./snapshots.svelte');
+    const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
+    const lutFiles = (this.project.luts ?? []).map((l) => 'lut:' + l.id);
+    return [...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)];
+  }
+
+  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics'>(k: K, v: (typeof this.ui)[K]) {
     this.ui[k] = v;
     localSet(k, v);
     if (k === 'autoRender' && v) this.scheduleRender(50);

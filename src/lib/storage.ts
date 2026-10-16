@@ -62,6 +62,48 @@ export async function pruneFiles(keep: string[]) {
   for (const k of [...files.keys()]) if (!keep.includes(k)) files.delete(k);
 }
 
+/** Every stored file and its size in bytes. */
+export async function fileSizes(): Promise<Map<string, number>> {
+  const d = await db();
+  return new Promise((res, rej) => {
+    const out = new Map<string, number>();
+    const r = d.transaction('files', 'readonly').objectStore('files').openCursor();
+    r.onsuccess = () => {
+      const c = r.result;
+      if (!c) return res(out);
+      const v = c.value as Blob | { size?: number };
+      out.set(String(c.key), v?.size ?? 0);
+      c.continue();
+    };
+    r.onerror = () => rej(r.error);
+  });
+}
+
+/** How much the browser lets this site keep, and whether it may clear it under pressure. */
+export async function storageInfo(): Promise<{ usage: number; quota: number; persisted: boolean }> {
+  const s = navigator.storage;
+  const e = s?.estimate ? await s.estimate().catch(() => ({}) as StorageEstimate) : ({} as StorageEstimate);
+  const persisted = s?.persisted ? await s.persisted().catch(() => false) : false;
+  return { usage: e.usage ?? 0, quota: e.quota ?? 0, persisted };
+}
+
+/** Ask the browser not to clear moshpit's files when the disk gets full (asked once, quietly). */
+export async function askPersist(): Promise<boolean> {
+  if (isDesktop || !navigator.storage?.persist) return false;
+  try {
+    return (await navigator.storage.persisted()) || (await navigator.storage.persist());
+  } catch {
+    return false;
+  }
+}
+
+/** askPersist() the first time media is imported, never again (Firefox shows a prompt for it). */
+export function askPersistOnce() {
+  if (localGet('askedPersist', false)) return;
+  localSet('askedPersist', true);
+  void askPersist();
+}
+
 export async function kvGet<T>(key: string): Promise<T | undefined> {
   try {
     return await tx<T | undefined>('kv', 'readonly', (s) => s.get(key));
@@ -106,6 +148,60 @@ export function download(data: Blob | Uint8Array, name: string, type = 'applicat
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+// ---------- save dialog and share sheet (browser) ----------
+
+type SaveHandle = { createWritable(): Promise<{ write(b: Blob): Promise<void>; close(): Promise<void> }>; name: string };
+type PickerWindow = { showSaveFilePicker?: (o: object) => Promise<SaveHandle> };
+
+/** The browser has a real Save dialog (Chromium on desktop). Needs a click to call it. */
+export const hasSavePicker = () => !isDesktop && typeof (window as unknown as PickerWindow).showSaveFilePicker === 'function';
+
+/**
+ * Save with the browser's Save dialog where there is one (from a click), else download.
+ * Resolves with the chosen file (to write to again later), null when cancelled or downloaded.
+ */
+export async function saveAs(blob: Blob, name: string, handle?: SaveHandle | null): Promise<SaveHandle | null> {
+  if (!hasSavePicker()) {
+    download(blob, name, blob.type);
+    return null;
+  }
+  try {
+    const ext = name.includes('.') ? name.slice(name.indexOf('.')) : '';
+    handle ??= await (window as unknown as PickerWindow).showSaveFilePicker!({
+      suggestedName: name,
+      types: ext ? [{ description: name.slice(name.indexOf('.') + 1).toUpperCase() + ' file', accept: { [blob.type || 'application/octet-stream']: [ext.slice(ext.lastIndexOf('.'))] } }] : undefined,
+    });
+    const w = await handle.createWritable();
+    await w.write(blob);
+    await w.close();
+    return handle;
+  } catch (e) {
+    if ((e as Error)?.name === 'AbortError') return null;
+    // permission lost or no user gesture: fall back to a download
+    download(blob, name, blob.type);
+    return null;
+  }
+}
+
+/** The share sheet can take this file (phones, Safari, Edge…). */
+export function canShareFile(file: File): boolean {
+  try {
+    return !isDesktop && typeof navigator.share === 'function' && !!navigator.canShare?.({ files: [file] });
+  } catch {
+    return false;
+  }
+}
+
+/** Open the system share sheet with a file. Resolves false when it was cancelled or failed. */
+export async function shareFile(file: File, text?: string): Promise<boolean> {
+  try {
+    await navigator.share({ files: [file], title: file.name, text });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Desktop app: the webview can't download, so copy the file to disk in chunks and use the native Save dialog. */

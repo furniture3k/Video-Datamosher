@@ -5,7 +5,7 @@ import { placeOnTop } from './edit';
 import { ask } from './ask';
 import { applyShareCode } from './projectio.svelte';
 import { takeSnapshot } from './snapshots.svelte';
-import { putFile, getFile, kvGet, kvSet } from './storage';
+import { putFile, getFile, kvGet, kvSet, askPersistOnce } from './storage';
 import { probeFile, renderGenerator, makeProxy, extractPcm, proxyKey } from './renderer';
 import { mediaState, rt, PEAKS_PER_SEC } from './mediastate.svelte';
 import { GENERATORS, even } from '../engine/args';
@@ -47,6 +47,7 @@ export async function addFiles(list: FileList | File[], place: Place = 'auto', k
       }
       const id = uid();
       await putFile(id, file);
+      askPersistOnce();
       let duration = isImage ? 3600 : info.duration || knownDuration || 5;
       if (!isFinite(duration) || duration <= 0) duration = knownDuration || 5;
       const m: MediaItem = {

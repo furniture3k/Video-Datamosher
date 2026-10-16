@@ -38,6 +38,18 @@ then push a tag like `v1.2.0`, or run the **Desktop app** workflow from the Acti
 **release** ticked (it tags `v<version>` itself). It builds the installers, attaches them to a
 release and publishes it once every build succeeded. The website deploys from `main`.
 
+The newest `CHANGELOG.md` entry is shown in the app's **What's new** dialog after an update, so
+write it for people using the app: what they can do now, in plain words. The top entry must match
+the version in `package.json` (a test checks this).
+
+## Bug reports and error reporting
+
+**⋯ → Report a problem** opens the bug form (`.github/ISSUE_TEMPLATE/bug_report.yml`) with the
+`diagnostics` field filled in by `src/lib/report.ts`. Nothing is sent until the person submits the
+issue, and file names and file metadata are removed. If the project later wants automatic crash
+reports (Sentry's free tier, for example), make them opt-in, send no media or file names, and say
+so in the app and the README.
+
 ## License
 
 By contributing you agree that your contributions are licensed under the

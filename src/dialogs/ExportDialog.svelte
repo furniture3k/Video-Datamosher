@@ -6,7 +6,9 @@
   import { markedRange } from '../lib/edit';
   import { tc } from '../lib/timecode';
   import { ffmpeg } from '../lib/ffmpeg';
-  import { download, localGet, localSet } from '../lib/storage';
+  import { download, localGet, localSet, saveAs, hasSavePicker, canShareFile, shareFile } from '../lib/storage';
+  import { busy } from '../lib/recovery';
+  import { reportProblem } from '../lib/report';
   import { isDesktop } from '../lib/platform';
   import { blobToDisk, saveFromDisk, revealFile } from '../lib/ffmpeg-native';
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
@@ -22,7 +24,8 @@
   let stage = $state('');
   let progress = $state(0);
   /** url: web preview/download; file: desktop, the export on disk until saved; savedTo: where it was saved */
-  let result = $state<{ url?: string; file?: string; savedTo?: string; name: string; size: number; type: string } | null>(null);
+  let result = $state<{ url?: string; blob?: Blob; file?: string; savedTo?: string; name: string; size: number; type: string } | null>(null);
+  const shareable = $derived(result?.blob ? new File([result.blob], result.name, { type: result.type }) : null);
   let error = $state('');
   let signal = { cancelled: false };
   const hasPixel = $derived(store.project.effects.some((e) => e.enabled && EFFECTS[e.type]?.kind === 'pixel'));
@@ -77,6 +80,7 @@
     error = '';
     result = null;
     signal = { cancelled: false };
+    const done = busy('export');
     try {
       const r = await exportVideo($state.snapshot(store.project) as Project, { ...($state.snapshot(o) as ExportOptions), range: onlyRange ? marked : null }, (s, p) => ((stage = s), (progress = p)), signal);
       if (isDesktop) {
@@ -84,12 +88,13 @@
         running = false;
         await save();
       } else {
-        result = { url: URL.createObjectURL(r.blob!), name: r.name, size: r.size, type: r.type };
+        result = { url: URL.createObjectURL(r.blob!), blob: r.blob!, name: r.name, size: r.size, type: r.type };
         download(r.blob!, r.name);
       }
     } catch (e) {
       if (!(e instanceof Cancelled)) error = (e as Error).message;
     } finally {
+      done();
       running = false;
     }
   }
@@ -257,7 +262,7 @@
         <span class="small mono">{stage}… {Math.round(progress * 100)}%</span>
       </div>
     {/if}
-    {#if error}<div class="err small">{error}</div>{/if}
+    {#if error}<div class="err small">{error} <button class="link" onclick={() => reportProblem(`Exporting ${o.format.toUpperCase()} failed: ${error}`)}>Report this</button></div>{/if}
     {#if result}
       <div class="done">
         {#if !result.url}
@@ -275,6 +280,8 @@
           {:else if result.file}
             <button class="link" onclick={save}>Save…</button>
           {:else}
+            {#if shareable && canShareFile(shareable)}<button class="link" onclick={() => shareFile(shareable!, 'Made with moshpit')}>Share…</button>{/if}
+            {#if hasSavePicker() && result.blob}<button class="link" onclick={() => saveAs(result!.blob!, result!.name)}>Save as…</button>{/if}
             <a href={result.url} download={result.name}>Download again</a>
           {/if}
         </div>

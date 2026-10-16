@@ -21,7 +21,7 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] });
 const page = await ctx.newPage();
 const errors = [];
-page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+page.on('pageerror', (e) => errors.push('pageerror: ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 6).join('\n')));
 page.on('console', (m) => m.type() === 'error' && !/Failed to load resource|favicon/.test(m.text()) && errors.push('console: ' + m.text()));
 page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'Test preset' : undefined));
 
@@ -156,10 +156,23 @@ await step('share code round trip', async () => {
 });
 
 await step('save + load project file', async () => {
-  const dl = page.waitForEvent('download');
+  // Chromium has a Save dialog: stand in for it and keep what gets written
+  await S(() => {
+    window.__saved = { asked: 0, writes: [] };
+    window.showSaveFilePicker = async (o) => {
+      window.__saved.asked++;
+      return { name: o.suggestedName, createWritable: async () => ({ write: async (b) => window.__saved.writes.push(await b.text()), close: async () => {} }) };
+    };
+  });
   await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => window.__saved.writes.length === 1);
+  // Ctrl S again saves to the same file without asking
+  await page.keyboard.press('Control+s');
+  await page.waitForFunction(() => window.__saved.writes.length === 2);
+  if ((await S(() => window.__saved.asked)) !== 1) throw new Error('Ctrl S asked where to save twice');
   const f = path.join(os.tmpdir(), 'p.mosh.json');
-  await (await dl).saveAs(f);
+  fs.writeFileSync(f, await S(() => window.__saved.writes[1]));
+  await S(() => delete window.showSaveFilePicker);
   await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
   await page.locator('input[type=file][accept*=json]').setInputFiles(f);
   await page.waitForFunction(() => window.__moshpit.store.project.effects.length > 0);
@@ -809,6 +822,47 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   const overflow = await S(() => document.documentElement.scrollWidth > window.innerWidth + 1 || document.documentElement.scrollHeight > window.innerHeight + 1);
   if (overflow) throw new Error('page overflows the phone screen');
   await page.setViewportSize({ width: 1440, height: 900 });
+});
+
+await step('menu: what\'s new, storage, report a problem', async () => {
+  await page.locator('.menu-wrap > button').click();
+  await page.locator('.menu button', { hasText: "What's new" }).click();
+  const notes = await page.locator('.modal').innerText();
+  const version = await S(() => document.querySelector('.modal h4')?.textContent ?? '');
+  if (!/\d+\.\d+\.\d+/.test(version) || notes.length < 80) throw new Error('what\'s new shows no release notes');
+  await page.keyboard.press('Escape');
+  await page.locator('.menu-wrap > button').click();
+  await page.locator('.menu button', { hasText: 'Storage' }).click();
+  await page.locator('.modal .r', { hasText: 'Media in this project' }).waitFor({ timeout: 20000 });
+  await page.keyboard.press('Escape');
+  // the bug report link carries diagnostics but none of the person's file names
+  const url = await S(() => window.__moshpit.report.reportUrl('test'));
+  const q = new URL(url).searchParams;
+  if (q.get('template') !== 'bug_report.yml' || !/moshpit \d/.test(q.get('diagnostics') ?? '')) throw new Error('report link is missing its details: ' + url.slice(0, 200));
+  const names = await S(() => window.__moshpit.store.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.name] : [])));
+  for (const n of names) if (q.get('diagnostics').includes(n)) throw new Error('report leaks a file name: ' + n);
+});
+
+await step('incoming: a project file dropped or opened with the app is opened', async () => {
+  const clips = await S(() => window.__moshpit.store.project.clips.length);
+  await S(async () => {
+    const p = JSON.stringify({ ...window.__moshpit.store.project, name: 'Opened from outside' });
+    await window.__moshpit.incoming.openFiles([new File([p], 'outside.mosh.json', { type: 'application/json' })]);
+  });
+  if ((await S(() => window.__moshpit.store.project.name)) !== 'Opened from outside') throw new Error('project file was not opened');
+  if ((await S(() => window.__moshpit.store.project.clips.length)) !== clips) throw new Error('opening the project lost clips');
+});
+
+await step('crash recovery: a stale render flag pauses auto-render after a reload', async () => {
+  await S(() => localStorage.setItem('moshpit:busy', JSON.stringify({ kind: 'render', at: Date.now() - 60000, tab: 'gone' })));
+  await page.reload();
+  await page.waitForFunction(() => window.__moshpit?.store);
+  await page.locator('.toast', { hasText: 'closed while it was rendering' }).waitFor({ timeout: 20000 });
+  if (await S(() => window.__moshpit.store.ui.autoRender)) throw new Error('auto-render was not paused');
+  await page.locator('.toast button', { hasText: 'Resume auto-render' }).click();
+  if (!(await S(() => window.__moshpit.store.ui.autoRender))) throw new Error('resume did not turn auto-render back on');
+  if (await S(() => localStorage.getItem('moshpit:busy') && JSON.parse(localStorage.getItem('moshpit:busy')).tab === 'gone')) throw new Error('stale flag was not cleared');
+  await idle();
 });
 
 await browser.close();

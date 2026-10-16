@@ -32,3 +32,9 @@ body:
       label: Share code (optional)
       description: "**⋯ → Share code…** copies your effect recipe so the mosh can be reproduced."
       render: text
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics (optional)
+      description: "**⋯ → Report a problem** in the app fills this in: app version, browser, project size and the last lines the video engine printed. No media or file names."
+      render: text

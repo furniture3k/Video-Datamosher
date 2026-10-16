@@ -1,19 +1,39 @@
 import { store } from './store.svelte';
-import { download, localGet, localSet } from './storage';
-import { type MediaItem, type Project } from '../engine/types';
+import { localGet, localSet, saveAs, hasSavePicker } from './storage';
+import { newProject, type MediaItem, type Project } from '../engine/types';
+import { ask } from './ask';
 import { migrate } from '../engine/migrate';
 import { uid, type Preset } from '../engine/presets';
 import { applyRecipe, decodeRecipe, encodeRecipe } from '../engine/recipe';
 
-export function saveProjectFile() {
+/** The file Ctrl+S last saved this project to (browsers with a Save dialog); New / Open forget it. */
+let saved: Awaited<ReturnType<typeof saveAs>> = null;
+export const forgetProjectFile = () => (saved = null);
+
+export async function saveProjectFile(as = false) {
   const p = $state.snapshot(store.project) as Project;
   const data = { ...p, media: p.media.map((m) => ({ ...m, thumb: undefined })) };
-  download(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), `${(p.name || 'mosh').replace(/[^\w-]+/g, '_')}.mosh.json`);
-  store.toast('Saved. Media files are not included in the project file.', 'ok');
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const again = !!saved && !as;
+  const h = await saveAs(blob, `${(p.name || 'mosh').replace(/[^\w-]+/g, '_')}.mosh.json`, as ? null : saved);
+  if (hasSavePicker() && !h) return; // cancelled
+  saved = h;
+  store.toast(again && h ? `Saved to ${h.name}.` : 'Saved. Media files are not included in the project file.', 'ok');
+}
+
+/** Ask, then clear the timeline for a new project (the encoder settings are kept). */
+export async function startNewProject() {
+  if (!(await ask('Start a new project? Media, clips and effects will be cleared.'))) return;
+  forgetProjectFile();
+  store.set({ ...newProject(), encoder: $state.snapshot(store.project.encoder), name: 'Untitled' });
+  store.ui.selectedClips = [];
+  store.seek(0);
+  store.render = null;
 }
 
 /** Load a project file. Media already in this session is matched by file name. */
 export async function loadProjectFile(file: File) {
+  forgetProjectFile();
   try {
     const p = migrate(JSON.parse(await file.text()));
     const current = store.project.media;

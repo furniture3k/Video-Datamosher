@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { store } from './lib/store.svelte';
   import { ffmpeg } from './lib/ffmpeg';
-  import { addFiles } from './lib/media';
   import { chaos, mutate } from './engine/presets';
   import { randomSeed } from './engine/rng';
   import TopBar from './components/TopBar.svelte';
@@ -27,6 +26,11 @@
   import RecordDialog from './dialogs/RecordDialog.svelte';
   import LiveMode from './dialogs/LiveMode.svelte';
   import MobileEditor from './mobile/MobileEditor.svelte';
+  import StorageDialog from './dialogs/StorageDialog.svelte';
+  import WhatsNewDialog, { checkWhatsNew } from './dialogs/WhatsNewDialog.svelte';
+  import { crashedSession } from './lib/recovery';
+  import { collectEngineLog } from './lib/report';
+  import { listenForIncoming, openFiles } from './lib/incoming';
   import { saveProjectFile } from './lib/projectio.svelte';
   import { localSet } from './lib/storage';
   import * as edit from './lib/edit';
@@ -44,7 +48,23 @@
 
   onMount(() => {
     ffmpeg.onStatus = (s) => (store.status.engine = s);
-    store.restore();
+    collectEngineLog();
+    // the last session died in the middle of a render or export (usually out of memory):
+    // start with auto-render paused so the same mosh doesn't take the tab down again
+    const crashed = crashedSession();
+    if (crashed) store.ui.autoRender = false;
+    store.restore(!crashed).then(() => {
+      listenForIncoming();
+      const updated = checkWhatsNew();
+      if (crashed)
+        store.toast(
+          `moshpit closed while it was ${crashed.kind === 'export' ? 'exporting' : 'rendering'}, maybe because it ran out of memory. Auto-render is paused: try a lower preview resolution or fewer repeats, or restore a snapshot.`,
+          'error',
+          20000,
+          { label: 'Resume auto-render', run: () => store.setPref('autoRender', true) },
+        );
+      else if (updated && !store.ui.dialog) store.ui.dialog = 'whatsnew';
+    });
     ffmpeg.warmup().catch((e) => (store.status.error = 'Could not load the video engine: ' + e.message));
   });
 
@@ -324,7 +344,7 @@
   function onDrop(e: DragEvent) {
     e.preventDefault();
     dragging = false;
-    if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files);
+    if (e.dataTransfer?.files.length) openFiles([...e.dataTransfer.files]);
   }
 </script>
 
@@ -378,6 +398,8 @@
 {#if store.ui.dialog === 'generate'}<GenerateDialog />{/if}
 {#if store.ui.dialog === 'record'}<RecordDialog />{/if}
 {#if store.ui.dialog === 'live'}<LiveMode />{/if}
+{#if store.ui.dialog === 'storage'}<StorageDialog />{/if}
+{#if store.ui.dialog === 'whatsnew'}<WhatsNewDialog />{/if}
 <Toasts />
 
 <style>
