@@ -868,6 +868,8 @@ await step('incoming: a project file dropped or opened with the app is opened', 
 });
 
 await step('crash recovery: a stale render flag pauses auto-render after a reload', async () => {
+  // a render still running in this tab would keep writing its own flag over the planted one
+  await idle();
   await S(() => localStorage.setItem('moshpit:busy', JSON.stringify({ kind: 'render', at: Date.now() - 60000, tab: 'gone' })));
   await page.reload();
   await page.waitForFunction(() => window.__moshpit?.store);
