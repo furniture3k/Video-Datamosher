@@ -35,7 +35,7 @@ page.on('console', (m) => m.type() === 'error' && !/Failed to load resource|favi
 page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'Test preset' : undefined));
 
 const S = (fn, arg) => page.evaluate(fn, arg);
-const idle = () => page.waitForFunction(() => { const s = window.__moshpit.store; return !s.status.busy && !s.status.pending && !s.status.engine; }, null, { timeout: 180000 });
+const idle = () => page.waitForFunction(() => { const s = window.__moshpit.store; return !s.status.busy && !s.status.pending && !s.status.engine; }, null, { timeout: 180000 }).catch(async (e) => { throw new Error(e.message + " status: " + JSON.stringify(await S(() => window.__moshpit.store.status))); });
 const settle = async () => {
   await page.waitForTimeout(500);
   await idle();
@@ -884,6 +884,9 @@ await step('crash recovery: a stale render flag pauses auto-render after a reloa
   if (!(await S(() => window.__moshpit.store.ui.autoRender))) throw new Error('resume did not turn auto-render back on');
   if (await S(() => localStorage.getItem('moshpit:busy') && JSON.parse(localStorage.getItem('moshpit:busy')).tab === 'gone')) throw new Error('stale flag was not cleared');
   await idle();
+  // after the reload the service worker serves the editor, cross-origin isolated: the
+  // multithreaded engine runs (its worker scripts must be inside the service worker's scope)
+  if (!process.env.COI && !(await S(() => crossOriginIsolated && window.__moshpit.ffmpeg.mt))) throw new Error('the service worker did not give the editor the multithreaded engine');
 });
 
 await step('home: open an example, then come back to the list', async () => {

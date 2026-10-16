@@ -67,7 +67,13 @@ export default defineConfig({
   server: { port: 5173, strictPort: true },
   clearScreen: false,
   optimizeDeps: { exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'] },
-  worker: { format: 'es' },
+  worker: {
+    format: 'es',
+    // Workers' scripts go in app/, inside the service worker's scope: browsers fetch a worker's
+    // script under the service worker of the worker's own address, and only app/'s adds the
+    // cross-origin isolation headers an isolated page needs from its workers.
+    rollupOptions: { output: { entryFileNames: 'app/[name]-[hash].js', chunkFileNames: 'app/[name]-[hash].js' } },
+  },
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 2000,
