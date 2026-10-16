@@ -1,5 +1,6 @@
 <script lang="ts">
   import { reportProblem } from '../lib/report';
+  import { formatSeconds } from '../engine/eta';
   import { untrack, onDestroy, onMount } from 'svelte';
   import { store, type CompareMode } from '../lib/store.svelte';
   import { loadExample, addFiles } from '../lib/media';
@@ -710,7 +711,7 @@
       </div>
     {/if}
     {#if store.status.busy}
-      <div class="stage-note mono">{store.status.stage || 'Working'} {Math.round(store.status.progress * 100)}%</div>
+      <div class="stage-note mono">{store.status.stage || 'Working'} {Math.round(store.status.progress * 100)}%{store.status.eta !== null ? ` · about ${formatSeconds(store.status.eta)} left` : ''}</div>
     {:else if store.ui.compare !== 'off' && mosh}
       <div class="stage-note mono">
         {#if loadingOrig}loading {cmpName}{:else if store.ui.compare === 'split' || store.ui.compare === 'side'}{cmpName} | mosh{:else}{cmpName}{/if}
@@ -805,7 +806,7 @@
                 {/each}
               </div>
             </div>
-            <button class="ghost mitem" class:on={store.ui.scopes} disabled={!hasTimeline} onclick={() => ((pmenu = false), (store.ui.scopes = !store.ui.scopes))}><Icon name="grid" />Scopes<span class="kbd">Shift S</span></button>
+            {#if store.ui.advanced || store.ui.scopes}<button class="ghost mitem" class:on={store.ui.scopes} disabled={!hasTimeline} onclick={() => ((pmenu = false), (store.ui.scopes = !store.ui.scopes))}><Icon name="grid" />Scopes<span class="kbd">Shift S</span></button>{/if}
             <button class="ghost mitem" disabled={!hasTimeline} onclick={() => ((pmenu = false), snapshot())}><Icon name="still" />Save this frame as PNG</button>
             <button class="ghost mitem" disabled={!hasTimeline} onclick={() => ((pmenu = false), store.doRender(true))}><Icon name="render" />Render the mosh now<span class="kbd">Enter</span></button>
           </div>

@@ -201,6 +201,8 @@
         {:else if sheet === 'menu'}
           <div class="menu">
             <button onclick={() => ((sheet = null), goHome())}><Icon name="grid" />All projects</button>
+            <button onclick={() => ((sheet = null), (store.ui.dialog = 'palette'))}><Icon name="list" />Find a command</button>
+            <button onclick={() => ((sheet = null), (store.ui.dialog = 'history'))}><Icon name="history" />History</button>
             <hr />
             <button onclick={() => ((sheet = null), saveProjectFile())}><Icon name="save" />Save project</button>
             <button onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>

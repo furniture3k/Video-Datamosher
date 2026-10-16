@@ -2,8 +2,6 @@
   import { onMount } from 'svelte';
   import { store } from './lib/store.svelte';
   import { ffmpeg } from './lib/ffmpeg';
-  import { chaos, mutate } from './engine/presets';
-  import { randomSeed } from './engine/rng';
   import TopBar from './components/TopBar.svelte';
   import MediaBin from './components/MediaBin.svelte';
   import Player from './components/Player.svelte';
@@ -16,7 +14,6 @@
   import BakeDialog from './dialogs/BakeDialog.svelte';
   import CompoundDialog from './dialogs/CompoundDialog.svelte';
   import CaptionsDialog from './dialogs/CaptionsDialog.svelte';
-  import { takeSnapshot } from './lib/snapshots.svelte';
   import ExportDialog from './dialogs/ExportDialog.svelte';
   import VariationsDialog from './dialogs/VariationsDialog.svelte';
   import HelpDialog from './dialogs/HelpDialog.svelte';
@@ -34,10 +31,11 @@
   import Home from './home/Home.svelte';
   import { refreshThumb } from './lib/projects.svelte';
   import { hasContent, loadIndex } from './lib/projectindex';
-  import { saveProjectFile } from './lib/projectio.svelte';
   import { localGet, localSet } from './lib/storage';
   import Tour from './components/Tour.svelte';
-  import * as edit from './lib/edit';
+  import CommandPalette from './dialogs/CommandPalette.svelte';
+  import HistoryDialog from './dialogs/HistoryDialog.svelte';
+  import { runKey, runChaos, runMutate } from './lib/commands.svelte';
 
   let dragging = $state(false);
   /** the saved project has been loaded (the tour waits for this) */
@@ -97,81 +95,22 @@
     return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
   }
 
-  function runChaos() {
-    if (!store.project.clips.length) return store.toast('Add a clip first.');
-    if (store.project.effects.length) takeSnapshot('Before Randomize', true);
-    store.set(chaos($state.snapshot(store.project) as never, store.totalFrames, randomSeed(), store.ui.chaosIntensity));
-    
-  }
-  function runMutate() {
-    if (!store.project.effects.length) return store.toast('Nothing to nudge yet. Add an effect first.');
-    store.set(mutate($state.snapshot(store.project) as never, store.totalFrames, 0.25));
-  }
 
-  /** J / K / L shuttle: each press of L (or J) doubles the speed in that direction, K stops. */
-  function shuttle(dir: 1 | -1) {
-    const s = store.ui.shuttle;
-    store.ui.shuttle = store.ui.playing && Math.sign(s) === dir ? Math.max(-16, Math.min(16, s * 2)) : dir;
-    store.ui.playing = true;
-  }
 
-  const media = () => store.project.media.find((m) => m.id === store.ui.selectedMedia) ?? null;
-  function sourceEdit(fn: (m: NonNullable<ReturnType<typeof media>>) => void) {
-    const m = media();
-    if (!m) return store.toast('Pick a clip in the Media panel first (click it).');
-    fn(m);
-  }
 
   function onKey(e: KeyboardEvent) {
-    const mod = e.ctrlKey || e.metaKey;
-    const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     // the home screen has no editor: only Escape (closing a dialog) applies
     if (store.ui.home) {
       if (e.key === 'Escape' && store.ui.dialog && !inField(e)) store.ui.dialog = null;
       return;
     }
-    if (mod && k === 'z') {
-      e.preventDefault();
-      if (e.shiftKey) store.redo();
-      else store.undo();
+    const typing = inField(e);
+    // Live mode has its own keys (Escape leaves it); only undo, save and the like reach the editor
+    if (store.ui.dialog === 'live') {
+      if (runKey(e, typing, true)) e.preventDefault();
       return;
     }
-    if (mod && k === 'y') {
-      e.preventDefault();
-      store.redo();
-      return;
-    }
-    if (mod && k === 's') {
-      e.preventDefault();
-      if (e.shiftKey) takeSnapshot().then((s) => store.toast(s ? `Saved ${s.name}.` : 'Nothing to save yet.', s ? 'ok' : 'error'));
-      else saveProjectFile();
-      return;
-    }
-    if (inField(e)) return;
-    if (store.ui.dialog === 'live') return;
-    if (mod && !store.ui.dialog) {
-      if (k === 'c' && edit.copySelected()) e.preventDefault();
-      else if (k === 'v' && edit.paste()) e.preventDefault();
-      else if (k === 'x' && edit.copySelected()) (e.preventDefault(), edit.deleteSelected());
-      else if (k === 'k' || k === 'b' || k === '\\') (e.preventDefault(), edit.splitAtPlayhead());
-      else if (k === 'd' && edit.duplicateSelected()) e.preventDefault();
-      else if (k === 't') (e.preventDefault(), edit.transitionAtPlayhead('melt'));
-      else if (k === 'a') (e.preventDefault(), (store.ui.selectedClips = [...store.project.clips.filter((c) => !edit.lockedTrack(c.track)).map((c) => c.id), ...store.project.texts.map((t) => t.id)]));
-      else if (k === '=' || k === '+') (e.preventDefault(), edit.zoom(1.5));
-      else if (k === '-') (e.preventDefault(), edit.zoom(1 / 1.5));
-      return;
-    }
-    if (e.altKey && !store.ui.dialog) {
-      // e.code: Alt changes e.key on macOS
-      const c = e.code;
-      if (c === 'KeyX') (e.preventDefault(), edit.markIn(null), edit.markOut(null));
-      else if (c === 'KeyI') (e.preventDefault(), edit.markIn(null));
-      else if (c === 'KeyO') (e.preventDefault(), edit.markOut(null));
-      else if (c === 'KeyT') (e.preventDefault(), edit.transitionAtPlayhead('dissolve'));
-      return;
-    }
-    if (mod) return;
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' && !typing && !(e.ctrlKey || e.metaKey || e.altKey)) {
       if (store.ui.trackPick || store.ui.eyedropper || store.ui.paintEffect) ((store.ui.trackPick = null), (store.ui.eyedropper = false), (store.ui.paintEffect = null));
       else if (store.ui.dialog) store.ui.dialog = null;
       else if (store.ui.tool !== 'select') store.ui.tool = 'select';
@@ -184,172 +123,8 @@
       }
       return;
     }
-    if (store.ui.dialog || store.ui.welcome) return;
-    const fps = store.project.encoder.fps;
-    const stepBy = (frames: number) => {
-      store.ui.playing = false;
-      store.seek(Math.round(store.ui.time * fps + frames) / fps);
-    };
-    const sh = e.shiftKey;
-    switch (k) {
-      case ' ':
-        e.preventDefault();
-        store.ui.shuttle = 1;
-        store.ui.playing = !store.ui.playing;
-        break;
-      case 'l':
-        shuttle(1);
-        break;
-      case 'j':
-        shuttle(-1);
-        break;
-      case 'k':
-        if (sh) {
-          // force a clean keyframe here
-          const src = store.playFrame;
-          store.edit((p) => {
-            const m = p.encoder.keyMarkers;
-            const i = m.indexOf(src);
-            if (i >= 0) m.splice(i, 1);
-            else m.push(src);
-          });
-        } else {
-          store.ui.playing = false;
-          store.ui.shuttle = 1;
-        }
-        break;
-      case 'ArrowRight':
-        e.preventDefault();
-        stepBy(sh ? fps : 1);
-        break;
-      case 'ArrowLeft':
-        e.preventDefault();
-        stepBy(sh ? -fps : -1);
-        break;
-      case 'ArrowUp':
-      case 'ArrowDown':
-        e.preventDefault();
-        store.ui.playing = false;
-        if (sh) edit.jumpMarker(k === 'ArrowDown' ? 1 : -1);
-        else edit.jumpEdit(k === 'ArrowDown' ? 1 : -1);
-        break;
-      case 'Home':
-        store.ui.playing = false;
-        store.seek(0);
-        break;
-      case 'End':
-        store.ui.playing = false;
-        store.seek(store.duration);
-        break;
-      case 'i':
-        edit.markIn();
-        break;
-      case 'o':
-        edit.markOut();
-        break;
-      case 'x':
-        edit.markClip();
-        break;
-      case '/':
-        store.ui.loopOn = !store.ui.loopOn;
-        break;
-      case 'a':
-        if (sh) store.ui.dialog = 'addEffect';
-        else store.ui.tool = 'select';
-        break;
-      case 'b':
-        store.ui.tool = 'blade';
-        break;
-      case 't':
-        store.ui.tool = 'trim';
-        break;
-      case 's':
-        if (sh) store.ui.scopes = !store.ui.scopes;
-        else edit.splitAtPlayhead();
-        break;
-      case 'm':
-        edit.toggleMarker();
-        break;
-      case 'd':
-        if (!edit.toggleEnabled() && store.ui.selectedEffect) store.edit(() => (store.selected!.enabled = !store.selected!.enabled));
-        break;
-      case ',':
-      case '<':
-        edit.nudgeSelected(sh ? -10 : -1);
-        break;
-      case '.':
-      case '>':
-        edit.nudgeSelected(sh ? 10 : 1);
-        break;
-      case 'n':
-        store.ui.snap = !store.ui.snap;
-        break;
-      case '=':
-      case '+':
-        edit.zoom(1.5);
-        break;
-      case '-':
-        edit.zoom(1 / 1.5);
-        break;
-      case 'z':
-        if (sh) edit.zoomFit();
-        break;
-      case '\\':
-        edit.zoomFit();
-        break;
-      case 'r':
-        if (sh) edit.freezeAtPlayhead();
-        else runChaos();
-        break;
-      case 'u':
-        runMutate();
-        break;
-      case 'g':
-        // a Frame Sequencer at the playhead
-        if (store.project.clips.length) store.addEffect('sequence');
-        break;
-      case 'q': {
-        // Chaos dial: Q wilder, Shift+Q calmer
-        const v = Math.round(Math.min(2, Math.max(0, (store.project.chaos ?? 1) + (sh ? -0.25 : 0.25))) * 20) / 20;
-        store.edit((p) => (v === 1 ? delete p.chaos : (p.chaos = v)), 'chaos');
-        store.toast(`Chaos ${Math.round(v * 100)}%`);
-        break;
-      }
-      case 'c':
-        store.ui.compare = store.ui.compare === 'off' ? 'split' : 'off';
-        break;
-      case 'e':
-        if (store.project.clips.length || store.project.texts.length) store.ui.dialog = 'export';
-        break;
-      case 'p':
-        store.ui.dialog = 'presets';
-        break;
-      case 'v':
-        if (store.project.clips.length) store.ui.dialog = 'variations';
-        break;
-      case 'F9':
-        e.preventDefault();
-        sourceEdit(edit.insertEdit);
-        break;
-      case 'F10':
-        e.preventDefault();
-        sourceEdit(edit.overwriteEdit);
-        break;
-      case 'F12':
-        e.preventDefault();
-        sourceEdit(sh ? edit.appendEdit : edit.placeOnTop);
-        break;
-      case 'Delete':
-      case 'Backspace':
-        if (!edit.deleteSelected(sh) && store.ui.selectedEffect) store.removeEffect(store.ui.selectedEffect);
-        break;
-      case '?':
-        store.ui.dialog = 'help';
-        break;
-      case 'Enter':
-        store.doRender(true);
-        break;
-    }
+    // everything else is a command (Help → Keyboard shortcuts changes which keys run which)
+    if (runKey(e, typing, !!store.ui.dialog || store.ui.welcome)) e.preventDefault();
   }
   function resizeDown(e: PointerEvent) {
     const y0 = e.clientY;
@@ -424,6 +199,8 @@
 {#if store.ui.dialog === 'live'}<LiveMode />{/if}
 {#if store.ui.dialog === 'storage'}<StorageDialog />{/if}
 {#if store.ui.dialog === 'whatsnew'}<WhatsNewDialog />{/if}
+{#if store.ui.dialog === 'palette' && !store.ui.home}<CommandPalette />{/if}
+{#if store.ui.dialog === 'history'}<HistoryDialog />{/if}
 {#if store.ui.welcome && !store.ui.home}<Tour {phone} />{/if}
 <Toasts />
 

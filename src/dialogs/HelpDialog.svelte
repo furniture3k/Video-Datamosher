@@ -1,7 +1,7 @@
 <script lang="ts">
   import Modal from '../components/Modal.svelte';
   import { store } from '../lib/store.svelte';
-  import { SHORTCUTS as keys } from '../lib/shortcuts';
+  import ShortcutList from '../components/ShortcutList.svelte';
 </script>
 
 <Modal title="Help" wide>
@@ -25,6 +25,7 @@
         <li>Open <b>Presets</b> and try <b>Cut Transitions</b> or <b>Bloom Explosion</b>, or add effects and drag their bars on the Mosh FX lanes. Effects stay on their footage when you re-edit.</li>
         <li><b>Randomize</b> rolls a new stack. Lock settings you like and pin effects to keep them.</li>
         <li>Hover a setting and click the curve icon to automate it with a curve or LFO.</li>
+        <li>Can't find something? <span class="kbd">Ctrl P</span> (<span class="kbd">⌘ P</span> on a Mac) finds any command, effect or preset by name.</li>
         <li><b>Export</b> to MP4, WebM, GIF, PNG frames or the raw broken AVI.</li>
       </ol>
       <h4>Two kinds of effects</h4>
@@ -52,13 +53,7 @@
     </div>
     <div class="col">
       <h4>Keyboard shortcuts</h4>
-      <table>
-        <tbody>
-          {#each keys as [k, d]}
-            <tr><td><span class="kbd">{k}</span></td><td class="small">{d}</td></tr>
-          {/each}
-        </tbody>
-      </table>
+      <ShortcutList />
     </div>
   </div>
   {#snippet footer()}
@@ -97,8 +92,5 @@
   }
   .p {
     color: var(--f-dup);
-  }
-  td {
-    padding: 3px 6px;
   }
 </style>

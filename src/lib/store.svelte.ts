@@ -11,6 +11,7 @@ import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
 import { busy } from './recovery';
+import { Eta, overallProgress } from '../engine/eta';
 import { saveProject, loadProject, migrateAutosave, currentProjectId, setCurrentProjectId, newProjectId, hasContent, loadIndex } from './projectindex';
 
 /** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
@@ -88,7 +89,7 @@ class Store {
     /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
     // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
     previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
@@ -101,7 +102,9 @@ class Store {
     /** vibrate on phones when clips are picked up, trimmed and cut */
     haptics: localGet('haptics', true),
   });
-  status = $state({ busy: false, pending: false, stage: '', progress: 0, error: '', engine: '' });
+  /** `overall`: how far through the whole render (stages combined); `eta`: seconds it still needs (null when unknown) */
+  status = $state({ busy: false, pending: false, stage: '', progress: 0, error: '', engine: '', overall: 0, eta: null as number | null });
+  private eta = new Eta();
   toasts = $state<Toast[]>([]);
   private undoStack: string[] = [];
   private redoStack: string[] = [];
@@ -343,6 +346,17 @@ class Store {
     this.changed();
   }
 
+  /** The versions undo and redo go through (as saved JSON), oldest first; for the History panel. */
+  historyStates(): { past: string[]; current: string; future: string[] } {
+    return { past: [...this.undoStack], current: this.last, future: [...this.redoStack].reverse() };
+  }
+
+  /** Undo (negative) or redo (positive) several steps at once. */
+  jumpHistory(steps: number) {
+    for (let i = 0; i < -steps; i++) this.undo();
+    for (let i = 0; i < steps; i++) this.redo();
+  }
+
   // ---------- effects ----------
   /**
    * Where a new effect goes: over the marked In–Out range, else over the selected clip, else (for
@@ -435,9 +449,14 @@ class Store {
     const signal = (this.renderSignal = { cancelled: false });
     const snapshot = $state.snapshot(this.project) as Project;
     try {
+      this.eta.reset();
+      Object.assign(this.status, { stage: '', progress: 0, overall: 0, eta: null });
       const r = await renderPreview(snapshot, this.previewWidth, (stage, p) => {
         this.status.stage = stage;
         this.status.progress = p;
+        // only forwards (a stage can report again after a later one)
+        this.status.overall = Math.max(this.status.overall, overallProgress(stage, p));
+        this.status.eta = this.eta.update('render', this.status.overall);
       }, signal);
       this.render = r;
       this.renderKey = key;
@@ -454,6 +473,7 @@ class Store {
       done();
       this.status.busy = false;
       this.status.stage = '';
+      this.status.eta = null;
       this.renderSignal = null;
       if (this.renderQueued) {
         this.renderQueued = false;

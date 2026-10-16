@@ -196,6 +196,8 @@ flowchart LR
 
 ## Keyboard
 
+<kbd>Ctrl</kbd> <kbd>P</kbd> (<kbd>⌘</kbd> <kbd>P</kbd> on a Mac) finds any command, effect or preset by name. Every shortcut can be changed in **Help**, which also prints a cheat sheet. The defaults:
+
 | Key | | Key | |
 |---|---|---|---|
 | <kbd>Space</kbd> | Play / pause | <kbd>J</kbd> <kbd>K</kbd> <kbd>L</kbd> | Backwards / stop / forwards (again: faster) |

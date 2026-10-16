@@ -4,6 +4,8 @@
   import { hasSavePicker } from '../lib/storage';
   import { reportProblem } from '../lib/report';
   import { goHome } from '../lib/projects.svelte';
+  import { keysOf, isMac } from '../lib/keymap';
+  import { keyLabel } from '../lib/commandlist';
   import { loadExample } from '../lib/media';
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
@@ -88,6 +90,9 @@
     <button class="icon ghost" onclick={(e) => (e.stopPropagation(), (menuOpen = !menuOpen))} aria-label="More" title="More"><Icon name="more" /></button>
     {#if menuOpen}
       <div class="menu" role="menu">
+        <button class="ghost" onclick={() => (store.ui.dialog = 'palette')}><Icon name="list" />Find a command…<span class="kbd">{keyLabel(keysOf('palette')[0] ?? '', isMac)}</span></button>
+        <button class="ghost" onclick={() => (store.ui.dialog = 'history')}><Icon name="history" />History…</button>
+        <hr />
         <button class="ghost" onclick={() => saveProjectFile()}><Icon name="save" />Save project<span class="kbd">Ctrl S</span></button>
         {#if hasSavePicker()}<button class="ghost" onclick={() => saveProjectFile(true)}><Icon name="save" />Save project as…</button>{/if}
         <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
