@@ -803,7 +803,7 @@
                 {/each}
               </div>
             </div>
-            <button class="ghost mitem" class:on={store.ui.scopes} disabled={!hasTimeline} onclick={() => (store.ui.scopes = !store.ui.scopes)}><Icon name="grid" />Scopes<span class="kbd">Shift S</span></button>
+            <button class="ghost mitem" class:on={store.ui.scopes} disabled={!hasTimeline} onclick={() => ((pmenu = false), (store.ui.scopes = !store.ui.scopes))}><Icon name="grid" />Scopes<span class="kbd">Shift S</span></button>
             <button class="ghost mitem" disabled={!hasTimeline} onclick={() => ((pmenu = false), snapshot())}><Icon name="still" />Save this frame as PNG</button>
             <button class="ghost mitem" disabled={!hasTimeline} onclick={() => ((pmenu = false), store.doRender(true))}><Icon name="render" />Render the mosh now<span class="kbd">Enter</span></button>
           </div>

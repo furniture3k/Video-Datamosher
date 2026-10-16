@@ -476,11 +476,16 @@ await step('NLE: keyframes, speed ramp, scopes', async () => {
   if (Math.abs((await clipLength()) - len0) < 0.05) throw new Error('ramp did not change the clip length');
   await settle();
   // scopes
-  // (the keyboard shortcut is Shift+S; focus is still in the inspector here, so use the button)
-  await page.getByRole('button', { name: 'Scopes', exact: true }).click();
+  // (the keyboard shortcut is Shift+S; focus is still in the inspector here, so use the player's menu)
+  const scopes = async () => {
+    await page.getByRole('button', { name: 'More player options' }).click();
+    await page.locator('.pmenu .mitem', { hasText: 'Scopes' }).click();
+  };
+  await scopes();
   await page.locator('.scopes canvas').waitFor();
   for (const k of ['Parade', 'Vector', 'Histogram', 'Waveform']) await page.locator('.scopes button', { hasText: k }).click();
-  await page.getByRole('button', { name: 'Scopes', exact: true }).click();
+  await scopes();
+  if (await page.locator('.scopes canvas').count()) throw new Error('scopes did not close');
 });
 
 await step('NLE: adjustment layer, chroma key with eyedropper, LUT import', async () => {
