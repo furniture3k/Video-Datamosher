@@ -16,8 +16,7 @@
   "bundle": {
     "externalBin": [],
     "resources": {
-      "../LICENSE": "LICENSE.txt",
-      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+      "binaries/FFMPEG-NOTICE.txt": null
     }
   }
 }
