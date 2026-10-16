@@ -11,15 +11,22 @@
   const focusables = () => [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
   $effect(() => {
     const before = document.activeElement as HTMLElement | null;
-    // the first thing to type in or press, past the Close button
-    const all = focusables();
-    const first = all.find((el) => el.matches('input, select, textarea')) ?? all.find((el) => !el.closest('.head')) ?? all[0];
-    if (!box.contains(document.activeElement)) (first ?? box).focus({ preventScroll: true });
+    // a box to type in (a search), else the dialog itself: never a slider or a list that the
+    // arrow keys or Enter would change by accident
+    const text = focusables().find((el) => el.matches('input:not([type]), input[type=text], input[type=search], textarea:not([readonly])'));
+    if (!box.contains(document.activeElement)) (text ?? box).focus({ preventScroll: true });
     return () => {
       if (before && document.contains(before)) before.focus({ preventScroll: true });
     };
   });
   function trap(e: KeyboardEvent) {
+    // Escape closes the dialog wherever the focus is in it (even in a box that takes typing)
+    if (e.key === 'Escape' && !e.defaultPrevented) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+      return;
+    }
     if (e.key !== 'Tab') return;
     const all = focusables();
     if (!all.length) return;
