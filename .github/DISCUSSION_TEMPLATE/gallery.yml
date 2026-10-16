@@ -1,0 +1,32 @@
+title: "My mosh: "
+labels: [gallery]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share something you made with moshpit. Once it's been looked at, it's added to the gallery on the website with your recipe, so anyone can open it and put the same mosh on their own footage.
+  - type: textarea
+    id: video
+    attributes:
+      label: The video
+      description: Drag your export in here (a short MP4 or GIF works best, under 10 MB).
+    validations:
+      required: true
+  - type: textarea
+    id: recipe
+    attributes:
+      label: Recipe
+      description: "In moshpit: ⋯ → Share code, then paste it here. Exports from moshpit fill this in for you when you use Submit to the gallery."
+      render: text
+  - type: input
+    id: credit
+    attributes:
+      label: Credit
+      description: The name to show under it (your GitHub name if you leave it empty).
+  - type: checkboxes
+    id: rights
+    attributes:
+      label: The footage
+      options:
+        - label: I made this, or have the right to share the footage in it.
+          required: true

@@ -1,0 +1,74 @@
+# Adds a gallery post (a GitHub Discussion in the "Gallery" category) to the website's gallery:
+# label the discussion "gallery-approved", or run this by hand with its number. It opens a pull
+# request that adds the post to public/site/gallery.json; merging it publishes it.
+name: Add to the gallery
+
+on:
+  discussion:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      discussion:
+        description: Discussion number
+        required: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  discussions: read
+
+jobs:
+  add:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'gallery-approved'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: post
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const number = Number(context.payload.discussion?.number ?? context.payload.inputs?.discussion);
+            const { repository } = await github.graphql(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) { discussion(number: $number) { title body url author { login } category { slug } } }
+              }`,
+              { owner: context.repo.owner, repo: context.repo.repo, number },
+            );
+            const d = repository.discussion;
+            if (!d) throw new Error(`Discussion #${number} not found`);
+            // the form's answers come back as "### Label" sections
+            const section = (label) => {
+              const m = new RegExp(`###\\s*${label}\\s*\\n([\\s\\S]*?)(?=\\n###\\s|$)`, 'i').exec(d.body);
+              return m ? m[1].trim() : '';
+            };
+            const videoText = section('The video');
+            const media = (/(https:\/\/github\.com\/user-attachments\/assets\/[\w-]+|https:\/\/[^\s)"']+\.(?:mp4|webm|gif|mov))/i.exec(videoText) || [])[1];
+            if (!media) throw new Error('No video found in the post');
+            const recipe = (/MOSH:[\w-]+/.exec(section('Recipe')) || [])[0];
+            const credit = section('Credit').replace(/^_No response_$/, '') || d.author.login;
+            const title = d.title.replace(/^my mosh:\s*/i, '').trim() || 'Untitled mosh';
+            const fs = require('fs');
+            const file = 'public/site/gallery.json';
+            const list = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (list.some((g) => g.link === d.url)) throw new Error('Already in the gallery');
+            // newest posts first, the built-in examples last
+            list.unshift({ title, author: credit, media, ...(recipe ? { recipe } : {}), link: d.url });
+            fs.writeFileSync(file, JSON.stringify(list, null, 2) + '\n');
+            core.setOutput('number', String(number));
+            core.setOutput('title', title);
+            core.setOutput('url', d.url);
+      - name: Open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMBER: ${{ steps.post.outputs.number }}
+          TITLE: ${{ steps.post.outputs.title }}
+          URL: ${{ steps.post.outputs.url }}
+        run: |
+          branch="gallery/$NUMBER"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add public/site/gallery.json
+          git commit -m "Gallery: $TITLE"
+          git push -u origin "$branch"
+          gh pr create --title "Gallery: $TITLE" --body "Adds $URL to the gallery on the website." --base main --head "$branch"

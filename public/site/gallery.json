@@ -1,0 +1,30 @@
+[
+  {
+    "title": "Test pattern melt",
+    "author": "moshpit",
+    "media": "./app/examples/melt.webm",
+    "poster": "./app/examples/melt.jpg",
+    "recipe": "MOSH:PVExbsMwDPzLzRycxEgDbUHQoUOWLh2KDopMO0JkSxElu2mQvxdyEI_k8Y684x0j1IqQoNZ1ReDBQN1hfMMGCn3grgZhsk06Q63Wu4qgJbBJUNA5eRDaIIVNuGbtbLpB1YTOB6htVRHE8MCHnKBa7YQJpzbqngWqIvQ-WT-8S5Hj8Ccg9Pyph46f8KmBgtg-OC7QWC8q18BuKVJk56wstelD4ekGhAvf9umQk0ClmHluHHW8cBSo7x9CiDxanr6eHutd9SDM9u_oMoscx4Xa8Ml5c1n2tHr08WNIHF8Ttht85PcYfVxYcvbT3r2ufRB0LuK9bxgKrXfOTyCY6EVaXZpP3uhd7nn-z8kmE7OUH2wJjZ8G0XMoBeycTeY8BxZ55Ch8OOfhUhJ-EIS5gVptNm-E9rdYfvwD"
+  },
+  {
+    "title": "Vortex",
+    "author": "moshpit",
+    "media": "./app/examples/vortex.webm",
+    "poster": "./app/examples/vortex.jpg",
+    "recipe": "MOSH:PVLLbuMwDPyXOQsL57F56FYEPeyhl70Ui6IHRaYdIbKlkJLTNMi_L2SnvokiZzgc8o4BeqGQoBfLSoF6C32HDTVZaHSR2jUUrq5Op1KyqxSMRLIJGianAIUmCvRyrXDJxrt0g14rtCFCb6pKQSz1dMgJujFeSOHYsOlIoCuFLiQX-lcpdBS_BQod_TV9S1P6WENDXBc9ldSwnlkukfwcJCbvncyx7WLBmRoKZ7q9pENOAp040_jxZvhMLNAfnwqRaXB0fZ9mXO-qh8I4_h1tJpG3YYbWdPTBnuc-jRkC_-kT8U-Fa_vA9MoceEbJKVxf_I_ah4LJhbwLNUGjCd6HKxQsB5HGlM8JNwSfOxr3c3TJcpayg41CHa69mNGUkmy9S_Y0GsY0EAsdTrk_F4cfCkJUQy9Wq61C8wX9cYcrri6tbXrTFovSLRYlA9kU-N1wRLkEc_QF-Zwh-DCPLclwGvtRX48Spibbar_cr35v1wrRsOmkjFl0uuYGvVTgkEwi6H25i6uJM2PNrpkYx9e_8ZkyH7On3k7HcMmmT-57CtKJSU7B19DVr5XCcy9YbFDUGC6G7BSkC6Gs9dmHSVydjS-oRQmbQjPdmvuCXozbSQH6_lAonOORPD4f_wE"
+  },
+  {
+    "title": "Datastorm of Life",
+    "author": "moshpit",
+    "media": "./app/examples/glitch.webm",
+    "poster": "./app/examples/glitch.jpg",
+    "recipe": "MOSH:nVRNb9swDP0vPAuF7Th2rFsRBNiwFQO2Qw9FD7JNO1pkSdWH3SzIfx8kO-6GDduwiyBSIvUeH8ULjEBTAg5oWuwIoGyAXqBRLTZAYdDY50Bg4q07Ak2zXUKAWY2NAwrMOwUEOm2BZjmBF88Ed2egOYFe6dlpG5S49w5ox4RFAnVn2IAWaEJgUI4rebAhG-pvFggM-JnJHufjugUKlg9aYDga8zXLi0axGs6gENyudjPoEMdaIHDC873be2eBOuMxOh6YOaGxQJ-eCWiDI8fpcaaY75Irgcj-Ar1Hax_GNbTFWqjmtL7TsVGZ99Khud3gvVQGD8Yos0bZo5ruxQ3tlQDzIfmgWgQKnRJCTUCgMcrajgXnHDcq4QeM8tTcNcbbIEFBoFWTtCwWJRz2grvmGAtmcERjcX_08hQqfCVgEVug6WZTEuhegT5dgIeqdludduK1AgLurAOSExcCQguwWoSYBb0SaiVsHTMuvoSyjY_P6TfbNEt2WbYloJlhg_2BoDaqZjWPnUF-smhyVxIIkM9As4BeC9bMMTiGknj3yGWrJqBZrJtTQC9XAkGFKN-VLHS--l1SnszwRscefdfFvvkXRndZkm12SbVd14VjcldWZZFWSb6s5Y10lZRFlVbh5hvpacFbEGCD8jLmLkLXof6A56Up_kJGTGK7yeN3WMgsGv-fOlW5LYs03xW_Ucd4CW9Qs18ECl-ZuXCTiYmdA6QamfskgcbNzXGYVUxn650SoSsIOGZ6jLMi9pbx8iPKPny0MBsM9lzJLyvs2T4s4LVRLg6aMEVYh38s3fP1Ow"
+  },
+  {
+    "title": "Gradient bloom",
+    "author": "moshpit",
+    "media": "./app/examples/bloom.webm",
+    "poster": "./app/examples/bloom.jpg",
+    "recipe": "MOSH:jVPLbtswEPyXORMBZSu2y1sR5NBDUKCXHIIcKGkls6ZIhlzJcQ3_e0HaUQMUBXrkPmZ3ZodnzFCVAENVKylAroU6o_UdtVAYAw01BI6m430u2UkBnQK1DAU9sYdAHxLUqhZ4m7Q1fIKqBQYfoDZSCqSWHD1MDNVrm0ig6aMeKUFJgdGz8e4xZTgKvxIERvqh3UDXdNNBIZkxWMqpuV5Q3gLZ5cGRrDVpebdjyH26g8CBTl_5YeIExXGiEnjS8UAxQb28CoRIs6Hj85VjvZMXgUL_jGGilJ7mpbWjxvr2sMzp9ezjN8cUPyrM4Hykxxh9XLrS3h-_2o9tLwJ6yuCj7wgKvbfWHyHQRp9Sr3Pw2jd7O41U7tMYbuOU8g02Ap0_uqSLKDk5WMPtvggWaaaY6GE_uUNW-CKQiDqoar3eCvTvUC9nmKwqv6-qWW7zefkU8iYHYy2yB3Rjc89te2_9QjixjlwmkevK8Bv8l63cSrlZCwQd9Zg-EdQFNUTf6MZcDSLv7gXyqieoVd46WN3m2nyLLMXEz8Z1_gi1KnqxhzpfBLL65WwXcaMxOhPX3Hd_aDTW-_E_edytb0zk3faDy_p-t6k39a76zIV1HCi7NHH0bqDEEGhI83eXR5LmdAs8XmlVAiYbY9Y2f5y_BKgELLkhWw79VfhIoeCUz_TTcLGVFGAzGjeUOsY_5Hi9_AY"
+  }
+]

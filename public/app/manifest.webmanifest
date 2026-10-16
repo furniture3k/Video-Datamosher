@@ -2,7 +2,7 @@
   "name": "moshpit",
   "short_name": "moshpit",
   "description": "Video editor with a datamosher built in. Everything runs on your device.",
-  "id": "./",
+  "id": "../",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

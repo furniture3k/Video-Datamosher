@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>moshpit</title>
+    <meta name="description" content="A video editor with a datamosher built in. Melt, bloom and glitch your clips in the browser. Free, open source, nothing uploaded." />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="moshpit" />
+    <meta property="og:title" content="moshpit: a video editor with a datamosher built in" />
+    <meta property="og:description" content="Melt, bloom and glitch your clips in the browser. Free, open source, nothing uploaded." />
+    <meta property="og:url" content="https://furniture3k.github.io/Video-Datamosher/app/" />
+    <meta property="og:image" content="https://furniture3k.github.io/Video-Datamosher/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The moshpit logo next to a frame of colour bars melting into each other" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23121214'/><path transform='translate(16 16) scale(0.95) translate(-16 -16)' d='M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z' fill='%23c8f031' fill-rule='evenodd'/></svg>" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0b0b0d" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="moshpit" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  </head>
+  <body style="margin:0;background:#0b0b0d;color:#ededee;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
+    <div id="app">
+      <style>
+        /* splash: the logo melts and pulls itself back together while the app loads */
+        #boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; text-align: center; animation: boot-in 0.4s ease-out both; }
+        #boot .mark { display: flex; align-items: center; gap: 12px; font: 750 26px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: -0.03em; }
+        #boot .logo { filter: url(#boot-melt); overflow: visible; }
+        #boot .ghost { animation: boot-drift 1.6s ease-in-out infinite; opacity: 0.35; }
+        #boot .bar { width: 120px; height: 2px; background: #1e1e22; border-radius: 1px; overflow: hidden; }
+        #boot .bar i { display: block; width: 40%; height: 100%; background: #c8f031; animation: boot-scan 1.1s ease-in-out infinite; }
+        #boot-msg { color: #6d6d76; font-size: 12px; min-height: 1.4em; }
+        @keyframes boot-in { from { opacity: 0; } }
+        @keyframes boot-drift { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(3px, 2px); } }
+        @keyframes boot-scan { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+        @media (prefers-reduced-motion: reduce) {
+          #boot .logo { filter: none; }
+          #boot .ghost, #boot .bar i { animation: none; }
+        }
+      </style>
+      <div id="boot" role="status" aria-label="Loading moshpit">
+        <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+          <filter id="boot-melt" x="-20%" y="-20%" width="140%" height="160%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.02 0.18" numOctaves="1" seed="3" result="n" />
+            <feDisplacementMap in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G">
+              <animate attributeName="scale" values="0;0;14;4;0" keyTimes="0;0.35;0.55;0.8;1" dur="2.4s" repeatCount="indefinite" />
+            </feDisplacementMap>
+          </filter>
+        </svg>
+        <div class="mark">
+          <svg class="logo" width="36" height="38" viewBox="4 3 24 26" aria-hidden="true"><path class="ghost" d="M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z" fill="#e46ad0" fill-rule="evenodd" /><path d="M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z" fill="#c8f031" fill-rule="evenodd" /></svg>moshpit
+        </div>
+        <div class="bar" aria-hidden="true"><i></i></div>
+        <div id="boot-msg">loading</div>
+      </div>
+    </div>
+    <noscript><p style="padding:16px;text-align:center">MOSHPIT needs JavaScript enabled.</p></noscript>
+    <script>
+      // Shown before the app loads, so problems are visible even on phones without devtools.
+      (function () {
+        var shown = false;
+        function show(title, detail) {
+          if (shown) return;
+          shown = true;
+          var box = document.createElement('div');
+          box.id = 'boot-error';
+          box.setAttribute('style', 'position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;background:#1b1b1f;border:1px solid #323238;border-left:3px solid #ff5d4f;color:#ededee;border-radius:8px;padding:12px 14px;font:13px/1.45 system-ui,-apple-system,sans-serif;white-space:pre-wrap;max-height:45vh;overflow:auto');
+          box.textContent = title + (detail ? '\n\n' + detail : '');
+          var close = document.createElement('button');
+          close.textContent = 'Dismiss';
+          close.setAttribute('style', 'display:block;margin-top:8px;background:#25252a;color:#ededee;border:1px solid #323238;border-radius:6px;padding:6px 12px;font:inherit');
+          close.onclick = function () { box.remove(); shown = false; };
+          box.appendChild(close);
+          (document.body || document.documentElement).appendChild(box);
+        }
+        window.addEventListener('error', function (e) {
+          if (window.__moshpitMounted) return;
+          show('MOSHPIT could not start: ' + (e.message || 'script error'), (e.filename || '') + (e.lineno ? ':' + e.lineno : ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          if (window.__moshpitMounted) return;
+          show('MOSHPIT could not start: ' + ((e.reason && e.reason.message) || e.reason));
+        });
+        setTimeout(function () {
+          if (window.__moshpitMounted) return;
+          var m = document.getElementById('boot-msg');
+          if (m) m.innerHTML = 'This is taking unusually long.<br>Try reloading. MOSHPIT needs a recent browser (Safari 15.4+, Chrome, Firefox or Edge).' +
+            (location.hostname.endsWith('github.io') ? '<br><br><small>Site owner: if this never loads, set <b>Settings → Pages → Source</b> to <b>GitHub Actions</b>.</small>' : '');
+        }, 12000);
+      })();
+    </script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

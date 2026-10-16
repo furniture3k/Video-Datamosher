@@ -5,6 +5,7 @@ import { loadProjectFile } from './projectio.svelte';
 import { store } from './store.svelte';
 import { isDesktop } from './platform';
 import { startProject } from './projects.svelte';
+import { openRecipe } from './starters.svelte';
 
 const isProject = (f: File) => /\.json$/i.test(f.name) || f.type === 'application/json';
 
@@ -28,6 +29,14 @@ type LaunchWindow = { launchQueue?: { setConsumer(fn: (p: LaunchParams) => void)
 
 /** Start listening for files from the system (call once at start-up, after the project is restored). */
 export async function listenForIncoming() {
+  // a recipe link (the gallery on the website): app/#recipe=MOSH:…
+  const m = /^#recipe=(.+)$/.exec(location.hash);
+  if (m) {
+    history.replaceState(null, '', location.pathname + location.search);
+    const code = decodeURIComponent(m[1]);
+    openRecipe(code).catch((e) => store.toast('That recipe link is broken: ' + ((e as Error)?.message ?? e), 'error', 6000));
+  }
+
   // installed web app: "Open with moshpit" and double-clicked files (file_handlers in the manifest)
   (window as unknown as LaunchWindow).launchQueue?.setConsumer(async (p) => {
     if (!p.files?.length) return;

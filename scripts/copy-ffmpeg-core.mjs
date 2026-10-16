@@ -2,11 +2,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 const src = path.resolve('node_modules/@ffmpeg/core/dist/esm');
-const dst = path.resolve('public/ffmpeg');
+const dst = path.resolve('public/app/ffmpeg');
 fs.mkdirSync(dst, { recursive: true });
 for (const f of ['ffmpeg-core.js', 'ffmpeg-core.wasm']) {
   const a = path.join(src, f);
   const b = path.join(dst, f);
   if (!fs.existsSync(b) || fs.statSync(a).size !== fs.statSync(b).size) fs.copyFileSync(a, b);
 }
-console.log('ffmpeg core ready in public/ffmpeg');
+console.log('ffmpeg core ready in public/app/ffmpeg');

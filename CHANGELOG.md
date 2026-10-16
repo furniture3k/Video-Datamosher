@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.7.0
+
+- **A website.** The site's address now opens a landing page: what moshpit does, a before/after
+  slider of the same clips moshed and not, a gallery, downloads and questions. The editor moved to
+  `/app/`. Installed apps and old links keep opening the editor, and your projects are still there.
+- **The right download for your computer.** The landing page offers the installer for your system
+  (Apple Silicon or Intel on a Mac), with every file listed per system.
+- **Docs**: getting started, what datamoshing is, every effect and its settings, transitions,
+  exporting and sharing, keyboard shortcuts, the desktop app and questions. The effects,
+  transitions and shortcuts pages are made from the app itself, so they're always current.
+- **Gallery**: moshes made with moshpit, each with an **Open this recipe** link that opens the same
+  mosh in the editor. **Share it in the gallery** after an export starts a post with your recipe
+  filled in.
+
 ## 1.6.0
 
 - **A home screen.** moshpit opens on your projects, templates and examples instead of dropping you

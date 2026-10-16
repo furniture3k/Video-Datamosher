@@ -83,11 +83,44 @@ separate program. To meet the GPL for it, `scripts/fetch-ffmpeg.mjs` writes `FFM
 
 ## Signing (not set up yet)
 
-- **macOS:** builds are ad-hoc signed, so people have to right-click → Open the first time.
-  An Apple Developer ID ($99/year) plus notarisation removes that: set `APPLE_CERTIFICATE`,
-  `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_PASSWORD` and
-  `APPLE_TEAM_ID` as repository secrets and pass them to `tauri-action`.
-- **Windows:** a code-signing certificate avoids SmartScreen's "unknown publisher" warning.
+The installers aren't signed, so macOS and Windows warn the first time they're opened. Signing costs
+money or needs an application, so it's left for later; everything is ready to switch on. The
+commented-out lines in `.github/workflows/desktop.yml` (the `tauri-action` step) are where the
+secrets go.
+
+### macOS: Developer ID and notarisation
+
+Needs an Apple Developer account ($99/year).
+
+1. In Xcode or the developer site, create a **Developer ID Application** certificate and export it
+   (with its private key) as a `.p12` file with a password.
+2. Make an app-specific password for your Apple ID at appleid.apple.com.
+3. Add these repository secrets (Settings → Secrets and variables → Actions):
+   - `APPLE_CERTIFICATE`: the `.p12` file, base64-encoded (`base64 -i cert.p12 | pbcopy`)
+   - `APPLE_CERTIFICATE_PASSWORD`: the `.p12` password
+   - `APPLE_SIGNING_IDENTITY`: e.g. `Developer ID Application: Your Name (TEAMID)`
+   - `APPLE_ID`, `APPLE_PASSWORD` (the app-specific one) and `APPLE_TEAM_ID`
+4. Uncomment the `APPLE_*` lines in `desktop.yml` and remove `"signingIdentity": "-"` from the
+   `macOS` section of `src-tauri/tauri.conf.json`. Tauri signs and notarises during the build.
+
+### Windows: code signing
+
+Options, cheapest first:
+
+- **SignPath Foundation**: free code signing for open-source projects. Apply at signpath.org; once
+  accepted, their GitHub Action signs the installers from CI.
+- **Azure Trusted Signing**: about $10/month; works with a `signCommand` in `tauri.conf.json`
+  (see Tauri's Windows signing guide).
+- A **certificate** from a certificate authority (about $200+/year), as a `.pfx`:
+  `WINDOWS_CERTIFICATE` (base64) and `WINDOWS_CERTIFICATE_PASSWORD` secrets, imported in the
+  workflow before `tauri-action`, with `certificateThumbprint` set under `bundle.windows`.
+
+SmartScreen still warns about a new certificate until enough people have installed the app.
+
+### Store releases (later)
+
+The App Store and Microsoft Store need the same certificates plus their own developer accounts
+(Apple $99/year; Microsoft has a one-off fee). Google Play (for an Android build) is a one-off $25.
 
 ## Next steps
 

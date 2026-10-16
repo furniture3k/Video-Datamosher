@@ -2,9 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>moshpit</title>
-    <meta name="description" content="A video editor with a datamosher built in. Melt, bloom and glitch your clips in the browser. Free, open source, nothing uploaded." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>moshpit: datamosh videos in your browser</title>
+    <script>
+      // The installed app (and old links to the editor) open the editor, not this page.
+      if (matchMedia('(display-mode: standalone)').matches || /[?&](source=pwa|shared=1)\b/.test(location.search)) location.replace('app/' + location.search + location.hash);
+    </script>
+    <meta name="description" content="moshpit is a free, open-source video editor with a datamosher built in. Melt, bloom and glitch your clips in the browser or the desktop app. Nothing is uploaded." />
+    <link rel="canonical" href="https://furniture3k.github.io/Video-Datamosher/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="moshpit" />
     <meta property="og:title" content="moshpit: a video editor with a datamosher built in" />
@@ -15,87 +20,127 @@
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="The moshpit logo next to a frame of colour bars melting into each other" />
     <meta name="twitter:card" content="summary_large_image" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23121214'/><path transform='translate(16 16) scale(0.95) translate(-16 -16)' d='M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z' fill='%23c8f031' fill-rule='evenodd'/></svg>" />
-    <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#0b0b0d" />
-    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="moshpit" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  </head>
-  <body style="margin:0;background:#0b0b0d;color:#ededee;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif">
-    <div id="app">
-      <style>
-        /* splash: the logo melts and pulls itself back together while the app loads */
-        #boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 16px; text-align: center; animation: boot-in 0.4s ease-out both; }
-        #boot .mark { display: flex; align-items: center; gap: 12px; font: 750 26px/1 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; letter-spacing: -0.03em; }
-        #boot .logo { filter: url(#boot-melt); overflow: visible; }
-        #boot .ghost { animation: boot-drift 1.6s ease-in-out infinite; opacity: 0.35; }
-        #boot .bar { width: 120px; height: 2px; background: #1e1e22; border-radius: 1px; overflow: hidden; }
-        #boot .bar i { display: block; width: 40%; height: 100%; background: #c8f031; animation: boot-scan 1.1s ease-in-out infinite; }
-        #boot-msg { color: #6d6d76; font-size: 12px; min-height: 1.4em; }
-        @keyframes boot-in { from { opacity: 0; } }
-        @keyframes boot-drift { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(3px, 2px); } }
-        @keyframes boot-scan { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
-        @media (prefers-reduced-motion: reduce) {
-          #boot .logo { filter: none; }
-          #boot .ghost, #boot .bar i { animation: none; }
-        }
-      </style>
-      <div id="boot" role="status" aria-label="Loading moshpit">
-        <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-          <filter id="boot-melt" x="-20%" y="-20%" width="140%" height="160%">
-            <feTurbulence type="fractalNoise" baseFrequency="0.02 0.18" numOctaves="1" seed="3" result="n" />
-            <feDisplacementMap in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G">
-              <animate attributeName="scale" values="0;0;14;4;0" keyTimes="0;0.35;0.55;0.8;1" dur="2.4s" repeatCount="indefinite" />
-            </feDisplacementMap>
-          </filter>
-        </svg>
-        <div class="mark">
-          <svg class="logo" width="36" height="38" viewBox="4 3 24 26" aria-hidden="true"><path class="ghost" d="M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z" fill="#e46ad0" fill-rule="evenodd" /><path d="M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z" fill="#c8f031" fill-rule="evenodd" /></svg>moshpit
-        </div>
-        <div class="bar" aria-hidden="true"><i></i></div>
-        <div id="boot-msg">loading</div>
-      </div>
-    </div>
-    <noscript><p style="padding:16px;text-align:center">MOSHPIT needs JavaScript enabled.</p></noscript>
-    <script>
-      // Shown before the app loads, so problems are visible even on phones without devtools.
-      (function () {
-        var shown = false;
-        function show(title, detail) {
-          if (shown) return;
-          shown = true;
-          var box = document.createElement('div');
-          box.id = 'boot-error';
-          box.setAttribute('style', 'position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;background:#1b1b1f;border:1px solid #323238;border-left:3px solid #ff5d4f;color:#ededee;border-radius:8px;padding:12px 14px;font:13px/1.45 system-ui,-apple-system,sans-serif;white-space:pre-wrap;max-height:45vh;overflow:auto');
-          box.textContent = title + (detail ? '\n\n' + detail : '');
-          var close = document.createElement('button');
-          close.textContent = 'Dismiss';
-          close.setAttribute('style', 'display:block;margin-top:8px;background:#25252a;color:#ededee;border:1px solid #323238;border-radius:6px;padding:6px 12px;font:inherit');
-          close.onclick = function () { box.remove(); shown = false; };
-          box.appendChild(close);
-          (document.body || document.documentElement).appendChild(box);
-        }
-        window.addEventListener('error', function (e) {
-          if (window.__moshpitMounted) return;
-          show('MOSHPIT could not start: ' + (e.message || 'script error'), (e.filename || '') + (e.lineno ? ':' + e.lineno : ''));
-        });
-        window.addEventListener('unhandledrejection', function (e) {
-          if (window.__moshpitMounted) return;
-          show('MOSHPIT could not start: ' + ((e.reason && e.reason.message) || e.reason));
-        });
-        setTimeout(function () {
-          if (window.__moshpitMounted) return;
-          var m = document.getElementById('boot-msg');
-          if (m) m.innerHTML = 'This is taking unusually long.<br>Try reloading. MOSHPIT needs a recent browser (Safari 15.4+, Chrome, Firefox or Edge).' +
-            (location.hostname.endsWith('github.io') ? '<br><br><small>Site owner: if this never loads, set <b>Settings → Pages → Source</b> to <b>GitHub Actions</b>.</small>' : '');
-        }, 12000);
-      })();
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23121214'/><path transform='translate(16 16) scale(0.95) translate(-16 -16)' d='M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z' fill='%23c8f031' fill-rule='evenodd'/></svg>" />
+    <link rel="apple-touch-icon" href="./app/apple-touch-icon.png" />
+    <link rel="stylesheet" href="./site/site.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "moshpit",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Web, Windows, macOS, Linux",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "url": "https://furniture3k.github.io/Video-Datamosher/",
+        "license": "https://www.gnu.org/licenses/gpl-3.0.html"
+      }
     </script>
-    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap">
+        <a class="brand" href="./"><svg viewBox="4 3 24 26" aria-hidden="true"><path d="M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z" fill="#c8f031" fill-rule="evenodd" /></svg>moshpit</a>
+        <a class="link hide-s" href="#features">Features</a>
+        <a class="link hide-s" href="#gallery">Gallery</a>
+        <a class="link" href="./docs/">Docs</a>
+        <a class="link hide-s" href="https://github.com/furniture3k/Video-Datamosher">GitHub</a>
+        <a class="btn primary small" href="./app/">Open moshpit</a>
+      </div>
+    </header>
+
+    <main>
+      <div class="wrap">
+        <section class="hero">
+          <div>
+            <h1>Break your videos <em>beautifully.</em></h1>
+            <p class="lead">moshpit is a video editor with a datamosher built in. Cut your clips together, then melt, bloom and glitch them by editing the compressed video itself. Free, open source, and nothing is uploaded.</p>
+            <div class="cta">
+              <a class="btn primary" href="./app/">Open in your browser</a>
+              <a class="btn" id="dl-main" href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Download the desktop app</a>
+            </div>
+            <p class="cta-note faint" id="dl-note">Works in Chrome, Edge, Firefox and Safari, on computers and phones. Installable, and works offline.</p>
+          </div>
+          <div class="hero-media">
+            <video src="./site/hero.webm" poster="./site/hero.jpg" autoplay muted loop playsinline aria-label="Colour bars melting into a Mandelbrot zoom, made in moshpit"></video>
+          </div>
+        </section>
+      </div>
+
+      <section class="block">
+        <div class="wrap">
+          <h2>Same clips. Then moshed.</h2>
+          <p class="sub">Drag across the picture. On the left, three clips cut together; on the right, the keyframes at the cuts are gone, so each shot's movement drags the last picture around until it melts into the next.</p>
+          <div class="ba" id="ba" style="--split: 50%">
+            <video class="before" src="./site/before.webm" poster="./site/before.jpg" muted loop playsinline preload="metadata" aria-hidden="true"></video>
+            <video class="after" src="./site/after.webm" poster="./site/after.jpg" muted loop playsinline preload="metadata" aria-hidden="true"></video>
+            <div class="handle"></div>
+            <span class="tag l">before</span><span class="tag r">moshed</span>
+            <input type="range" min="0" max="100" value="50" aria-label="Compare the clean cut and the moshed one" />
+          </div>
+        </div>
+      </section>
+
+      <section class="block" id="features">
+        <div class="wrap">
+          <h2>A real datamosher, inside a real editor.</h2>
+          <p class="sub">Most glitch apps paint effects over the picture. moshpit rewrites the compressed frames themselves, the way datamoshing was always done, with a timeline and a live preview around it.</p>
+          <div class="features">
+            <div class="feature"><div class="ic">KEY</div><h3>Melts and blooms</h3><p>Remove keyframes so one shot melts into the next, repeat motion until the picture erupts, borrow movement from another clip, or corrupt the bytes.</p></div>
+            <div class="feature"><div class="ic">TL</div><h3>A proper timeline</h3><p>Multiple video and audio tracks, trimming, splitting, titles, keyframes, speed ramps, chroma key and LUTs, with mosh effects as bars you drag and resize.</p></div>
+            <div class="feature"><div class="ic">♪</div><h3>Moshes to the music</h3><p>Effects can fire on every beat or bar, swell with the bass, or cut your whole edit to the song for you.</p></div>
+            <div class="feature"><div class="ic">⚄</div><h3>Happy accidents on tap</h3><p>Presets, templates, Randomize, a chaos dial, and a grid of variations you can breed. Every result comes from a seed, so you can get it back.</p></div>
+            <div class="feature"><div class="ic">↗</div><h3>Ready for anywhere</h3><p>MP4, WebM and GIF up to 4K, vertical crops that follow the action, seamless loops, captions, and size limits for Discord.</p></div>
+            <div class="feature"><div class="ic">⌂</div><h3>Private and offline</h3><p>Everything happens on your device: in the browser with WebAssembly, or in the desktop app with native FFmpeg. Nothing is uploaded.</p></div>
+          </div>
+          <img class="shot" src="./site/studio.png" alt="The moshpit editor: media, preview, inspector and a timeline with mosh effects, titles, video and music" loading="lazy" width="1440" height="900" />
+        </div>
+      </section>
+
+      <section class="block" id="gallery">
+        <div class="wrap">
+          <h2>Gallery</h2>
+          <p class="sub">Made with moshpit. Every one comes with its recipe: open it and the same mosh goes onto your own footage. <a href="https://github.com/furniture3k/Video-Datamosher/discussions/new?category=gallery">Share yours</a>.</p>
+          <div class="gallery" id="gallery-list"><p class="faint">Loading…</p></div>
+        </div>
+      </section>
+
+      <section class="block" id="download">
+        <div class="wrap">
+          <h2>Get moshpit</h2>
+          <p class="sub">Use it in your browser, install it from there (it then works offline), or get the desktop app: it runs a native FFmpeg on every core, so 4K and long videos are practical.</p>
+          <div class="downloads" id="downloads">
+            <div class="dl" data-os="web"><b>Browser</b><a href="./app/">Open moshpit</a><span class="faint">Any modern browser. Install it from the address bar or Share → Add to Home Screen.</span></div>
+            <div class="dl" data-os="windows"><b>Windows 10 / 11</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Installer (.exe or .msi)</a></div>
+            <div class="dl" data-os="mac"><b>macOS</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Apple Silicon or Intel (.dmg)</a></div>
+            <div class="dl" data-os="linux"><b>Linux</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">.AppImage, .deb or .rpm</a></div>
+          </div>
+          <p class="faint" style="font-size: 13.5px; margin-top: 14px">The desktop builds aren't code-signed yet: on macOS right-click the app and choose Open the first time; on Windows choose More info → Run anyway. <a href="./docs/desktop/">More about the desktop app</a>.</p>
+        </div>
+      </section>
+
+      <section class="block" id="faq">
+        <div class="wrap">
+          <h2>Questions</h2>
+          <details><summary>What is datamoshing?</summary><p>Video files mostly store changes, not pictures: a full picture now and then (a keyframe) and in between only how blocks of it move. Remove a keyframe and the movement of the next shot gets applied to the old picture, so it melts. Repeat a movement and the picture smears and blooms. <a href="./docs/what-is-datamoshing/">Read more</a>.</p></details>
+          <details><summary>Is it really free? Are my videos uploaded?</summary><p>Yes, and no. moshpit is free software (GPL-3.0). Your videos never leave your device: decoding, moshing and encoding all happen in your browser or in the desktop app.</p></details>
+          <details><summary>Does it work on my phone?</summary><p>Yes. Phones get their own editor with a big preview, a swipe-to-scrub timeline and tools that follow what you select. Add it to your home screen to use it like an app.</p></details>
+          <details><summary>How long and how big can videos be?</summary><p>In the browser, up to 10 minutes and comfortably 1080p; 1440p and 4K work for short videos. The desktop app goes to 30 minutes and is much faster at 4K.</p></details>
+          <details><summary>Why does the exported AVI look different in every player?</summary><p>Because a moshed AVI is broken on purpose and every player hides the damage in its own way. MP4, WebM and GIF exports contain exactly what the preview shows.</p></details>
+          <details><summary>Can I help?</summary><p>Please do. Report bugs, suggest features or send code on <a href="https://github.com/furniture3k/Video-Datamosher">GitHub</a>, and share what you make in the gallery.</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <div class="wrap">
+        <span>moshpit · free software under the <a href="https://github.com/furniture3k/Video-Datamosher/blob/main/LICENSE">GPL-3.0</a></span>
+        <a href="./docs/">Docs</a>
+        <a href="https://github.com/furniture3k/Video-Datamosher">Source code</a>
+        <a href="https://github.com/furniture3k/Video-Datamosher/releases">Releases</a>
+        <a href="https://github.com/furniture3k/Video-Datamosher/issues/new/choose">Report a problem</a>
+      </div>
+    </footer>
+    <script type="module" src="/src/site/main.ts"></script>
   </body>
 </html>

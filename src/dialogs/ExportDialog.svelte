@@ -9,6 +9,14 @@
   import { download, localGet, localSet, saveAs, hasSavePicker, canShareFile, shareFile } from '../lib/storage';
   import { busy } from '../lib/recovery';
   import { reportProblem } from '../lib/report';
+  import { shareCode } from '../lib/projectio.svelte';
+  import { REPO } from '../lib/about';
+
+  /** A gallery post on GitHub with this mosh's recipe filled in (the video is attached there). */
+  async function submitToGallery() {
+    const q = new URLSearchParams({ category: 'gallery', title: `My mosh: ${store.project.name || 'Untitled'}`, recipe: await shareCode() });
+    window.open(`${REPO}/discussions/new?${q}`, '_blank', 'noopener');
+  }
   import { isDesktop } from '../lib/platform';
   import { blobToDisk, saveFromDisk, revealFile } from '../lib/ffmpeg-native';
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
@@ -285,6 +293,7 @@
             <a href={result.url} download={result.name}>Download again</a>
           {/if}
         </div>
+        <p class="small faint">Proud of it? <button class="link" onclick={submitToGallery}>Share it in the gallery</button>: it goes up with its recipe, so others can use it on their footage.</p>
       </div>
     {/if}
   </div>
