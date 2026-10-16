@@ -28,6 +28,10 @@ The builds aren't code-signed yet, so your system warns about them the first tim
 
 Right-click a video, choose **Open with**, and pick moshpit (on Windows, **Choose another app** and browse to it the first time), or drop files on its icon. Opening another file while it's running adds it to the open window.
 
+## OSC controllers
+
+The desktop app can listen for OSC (Open Sound Control) on a UDP port: **Help → MIDI and OSC controllers → Listen**. Send numbers from 0 to 1 (or 0–127) to any address from TouchOSC, Max, Pure Data or a phone on the same network. Right-click an effect setting, send a message, and that address moves the setting from then on.
+
 ## Installing from the browser instead
 
 The web version installs too, and then works offline:

@@ -87,3 +87,8 @@ import * as text from './lib/text';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { text });
 import * as commands from './lib/commands.svelte';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { commands });
+import * as controlsMod from './lib/controls.svelte';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { controls: controlsMod });
+controlsMod.startControls().catch((e) => console.warn('controls', e));
+import * as scriptsMod from './lib/scripts.svelte';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { scripts: scriptsMod });

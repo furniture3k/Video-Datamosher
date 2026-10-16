@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.11.0
+
+- **H.264 moshing (experimental)**: Encode → Mosh codec → H.264. The codec of most videos today,
+  for smoother, finer smears with fewer blocks. Every effect works with it except Vector Edit
+  (that one is Xvid only).
+- **MIDI controllers**: right-click any effect setting and move a knob, fader or pad: it moves that
+  setting from then on, in the editor and in Live mode. Right-click again to let go. Works in Chrome
+  and Edge; the mappings are saved with the project.
+- **OSC in the desktop app**: Help → MIDI and OSC controllers → Listen, then send numbers from
+  TouchOSC, Max, Pure Data or a phone on the same network.
+- **Script**: an effect you write in JavaScript. It gets the frames under its bar and returns them
+  in any order, repeated, left out or damaged. It runs in a sandbox with no network and no access to
+  your files, with a time limit. Code that comes with a recipe or project from someone else is shown
+  and only runs once you allow it. Four examples to start from.
+
 ## 1.10.0
 
 - **Mosh Maps**: Subject Guard can follow a map instead of a subject, and grey parts mosh half way:

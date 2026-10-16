@@ -4,6 +4,7 @@ import * as edit from './edit';
 import { chaos, mutate } from '../engine/presets';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
+import { enableMidi, controls } from './controls.svelte';
 import { saveProjectFile, startNewProject, saveRecipeFile, pickRecipeFile } from './projectio.svelte';
 import { goHome } from './projects.svelte';
 import { reportProblem } from './report';
@@ -154,6 +155,10 @@ const ACTIONS: Record<string, Action> = {
   'save-recipe': { run: () => saveRecipeFile() },
   'open-recipe': { run: () => pickRecipeFile() },
   batch: { run: dialog('batch') },
+  midi: {
+    run: () =>
+      enableMidi().then((ok) => store.toast(ok ? `MIDI is on${controls.inputs.length ? ': ' + controls.inputs.join(', ') : ''}. Right-click a setting, then move a knob.` : 'No MIDI here (Chrome and Edge have it), or it was not allowed.', ok ? 'ok' : 'error', 6000)),
+  },
   record: { run: dialog('record') },
   generate: { run: dialog('generate') },
 

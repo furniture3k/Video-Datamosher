@@ -8,6 +8,7 @@
 import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import dgram from 'node:dgram';
 
 const app = path.resolve(process.argv[2] ?? `src-tauri/target/debug/moshpit${process.platform === 'win32' ? '.exe' : ''}`);
 const shots = path.resolve('test-results/desktop');
@@ -242,6 +243,40 @@ try {
     await new Promise((r) => setTimeout(r, 1500));
     const still = await exec(() => !!window.__moshpitMounted && location.hostname !== 'example.com');
     if (!still) throw new Error('the app navigated away');
+  });
+  await step('OSC: a UDP message moves the setting it is mapped to', async () => {
+    await run(async () => {
+      const st = window.__moshpit.store;
+      st.edit((p) => {
+        p.effects = [{ id: 'oc', type: 'chroma', enabled: true, solo: false, start: 0, end: st.totalFrames, seed: 1, params: { offset: 6, angle: 0, wobble: 0.2, scanTear: 0 }, auto: {}, locks: [] }];
+        p.controls = [{ key: 'osc:/mosh/offset', effectId: 'oc', param: 'offset' }];
+      });
+      if (!(await window.__moshpit.controls.setOscPort(9123))) throw new Error('could not listen');
+    });
+    // /mosh/offset ,f 1.0
+    const pad = (t) => {
+      const b = Buffer.alloc(Math.ceil((t.length + 1) / 4) * 4);
+      b.write(t);
+      return b;
+    };
+    const f = Buffer.alloc(4);
+    f.writeFloatBE(1);
+    const packet = Buffer.concat([pad('/mosh/offset'), pad(',f'), f]);
+    const sock = dgram.createSocket('udp4');
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => sock.send(packet, 9123, '127.0.0.1', r));
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    sock.close();
+    await waitFor(() => window.__moshpit.store.project.effects[0]?.params.offset === 40, 10000);
+    await run(() => window.__moshpit.controls.setOscPort(0));
+  });
+  await step('H.264 mosh with the native engine', async () => {
+    await exec(() => window.__moshpit.store.edit((p) => (p.encoder.codec = 'h264')));
+    await waitFor(() => window.__moshpit.store.render?.frames.length && window.__moshpit.store.project.encoder.codec === 'h264' && !window.__moshpit.store.status.busy && !window.__moshpit.store.status.pending, 180000);
+    const r = await exec(() => ({ n: window.__moshpit.store.render.frames.length, j: window.__moshpit.store.render.jpegs.length, err: window.__moshpit.store.status.error }));
+    if (r.err || r.j < r.n - 1) throw new Error('H.264: ' + JSON.stringify(r));
+    await exec(() => window.__moshpit.store.edit((p) => (p.encoder.codec = 'mpeg4')));
   });
   const click = (text) => exec((t) => {
     const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim().startsWith(t) && !x.disabled);

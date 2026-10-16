@@ -48,6 +48,8 @@ d('encoder / clip option matrix', () => {
     ['mpeg1 12fps', { codec: 'mpeg1', fps: 12 }],
     ['mpeg1 8fps', { codec: 'mpeg1', fps: 8 }],
     ['mpeg2 60fps', { codec: 'mpeg2', fps: 60 }],
+    ['h264', { codec: 'h264' }],
+    ['h264 quality 31, gop 12', { codec: 'h264', quality: 31, gop: 12 }],
     ['mpeg4 8fps', { fps: 8 }],
     ['bframes 2', { bframes: 2 }],
     ['mpeg2 bframes 2', { codec: 'mpeg2', bframes: 2 }],
@@ -69,6 +71,35 @@ d('encoder / clip option matrix', () => {
       const { n, frames } = run(base(enc));
       expect(n).toBeGreaterThanOrEqual(frames.length - 2);
     });
+
+  it('H.264: IDR frames at the cuts and markers, and killing them melts the next shot', () => {
+    const p = base({ codec: 'h264', keyMarkers: [20] }, [clipOf(vmedia, { out: 1.5 }), clipOf(imedia, { out: 1.5 })]);
+    place(dir, 'v.mp4', vmedia);
+    place(dir, 'i.png', imedia);
+    ff(dir, prepArgs(p, p.encoder.width, 'h.avi'));
+    const prep = framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'h.avi'))), 'h264');
+    const keys = prep.frames.flatMap((f, i) => (f.type === 'I' ? [i] : []));
+    // the start, the marker and the cut (1.5 s at 24 fps)
+    expect(keys).toEqual(expect.arrayContaining([0, 20, 36]));
+    expect(prep.frames.filter((f) => f.type === 'P').length).toBeGreaterThan(prep.frames.length - 6);
+    const decode = (frames: typeof prep.frames, name: string) => {
+      fs.writeFileSync(path.join(dir, name + '.avi'), writeMoshed(prep, frames));
+      ff(dir, ['-flags2', '+showall', '-ec', 'guess_mvs+favor_inter', '-err_detect', 'ignore_err', '-i', name + '.avi', '-vf', 'scale=32:24,format=gray', '-f', 'rawvideo', name + '.gray']);
+      const raw = new Uint8Array(fs.readFileSync(path.join(dir, name + '.gray')));
+      // every frame comes out (renumbered frames aren't dropped as late)
+      expect(raw.length / 768).toBe(frames.length);
+      return (k: number) => raw.subarray(k * 768, (k + 1) * 768);
+    };
+    const clean = decode(prep.frames, 'hc');
+    const killed = applyBitstream(prep, { ...p, effects: [makeEffect('kill', 0, 1e6)] }, []);
+    expect(killed.filter((f) => f.type === 'I').length).toBe(1);
+    const moshed = decode(killed, 'hm');
+    const diff = (a: Uint8Array, b: Uint8Array) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+    // a few frames into the still image: clean shows the image, the mosh still shows the video
+    expect(diff(clean(40), moshed(40))).toBeGreaterThan(15);
+    // before the first killed keyframe nothing changed
+    expect(diff(clean(10), moshed(10))).toBeLessThan(2);
+  });
 
   it('B-frames are detected', () => {
     const { prep } = run(base({ bframes: 2 }), false);

@@ -6,6 +6,8 @@
   import { makeRng, randomSeed } from '../engine/rng';
   import AutomationEditor from './AutomationEditor.svelte';
   import Icon from './Icon.svelte';
+  import { controls, learn, forget, mappingFor } from '../lib/controls.svelte';
+  import { controlLabel } from '../engine/controls';
 
   let { effect, def }: { effect: EffectInstance; def: ParamDef } = $props();
   const value = $derived(effect.params[def.key]);
@@ -41,12 +43,27 @@
     return +v.toFixed(4);
   };
   const playSrc = $derived(store.playFrame);
+  /** MIDI / OSC: right-click to learn a control, or forget the one mapped */
+  const mapped = $derived(mappingFor(effect.id, def.key));
+  const learning = $derived(controls.learning?.effectId === effect.id && controls.learning.param === def.key);
+  function onContext(e: MouseEvent) {
+    if ((e.target as HTMLElement).closest('input[type=number]')) return;
+    e.preventDefault();
+    const m = mapped;
+    if (m) {
+      forget(effect.id, def.key);
+      store.toast(`${controlLabel(m.key)} no longer moves ${def.label}.`, 'info');
+    } else if (learning) controls.learning = null;
+    else learn(effect.id, def.key);
+  }
   const optHint = $derived(def.type === 'select' ? def.options.find((o) => o.value === value)?.hint : undefined);
 </script>
 
-<div class="pc" class:locked class:automated={!!auto}>
+<div class="pc" class:locked class:automated={!!auto} class:learning oncontextmenu={onContext} role="group" aria-label={def.label}>
   <div class="top">
-    <span class="label-text" title={def.help}>{def.label}</span>
+    <span class="label-text" title="{def.help} (Right-click: control it with a MIDI knob or OSC.)">{def.label}</span>
+    {#if mapped}<button class="ctl mono" title="{controlLabel(mapped.key)} moves this. Click to forget." onclick={() => forget(effect.id, def.key)}>{controlLabel(mapped.key)}</button>{/if}
+    {#if learning}<span class="ctl mono learn">move a control…</span>{/if}
     <div class="tools">
       {#if automatable && (store.ui.advanced || auto)}
         <button class="icon ghost" class:on={!!auto} title="Automate over time (curve or LFO)" aria-label="Automate" onclick={toggleAuto}><Icon name="curve" size={13} /></button>
@@ -109,6 +126,23 @@
 </div>
 
 <style>
+  .ctl {
+    height: auto;
+    padding: 0 4px;
+    border: 1px solid var(--line-2);
+    border-radius: 3px;
+    background: none;
+    font-size: 10px;
+    color: var(--text-2);
+  }
+  .ctl.learn {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .pc.learning {
+    outline: 1px dashed var(--accent);
+    outline-offset: 2px;
+  }
   .hint {
     margin: 3px 0 0;
     font-size: 11.5px;

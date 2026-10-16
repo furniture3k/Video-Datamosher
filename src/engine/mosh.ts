@@ -1,6 +1,6 @@
 // Pure mosh core: prepared AVI -> frames -> effect stack -> moshed AVI.
 import { parseAvi, writeAvi, writeAviParts, type AviInfo } from './avi';
-import { analyzeFrame, type MoshCodec } from './bitstream';
+import { analyzeFrame, renumberH264, type MoshCodec } from './bitstream';
 import { EFFECTS } from './effects';
 import { inRange, isMotion, posOf, copy } from './effects/util';
 import { hashSeed, makeRng } from './rng';
@@ -8,6 +8,7 @@ import type { EffectInstance, Frame, Project } from './types';
 import { transitionEffects } from './timeline';
 import { withChaos } from './chaos';
 import { bakeAudio, type MoshAudio } from './audiofx';
+import { plans, planKey, scriptInput, type ScriptFrame } from './effects/script';
 
 export interface Prepared {
   info: AviInfo;
@@ -126,11 +127,11 @@ export function fitRange(input: Frame[], out: Frame[], e: Pick<EffectInstance, '
   });
 }
 
-function finishFrames(frames: Frame[], prep: Prepared): Frame[] {
+function finishFrames(frames: Frame[], prep: Prepared, codec?: MoshCodec): Frame[] {
   // The decoder needs a real keyframe (with headers) first.
   if (frames.length === 0 || frames[0].type !== 'I') frames.unshift(prep.frames[0]);
   if (frames.length > limits.maxOutputFrames) frames.length = limits.maxOutputFrames;
-  return frames;
+  return codec === 'h264' ? renumberH264(frames) : frames;
 }
 
 /** Motion pack id → its encoded frames. */
@@ -142,11 +143,32 @@ export const packsNeeded = (p: Project): string[] => [...new Set(activeEffects(p
 export function applyBitstream(prep: Prepared, project: Project, cuts: number[], audio?: MoshAudio, packs?: Packs): Frame[] {
   let frames = prep.frames.slice();
   for (const e of bitstreamEffects(project)) frames = applyOne(frames, e, prep, project, cuts, audio, packs);
-  return finishFrames(frames, prep);
+  return finishFrames(frames, prep, project.encoder.codec);
+}
+
+/** The project has Script effects that will run. */
+export const hasScripts = (project: Project) => bitstreamEffects(project).some((e) => e.type === 'script' && String(e.data?.code ?? '').trim());
+
+/**
+ * Script effects run outside the (synchronous) mosh, in a sandbox: walk the effect stack as the
+ * render will, and wherever a script's answer for the frames that reach it isn't known yet, ask
+ * `run` for it (which fills `plans`). The render that follows then finds every answer.
+ */
+export async function prepareScripts(prep: Prepared, project: Project, cuts: number[], run: (e: EffectInstance, input: ScriptFrame[]) => Promise<void>, audio?: MoshAudio, packs?: Packs) {
+  let frames = prep.frames.slice();
+  for (const e of bitstreamEffects(project)) {
+    if (e.type === 'script' && String(e.data?.code ?? '').trim()) {
+      // the instance as applyOne will see it (the Chaos dial and the music change its settings)
+      const live = bakeAudio(withChaos(e, project.chaos), audio, project);
+      const input = scriptInput(frames, live);
+      if (!plans.has(planKey(live, input))) await run(live, input);
+    }
+    frames = applyOne(frames, e, prep, project, cuts, audio, packs);
+  }
 }
 
 /** Effects that rewrite the bytes of frames (the rest only reorder, repeat or drop them). */
-export const EDITS_BYTES = new Set(['glitch', 'databend', 'sequence', 'mvedit']);
+export const EDITS_BYTES = new Set(['glitch', 'databend', 'sequence', 'mvedit', 'script']);
 
 /**
  * applyBitstream for disk-backed frames: before each effect that edits bytes, `load` gets the
@@ -165,7 +187,7 @@ export async function applyBitstreamDisk(prep: Prepared, project: Project, cuts:
     }
     frames = applyOne(frames, e, prep, project, cuts, audio, packs);
   }
-  return finishFrames(frames, prep);
+  return finishFrames(frames, prep, project.encoder.codec);
 }
 
 export function writeMoshed(prep: Prepared, frames: Frame[]): Uint8Array {

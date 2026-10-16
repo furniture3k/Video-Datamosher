@@ -84,6 +84,7 @@ Bitstream effects change the compressed video itself. The decoder then reconstru
 | `SEQ` | Frame Sequencer | A drum machine for frames: draw a looping pattern of Bloom, Echo, Reverse, Melt and Glitch steps (<kbd>G</kbd> adds one). |
 | `DBD` | Databend | Runs an audio effect (echo, reverb, phaser, bitcrush, reverse, amplify) over the compressed frame data. |
 | `MVX` | Vector Edit | Rewrites the motion vectors inside the compressed frames: amplify, turn, swap, drift, jitter, quantise, or paint them with the brush (Xvid codec). |
+| `SCR` | Script | An effect you write in JavaScript: the frames under the bar in any order, repeated, left out or damaged. Runs in a sandbox (no network, no access to your files, a time limit); code from someone else's recipe asks before it runs. |
 
 Picture effects run on the decoded frames:
 
@@ -162,7 +163,8 @@ Phones get their own editor, laid out like the mobile editors you already know r
 - **Seeds.** Every random choice comes from a seed, so a result can always be reproduced.
 - **Share codes.** Copy the whole recipe as a short text code and paste it into another project.
 - **Recipes travel with your videos.** MP4, WebM, AVI and GIF exports (and PNG zips) carry their recipe. Drop a video made in moshpit into the app and it offers to put that same mosh on your own footage.
-- **Encoder settings.** Codec (Xvid, MPEG-2, MPEG-1), quality, keyframe interval, forced keyframes, motion search and more. These change the texture of the mosh as much as the effects do.
+- **MIDI and OSC.** Right-click any effect setting and move a knob, fader or pad to control it (Chrome and Edge; the desktop app also listens for OSC).
+- **Encoder settings.** Codec (Xvid, MPEG-2, MPEG-1, or H.264 as an experiment), quality, keyframe interval, forced keyframes, motion search and more. These change the texture of the mosh as much as the effects do.
 - **Generations.** Feedback: the finished mosh is encoded and moshed again up to 8 times, losing a little quality each pass, like a copy of a copy.
 - **Bake.** Render the mosh (with its sound) into a clip in the media library, or replace the timeline with it, then cut it, speed it up or mosh it again.
 - **Moshed sound.** On tracks that follow the mosh, each frame plays its own slice of sound, so repeats and shuffles are audible. Bitcrush and sample-rate reduction are available.
