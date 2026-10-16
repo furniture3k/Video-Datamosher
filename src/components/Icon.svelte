@@ -60,6 +60,21 @@
     image: '<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 11l3.5-3.5 3 3 2-2L14 12"/><circle cx="10.5" cy="6" r="1"/>',
     check: '<path d="M3 8.5l3 3 7-7"/>',
     reset: '<path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.5h2.5"/>',
+    fullscreen: '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/>',
+    speed: '<path d="M2.5 11.5a5.5 5.5 0 1 1 11 0"/><path d="M8 11.5l3-4"/>',
+    scissors: '<circle cx="4.5" cy="11.5" r="2"/><circle cx="11.5" cy="11.5" r="2"/><path d="M6 10l6-7.5M10 10L4 2.5"/>',
+    sliders: '<path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.4" fill="var(--surface, #000)"/><circle cx="10.5" cy="8" r="1.4" fill="var(--surface, #000)"/><circle cx="5" cy="12" r="1.4" fill="var(--surface, #000)"/>',
+    transition: '<path d="M2.5 3.5h5v9h-5zM8.5 3.5h5v9h-5z"/><path d="M6 8h4M8.6 6.5 10 8l-1.4 1.5"/>',
+    fx: '<path d="M2.5 13.5c2-1 3-3 3.5-6l.5-2.5c.3-1.5 1-2.5 2.5-2.5M4 6.5h4.5M9 8.5l4 5M13 8.5l-4 5"/>',
+    melt: '<path d="M2.5 2.5h11v5c0 1-.7 1.5-1.5 1.5S10.5 8.5 10.5 9.5v2.5c0 .8-.7 1.5-1.5 1.5S7.5 12.8 7.5 12V10c0-.8-.7-1.5-1.5-1.5S4.5 9.2 4.5 10v.5c0 .8-.7 1.5-1.5 1.5"/>',
+    layers: '<path d="M8 2.5l5.5 3L8 8.5l-5.5-3zM2.5 8.5 8 11.5l5.5-3M2.5 11 8 14l5.5-3"/>',
+    cc: '<rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M7 6.6a1.8 1.8 0 1 0 0 2.8M12 6.6a1.8 1.8 0 1 0 0 2.8"/>',
+    back: '<path d="M10 3L5 8l5 5"/>',
+    chevron: '<path d="M6 3l5 5-5 5"/>',
+    reverse: '<path d="M13 5.5H4M6.5 3 4 5.5 6.5 8M3 10.5h9M9.5 8l2.5 2.5L9.5 13"/>',
+    volume: '<path d="M2.5 6h2.5l3-2.5v9L5 10H2.5zM10.5 5.5a3.5 3.5 0 0 1 0 5"/>',
+    crop: '<path d="M4.5 1.5v10h10M1.5 4.5h10v10"/>',
+    add: '<rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M8 5v6M5 8h6"/>',
   };
   export type IconName = keyof typeof P;
   export const ICONS = P;

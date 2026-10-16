@@ -6,6 +6,7 @@
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
   import ChaosDial from './ChaosDial.svelte';
+  import Logo from './Logo.svelte';
   import { closeCompound } from '../lib/compound.svelte';
   import { newProject } from '../engine/types';
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
@@ -17,9 +18,9 @@
 <svelte:window onclick={() => (menuOpen = false)} />
 
 <header class:nested={store.seqStack.length > 0}>
-  <div class="brand" title="moshpit">
-    <span class="tally" class:busy={store.status.busy}></span>
-    <span class="word mono">moshpit</span>
+  <div class="brand" class:busy={store.status.busy} title={store.status.busy ? 'Rendering the mosh…' : 'moshpit'}>
+    <Logo size={20} />
+    <span class="word">moshpit</span>
   </div>
   <input
     class="name"
@@ -55,12 +56,13 @@
         aria-label="Randomize amount"
       />
     </div>
-    <button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  U"><Icon name="nudge" /><span class="lbl">Nudge</span></button>
+    {#if store.ui.advanced}<button class="ghost" onclick={onmutate} disabled={!store.project.effects.length} title="Nudge unlocked settings a little  U"><Icon name="nudge" /><span class="lbl">Nudge</span></button>{/if}
     <button class="ghost" onclick={() => (store.ui.dialog = 'variations')} disabled={!hasClips} title="Compare several variations side by side  V"><Icon name="grid" /><span class="lbl">Variations</span></button>
     <ChaosDial />
     <button class="ghost" onclick={() => (store.ui.dialog = 'snapshots')} title="Snapshots: saved versions to restore or compare  Ctrl+Shift+S saves one"><Icon name="history" /><span class="lbl">Snapshots</span></button>
   </nav>
 
+  {#if store.ui.advanced}
   <label class="seed" title="Every random choice comes from this number. Same seed, same result.">
     <span class="label">Seed</span>
     <input
@@ -70,6 +72,7 @@
     />
     <button class="icon ghost" title="New seed" aria-label="New seed" onclick={() => store.edit((p) => (p.globalSeed = randomSeed()))}><Icon name="reset" size={14} /></button>
   </label>
+  {/if}
 
   <div class="spacer"></div>
 
@@ -135,34 +138,28 @@
     align-items: center;
     gap: 4px;
     padding: 0 8px;
-    height: 40px;
+    height: 46px;
     background: var(--surface);
     min-width: 0;
   }
   .brand {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 6px 0 4px;
+    gap: 7px;
+    padding: 0 8px 0 4px;
   }
-  .tally {
-    width: 9px;
-    height: 9px;
-    background: var(--accent);
-    border-radius: 1px;
+  .brand.busy :global(.logo) {
+    animation: pulse 1.1s ease-in-out infinite;
   }
-  .tally.busy {
-    animation: blink 1s steps(2) infinite;
-  }
-  @keyframes blink {
+  @keyframes pulse {
     50% {
-      opacity: 0.25;
+      opacity: 0.35;
     }
   }
   .word {
-    font-weight: 600;
-    font-size: 14px;
-    letter-spacing: -0.01em;
+    font-weight: 750;
+    font-size: 15px;
+    letter-spacing: -0.03em;
   }
   .name {
     background: transparent;

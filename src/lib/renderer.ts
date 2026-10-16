@@ -298,9 +298,9 @@ export async function renderPreview(project: Project, width: number, progress?: 
   let jpegs: Uint8Array[];
   const blob = writeMoshedBlob(prep, frames);
   if (from > 24) {
-    const tail = await decode(project, blob, 4, frames.length - from, 'Decoding', progress, { from });
-    jpegs = tail.length === frames.length - from ? [...lastDecode!.jpegs.slice(0, from), ...tail] : await decode(project, blob, 4, frames.length, 'Decoding', progress);
-  } else jpegs = await decode(project, blob, 4, frames.length, 'Decoding', progress);
+    const tail = await decode(project, blob, 3, frames.length - from, 'Decoding', progress, { from });
+    jpegs = tail.length === frames.length - from ? [...lastDecode!.jpegs.slice(0, from), ...tail] : await decode(project, blob, 3, frames.length, 'Decoding', progress);
+  } else jpegs = await decode(project, blob, 3, frames.length, 'Decoding', progress);
   check(signal);
   lastDecode = { key: dkey, frames, jpegs };
   const clean = needsClean(project) ? new CleanFrames(project, clean0) : undefined;
@@ -525,13 +525,13 @@ export async function renderGenerator(genId: string, seconds: number, w: number,
 export async function makeProxy(m: MediaItem, blob: Blob, onProgress?: (p: number) => void, webm = false): Promise<Blob> {
   if (m.source.kind !== 'file') throw new Error('no file');
   const name = inputName(m);
-  const w = Math.min(640, even(m.width || 640));
+  const w = Math.min(960, even(m.width || 960));
   const vf = [`scale=${w}:-2:flags=bicubic`, m.fps > 30 ? 'fps=30' : '', 'format=yuv420p'].filter(Boolean).join(',');
   const total = Math.max(1, m.duration * Math.min(30, m.fps || 30));
   const out = webm ? 'proxy.webm' : 'proxy.mp4';
   const codec = webm
-    ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '1500k', '-g', '12', '-auto-alt-ref', '0', '-c:a', 'libvorbis', '-q:a', '4']
-    : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-g', '12', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'];
+    ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2500k', '-g', '12', '-auto-alt-ref', '0', '-c:a', 'libvorbis', '-q:a', '4']
+    : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-g', '12', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'];
   const args = ['-i', MOUNT + name, '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, ...codec, '-ac', '2', out];
   const r = await ffmpegBg.run(args, { mounts: { [name]: blob }, outputs: [out], onFrame: (n) => onProgress?.(Math.min(1, n / total)) });
   return new Blob([r.out[out] as BlobPart], { type: webm ? 'video/webm' : 'video/mp4' });

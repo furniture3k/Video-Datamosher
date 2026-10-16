@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.0
+
+- **New look and logo.** A new mark (a frame melting into blocks, with a play button cut out of it),
+  new app icons for the web app and the desktop installers, and a refreshed graphite interface with
+  softer corners, rounder controls and an acid-lime accent.
+- **A phone editor built for phones**: a big preview, a timeline with the playhead fixed in the
+  middle (swipe to scrub, pinch to zoom, handles to trim, hold to move), tools along the bottom that
+  change with the selection, and sheets that slide over the timeline. Dialogs are bottom sheets.
+- **Sharper preview.** The mosh preview renders at the mosh resolution (it used to be 480 px wide),
+  with a Full / 1/2 / 1/4 quality button under the player; the edit preview draws the original files
+  at screen resolution and only uses the preview copies while scrubbing. Preview copies are sharper.
+- **Clearer effect picker**: effects grouped by what you'll see (Melts, Smears, Rhythm, Damage, Colour
+  & pixels, Protect), plain-language descriptions, a frame diagram per effect, search, and the nine
+  most distinct effects first in Simple mode.
+- **Easier start**: a first-run screen with three steps, Import media and Load example. Simple mode
+  hides Nudge and the seed; the player's extra controls live under one menu.
+- **Feels like an app on desktop**: no accidental text highlighting (the timeline especially), no
+  browser right-click menu, and in the desktop app no page zoom, reload or print shortcuts.
+
 ## 1.3.0
 
 - **Subject Guard**: keep people (on-device segmentation), a tracked object, bright/dark parts or

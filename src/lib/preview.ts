@@ -103,19 +103,21 @@ export class EditPreview {
 
   constructor(private canvas: HTMLCanvasElement) {}
 
-  /** The best playable URL for a media item (original if the browser can play it, else its proxy). */
-  private source(m: MediaItem): Src | null {
+  /**
+   * A playable URL for a media item: the original file, or its preview copy (`proxy`), which is
+   * smaller but seeks much faster (a keyframe every 12 frames). Null while it is being looked up.
+   */
+  private source(m: MediaItem, proxy: boolean): Src | null {
     const st = mediaState[m.id];
-    // the preview copy seeks much faster (a keyframe every 12 frames), so scrubbing keeps up
-    const wantProxy = st?.proxy === 'ready';
-    const key = m.id + (wantProxy ? ':p' : '');
+    if (proxy && st?.proxy !== 'ready') return null;
+    if (!proxy && st && st.playable === false) return null;
+    const key = m.id + (proxy ? ':p' : '');
     if (this.resolved.has(key)) return this.resolved.get(key)!;
     if (!this.urls.has(key)) {
       const p = (async () => {
         if (m.source.kind !== 'file') return null;
-        if (st && st.playable === false && !wantProxy) return null;
-        const blob = await getFile(wantProxy ? proxyKey(m.id) : m.source.fileId);
-        return blob ? { url: URL.createObjectURL(blob), proxy: wantProxy } : null;
+        const blob = await getFile(proxy ? proxyKey(m.id) : m.source.fileId);
+        return blob ? { url: URL.createObjectURL(blob), proxy } : null;
       })();
       this.urls.set(key, p);
       p.then((s) => {
@@ -126,10 +128,10 @@ export class EditPreview {
     return null;
   }
 
-  private video(m: MediaItem, slot: number | string): HTMLVideoElement | null {
-    const src = this.source(m);
+  private video(m: MediaItem, slot: number | string, proxy: boolean): HTMLVideoElement | null {
+    const src = this.source(m, proxy);
     if (!src) return null;
-    const key = `${m.id}#${slot}#${src.proxy ? 'p' : 'o'}`;
+    const key = `${m.id}#${slot}#${proxy ? 'p' : 'o'}`;
     let v = this.videos.get(key);
     if (!v) {
       v = document.createElement('video');
@@ -146,7 +148,7 @@ export class EditPreview {
   }
 
   private image(m: MediaItem): HTMLImageElement | null {
-    const src = this.source(m);
+    const src = this.source(m, false);
     if (!src) return null;
     let im = this.images.get(m.id);
     if (!im) {
@@ -170,13 +172,32 @@ export class EditPreview {
     return im.complete && im.naturalWidth ? im : null;
   }
 
+  /** Device pixels the picture covers on screen (set by the player as it resizes). */
+  targetWidth = 1280;
+  private lastT = -1;
+  private lastAt = 0;
+  private scrubUntil = 0;
+  private scrubTimer = 0;
+
+  /** As sharp as the screen shows it, never above the project's own resolution. */
   size(p: Project) {
-    return outputSize(p, Math.max(640, Math.min(1280, p.encoder.previewWidth * 2)));
+    return outputSize(p, Math.max(480, Math.min(1920, p.encoder.width, this.targetWidth)));
   }
 
   /** Draw the timeline at time t. While playing, video elements run on their own and are kept in sync. */
   draw(p: Project, t: number, playing: boolean, speed = 1) {
     const { w, h } = this.size(p);
+    // Scrubbing (quick redraws at new times while paused) uses the fast-seeking preview copies;
+    // once it settles the frame is drawn again from the original files, at full quality.
+    const now = performance.now();
+    if (!playing && Math.abs(t - this.lastT) > 1e-6 && now - this.lastAt < 200) {
+      this.scrubUntil = now + 220;
+      clearTimeout(this.scrubTimer);
+      this.scrubTimer = window.setTimeout(() => this.onDirty(), 260);
+    }
+    this.lastT = t;
+    this.lastAt = now;
+    const scrubbing = now < this.scrubUntil;
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
       this.canvas.height = h;
@@ -198,29 +219,43 @@ export class EditPreview {
     /** The picture of a clip at timeline time tt (a playing / seeking video, an image or a thumbnail). */
     const source = (c: Clip, m: MediaItem, start: number, slot: number | string, tt: number): CanvasImageSource | null => {
       if (m.source.kind === 'file' && m.source.isImage) return this.image(m) ?? this.thumb(m);
-      const v = this.video(m, slot);
-      if (!v || v.readyState < 2) {
-        const st = mediaState[m.id];
-        // old projects' generated clips have no file; neither do files the browser can't play without a preview copy
-        if (m.source.kind === 'generator' || (st?.playable === false && st.proxy === 'failed')) unavailable = true;
-        else waiting = true;
-        if (v) used.add(v);
-        return this.thumb(m);
-      }
-      used.add(v);
       const target = sourceTime(c, tt - start);
       const rate = speedAt(c, tt - start) * speed;
-      if (playing && !c.reverse && !c.freeze && rate >= 0.0625 && rate <= 16) {
-        if (Math.abs(v.playbackRate - rate) > 1e-3) v.playbackRate = rate;
-        if (v.paused) {
-          v.currentTime = target;
-          v.play().catch(() => {});
-        } else if (Math.abs(v.currentTime - target) > 0.25) v.currentTime = target;
-      } else {
-        if (!v.paused) v.pause();
-        if (Math.abs(v.currentTime - target) > 0.5 / fps && !v.seeking) v.currentTime = target;
+      const sync = (v: HTMLVideoElement) => {
+        used.add(v);
+        if (playing && !c.reverse && !c.freeze && rate >= 0.0625 && rate <= 16) {
+          if (Math.abs(v.playbackRate - rate) > 1e-3) v.playbackRate = rate;
+          if (v.paused) {
+            v.currentTime = target;
+            v.play().catch(() => {});
+          } else if (Math.abs(v.currentTime - target) > 0.25) v.currentTime = target;
+        } else {
+          if (!v.paused) v.pause();
+          if (Math.abs(v.currentTime - target) > 0.5 / fps && !v.seeking) v.currentTime = target;
+        }
+        return v;
+      };
+      const ready = (v: HTMLVideoElement | null): v is HTMLVideoElement => !!v && v.readyState >= 2;
+      const onFrame = (v: HTMLVideoElement) => !v.seeking && Math.abs(v.currentTime - target) <= 0.5 / fps + 1e-3;
+      const hi = this.video(m, slot, false);
+      const lo = this.video(m, slot, true);
+      // the original, at full quality, unless it is still catching up with a seek
+      if (hi && !scrubbing) {
+        used.add(hi);
+        if (ready(hi)) {
+          sync(hi);
+          if (playing || onFrame(hi) || !ready(lo)) return hi;
+        }
       }
-      return v;
+      if (ready(lo)) return sync(lo);
+      if (ready(hi)) return sync(hi);
+      const st = mediaState[m.id];
+      // old projects' generated clips have no file; neither do files the browser can't play without a preview copy
+      if (m.source.kind === 'generator' || (st?.playable === false && st.proxy === 'failed')) unavailable = true;
+      else waiting = true;
+      if (hi) used.add(hi);
+      if (lo) used.add(lo);
+      return this.thumb(m);
     };
     const layer = (pl: Placed) => source(pl.clip, pl.media, pl.start, pl.index % 2, tv);
 
@@ -249,7 +284,7 @@ export class EditPreview {
     // get the next clip ready so cuts don't stall
     const next = placed.find((pl) => pl.start > t && pl.start - t < 1.5);
     if (next && !(next.media.source.kind === 'file' && next.media.source.isImage)) {
-      const v = this.video(next.media, next.index % 2);
+      const v = this.video(next.media, next.index % 2, mediaState[next.media.id]?.playable === false);
       if (v) {
         used.add(v);
         if (!v.paused) v.pause();
