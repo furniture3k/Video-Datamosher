@@ -101,6 +101,13 @@ try {
     if (!/ffmpeg version/.test(info.version)) throw new Error('unexpected engine info');
   });
   await step('load example and render', async () => {
+    // start in the editor (not the home screen), without the tour or the automatic first mosh
+    await exec(() => {
+      for (const [k, v] of Object.entries({ startHome: false, seenWelcome: true, autoMosh: false })) localStorage.setItem('moshpit:' + k, JSON.stringify(v));
+      window.__moshpitMounted = false;
+      setTimeout(() => location.reload(), 50);
+    });
+    await waitFor(() => window.__moshpitMounted, 60000);
     await waitFor(() => [...document.querySelectorAll('button')].some((b) => /Load example/.test(b.textContent)), 60000);
     await exec(() => [...document.querySelectorAll('button')].find((b) => /Load example/.test(b.textContent)).click());
     await waitFor(() => window.__moshpit.store.project.clips.some((c) => c.transition));
@@ -253,19 +260,29 @@ try {
     await waitFor(() => !document.querySelector('.ask-backdrop') && (localStorage.getItem('moshpit:userPresets') ?? '').includes('E2E preset'), 5000);
     await exec(() => (window.__moshpit.store.ui.dialog = null));
   });
-  await step('new project (OK / Cancel question)', async () => {
-    const n = await exec(() => window.__moshpit.store.project.clips.length);
+  await step('new project keeps the old one; deleting asks OK / Cancel', async () => {
+    const before = await exec(() => window.__moshpit.store.project.clips.length);
+    if (!before) throw new Error('expected clips on the timeline');
+    await exec(() => document.querySelector('button[aria-label="More"]').click());
+    await click('New project');
+    await waitFor(() => window.__moshpit.store.project.clips.length === 0 && !window.__moshpit.store.ui.home, 5000);
+    await run(() => window.__moshpit.projects.goHome());
+    await waitFor(() => document.querySelectorAll('[data-testid=home] .card.project').length === 1, 10000);
+    // the in-app OK / Cancel question (the macOS webview has no confirm())
+    const answer = (t) => exec((t) => [...document.querySelectorAll('.ask-backdrop button')].find((b) => b.textContent.trim() === t).click(), t);
     const open = async () => {
-      await exec(() => document.querySelector('button[aria-label="More"]').click());
-      await click('New project');
+      await exec(() => document.querySelector('.card.project .more').click());
+      await click('Delete');
       await waitFor(() => document.querySelector('.ask-backdrop'), 5000);
     };
     await open();
-    await click('Cancel');
-    if ((await exec(() => window.__moshpit.store.project.clips.length)) !== n) throw new Error('cancel cleared the project');
+    await answer('Cancel');
+    if ((await exec(() => document.querySelectorAll('.card.project').length)) !== 1) throw new Error('cancel deleted the project');
     await open();
-    await click('OK');
-    await waitFor(() => window.__moshpit.store.project.clips.length === 0, 5000);
+    await answer('Delete');
+    await waitFor(() => document.querySelectorAll('.card.project').length === 0, 5000);
+    await run(() => window.__moshpit.projects.startProject());
+    await waitFor(() => !window.__moshpit.store.ui.home, 5000);
   });
   if (process.env.LONG_FILE) {
     // A long video imported from disk like a user would (e.g. made with

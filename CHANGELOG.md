@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.0
+
+- **A home screen.** moshpit opens on your projects, templates and examples instead of dropping you
+  into the editor. The logo (or ☰ → All projects on a phone) takes you back. Prefer the old way?
+  Tick **Open my last project on start** at the bottom of the home screen.
+- **As many projects as you like.** Each one is saved on its own with a picture of where you left
+  off. Rename, duplicate or delete them from the home screen. **New project** no longer clears
+  anything: the one you had stays in the list. Your existing project and its snapshots move over
+  by themselves. Snapshots now belong to their project.
+- **Templates**: Melt transitions, Beat-synced melt, Vertical loop (9:16), Bloom drop, Glitch intro,
+  Motion swap, VHS memory and Vortex. Pick your clips (and a song for the beat one) and the mosh is
+  set up for you, or try one with sample footage first.
+- **Examples** made from generated footage, so there's nothing to import: open one and take it apart.
+- **Your first mosh happens by itself.** Clips imported into an empty project get melts on the cuts
+  (a single clip gets a Bloom), so there's something to see straight away. One Undo takes it off,
+  and it can be turned off on the home screen.
+- **A quick tour** of the editor the first time you open it (Help → Take the tour again).
+
 ## 1.5.0
 
 - **Loading screen.** The logo melts while moshpit starts, and the video engine shows how much of
@@ -20,6 +38,7 @@
   it starts with auto-render paused and says so, instead of crashing again on the same mosh.
 - **Vibration** on Android phones when you pick up, trim or split a clip (Settings → Vibration).
 - Shared links show a preview card with the logo and a melting frame.
+- Fixed: the mosh preview could throw an error when switching between the phone and desktop layouts.
 
 ## 1.4.0
 

@@ -3,6 +3,7 @@
   import { saveProjectFile, loadProjectFile, startNewProject } from '../lib/projectio.svelte';
   import { hasSavePicker } from '../lib/storage';
   import { reportProblem } from '../lib/report';
+  import { goHome } from '../lib/projects.svelte';
   import { loadExample } from '../lib/media';
   import { randomSeed } from '../engine/rng';
   import Icon from './Icon.svelte';
@@ -18,10 +19,10 @@
 <svelte:window onclick={() => (menuOpen = false)} />
 
 <header class:nested={store.seqStack.length > 0}>
-  <div class="brand" class:busy={store.status.busy} title={store.status.busy ? 'Rendering the mosh…' : 'moshpit'}>
+  <button class="brand ghost" class:busy={store.status.busy} title={store.status.busy ? 'Rendering the mosh… (click for all projects)' : 'All projects'} aria-label="All projects" onclick={goHome}>
     <Logo size={20} />
     <span class="word">moshpit</span>
-  </div>
+  </button>
   <input
     class="name"
     value={store.project.name}
@@ -42,7 +43,7 @@
   <button class="icon ghost" title="Redo  Ctrl+Shift+Z" aria-label="Redo" disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" /></button>
   <div class="sep"></div>
 
-  <nav class="tools">
+  <nav class="tools" data-tour="mosh">
     <button class="ghost" onclick={() => (store.ui.dialog = 'presets')} title="Presets  P"><Icon name="list" /><span class="lbl">Presets</span></button>
     <div class="roll">
       <button class="ghost" onclick={onchaos} disabled={!hasClips} title="Roll a random effect stack  R. Locked settings and pinned effects stay put."><Icon name="dice" /><span class="lbl">Randomize</span></button>
@@ -81,7 +82,7 @@
     <button class:on={store.ui.advanced} onclick={() => store.setPref('advanced', true)}>Advanced</button>
   </div>
   <button onclick={() => (store.ui.dialog = 'live')} title="Real-time mosh of your camera, screen or a video" aria-label="Live"><Icon name="live" /><span class="txt">Live</span></button>
-  <button class="primary" onclick={() => (store.ui.dialog = 'export')} disabled={!hasClips} title="Export  E"><Icon name="export" />Export</button>
+  <button class="primary" data-tour="export" onclick={() => (store.ui.dialog = 'export')} disabled={!hasClips} title="Export  E"><Icon name="export" />Export</button>
 
   <div class="menu-wrap">
     <button class="icon ghost" onclick={(e) => (e.stopPropagation(), (menuOpen = !menuOpen))} aria-label="More" title="More"><Icon name="more" /></button>
@@ -142,6 +143,7 @@
     align-items: center;
     gap: 7px;
     padding: 0 8px 0 4px;
+    color: var(--text);
   }
   .brand.busy :global(.logo) {
     animation: pulse 1.1s ease-in-out infinite;

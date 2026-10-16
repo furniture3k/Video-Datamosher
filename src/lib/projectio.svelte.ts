@@ -1,7 +1,6 @@
 import { store } from './store.svelte';
 import { localGet, localSet, saveAs, hasSavePicker } from './storage';
-import { newProject, type MediaItem, type Project } from '../engine/types';
-import { ask } from './ask';
+import { type MediaItem, type Project } from '../engine/types';
 import { migrate } from '../engine/migrate';
 import { uid, type Preset } from '../engine/presets';
 import { applyRecipe, decodeRecipe, encodeRecipe } from '../engine/recipe';
@@ -21,14 +20,10 @@ export async function saveProjectFile(as = false) {
   store.toast(again && h ? `Saved to ${h.name}.` : 'Saved. Media files are not included in the project file.', 'ok');
 }
 
-/** Ask, then clear the timeline for a new project (the encoder settings are kept). */
+/** Start a new, empty project. The open one stays in the project list. */
 export async function startNewProject() {
-  if (!(await ask('Start a new project? Media, clips and effects will be cleared.'))) return;
-  forgetProjectFile();
-  store.set({ ...newProject(), encoder: $state.snapshot(store.project.encoder), name: 'Untitled' });
-  store.ui.selectedClips = [];
-  store.seek(0);
-  store.render = null;
+  const { startProject } = await import('./projects.svelte');
+  await startProject();
 }
 
 /** Load a project file. Media already in this session is matched by file name. */
@@ -52,7 +47,9 @@ export async function loadProjectFile(file: File) {
     const known = new Set(media.map((m) => m.id));
     const clips = p.clips.map((c) => ({ ...c, mediaId: idMap.get(c.mediaId) ?? c.mediaId })).filter((c) => known.has(c.mediaId));
     const missing = p.media.filter((m) => m.source.kind === 'file').length - idMap.size;
-    store.set({ ...p, media: [...media, ...current.filter((m) => !known.has(m.id))], clips });
+    // a project file opens as a new project next to the open one
+    const { startProject } = await import('./projects.svelte');
+    await startProject({ ...p, media: [...media, ...current.filter((m) => !known.has(m.id))], clips });
     if (missing > 0) store.toast(`${missing} media file(s) are missing. Import them and open the project again.`, 'error', 7000);
     else store.toast('Opened.', 'ok');
   } catch (e) {

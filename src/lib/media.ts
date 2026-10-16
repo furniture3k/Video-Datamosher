@@ -72,7 +72,11 @@ export async function addFiles(list: FileList | File[], place: Place = 'auto', k
   }
   store.status.engine = '';
   // New projects: put everything straight on the timeline so there is something to see.
-  if (place === 'auto' && wasEmpty) for (const m of added) addToTimeline(m);
+  if (place === 'auto' && wasEmpty && added.length) {
+    for (const m of added) addToTimeline(m);
+    // something to see straight away (a recipe found in the file is offered instead)
+    if (!recipe) import('./starters.svelte').then((s) => s.firstMosh());
+  }
   else if (place !== 'auto' && place !== 'none') {
     let p = place;
     for (const m of added) {

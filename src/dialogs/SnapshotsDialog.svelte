@@ -3,11 +3,11 @@
   import Icon from '../components/Icon.svelte';
   import { askText, ask } from '../lib/ask';
   import { store } from '../lib/store.svelte';
-  import { snapshots, loadSnapshots, takeSnapshot, restoreSnapshot, renameSnapshot, deleteSnapshot } from '../lib/snapshots.svelte';
+  import { snapshots, loadSnapshots, takeSnapshot, restoreSnapshot, renameSnapshot, deleteSnapshot, ofProject } from '../lib/snapshots.svelte';
 
   let showAuto = $state(true);
   loadSnapshots();
-  const list = $derived(snapshots.list.filter((s) => showAuto || !s.auto));
+  const list = $derived(ofProject(snapshots.list).filter((s) => showAuto || !s.auto));
 
   const when = (t: number) => {
     const d = new Date(t);
@@ -16,7 +16,7 @@
   };
 
   async function save() {
-    const name = await askText('Snapshot name', `Snapshot ${snapshots.list.filter((s) => !s.auto).length + 1}`);
+    const name = await askText('Snapshot name', `Snapshot ${ofProject(snapshots.list).filter((s) => !s.auto).length + 1}`);
     if (name === null) return;
     const s = await takeSnapshot(name || undefined);
     if (s) store.toast('Snapshot saved.', 'ok');

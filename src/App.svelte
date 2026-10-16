@@ -31,11 +31,21 @@
   import { crashedSession } from './lib/recovery';
   import { collectEngineLog } from './lib/report';
   import { listenForIncoming, openFiles } from './lib/incoming';
+  import Home from './home/Home.svelte';
+  import { refreshThumb } from './lib/projects.svelte';
+  import { hasContent, loadIndex } from './lib/projectindex';
   import { saveProjectFile } from './lib/projectio.svelte';
-  import { localSet } from './lib/storage';
+  import { localGet, localSet } from './lib/storage';
+  import Tour from './components/Tour.svelte';
   import * as edit from './lib/edit';
 
   let dragging = $state(false);
+  /** the saved project has been loaded (the tour waits for this) */
+  let ready = $state(false);
+  // the first time the editor shows, a short tour of it
+  $effect(() => {
+    if (ready && !store.ui.home && !store.ui.dialog && !store.ui.welcome && !localGet('seenWelcome', false)) store.ui.welcome = true;
+  });
   // phones (and small tablets held either way) get the mobile editor
   const PHONE = '(max-width: 860px), (max-height: 500px) and (pointer: coarse)';
   const mq = typeof matchMedia !== 'undefined' ? matchMedia(PHONE) : null;
@@ -53,9 +63,13 @@
     // start with auto-render paused so the same mosh doesn't take the tab down again
     const crashed = crashedSession();
     if (crashed) store.ui.autoRender = false;
-    store.restore(!crashed).then(() => {
+    store.restore(!crashed).then(async () => {
+      ready = true;
+      const saved = (await loadIndex()).length > 0;
+      // the home screen first, unless the last project should open straight away (and there is one)
+      store.ui.home = store.ui.startHome || (!hasContent(store.project) && saved);
       listenForIncoming();
-      const updated = checkWhatsNew();
+      const updated = checkWhatsNew(saved || hasContent(store.project));
       if (crashed)
         store.toast(
           `moshpit closed while it was ${crashed.kind === 'export' ? 'exporting' : 'rendering'}, maybe because it ran out of memory. Auto-render is paused: try a lower preview resolution or fewer repeats, or restore a snapshot.`,
@@ -66,6 +80,9 @@
       else if (updated && !store.ui.dialog) store.ui.dialog = 'whatsnew';
     });
     ffmpeg.warmup().catch((e) => (store.status.error = 'Could not load the video engine: ' + e.message));
+    // keep the open project's picture on the home screen current
+    const thumbs = window.setInterval(() => !store.ui.home && !document.hidden && refreshThumb(), 20000);
+    return () => clearInterval(thumbs);
   });
 
   $effect(() => {
@@ -108,6 +125,11 @@
   function onKey(e: KeyboardEvent) {
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    // the home screen has no editor: only Escape (closing a dialog) applies
+    if (store.ui.home) {
+      if (e.key === 'Escape' && store.ui.dialog && !inField(e)) store.ui.dialog = null;
+      return;
+    }
     if (mod && k === 'z') {
       e.preventDefault();
       if (e.shiftKey) store.redo();
@@ -365,18 +387,20 @@
   }}
   ondrop={onDrop}
 >
-  {#if phone}
+  {#if store.ui.home}
+    <Home />
+  {:else if phone}
     <MobileEditor onchaos={runChaos} />
   {:else}
     <TopBar onchaos={runChaos} onmutate={runMutate} />
     <main>
-      <aside class="left"><MediaBin /></aside>
+      <aside class="left" data-tour="media"><MediaBin /></aside>
       <section class="center"><Player /></section>
       <aside class="right"><Inspector /></aside>
     </main>
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resizer" title="Drag to resize the timeline" onpointerdown={resizeDown}></div>
-    <footer style="--tlh:{store.ui.timelineHeight}px"><Timeline /></footer>
+    <footer data-tour="timeline" style="--tlh:{store.ui.timelineHeight}px"><Timeline /></footer>
   {/if}
 
   {#if dragging}
@@ -400,6 +424,7 @@
 {#if store.ui.dialog === 'live'}<LiveMode />{/if}
 {#if store.ui.dialog === 'storage'}<StorageDialog />{/if}
 {#if store.ui.dialog === 'whatsnew'}<WhatsNewDialog />{/if}
+{#if store.ui.welcome && !store.ui.home}<Tour {phone} />{/if}
 <Toasts />
 
 <style>

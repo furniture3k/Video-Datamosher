@@ -1,5 +1,6 @@
 <script lang="ts">
   import Modal from '../components/Modal.svelte';
+  import { store } from '../lib/store.svelte';
   const keys: [string, string][] = [
     ['Space', 'Play / pause'],
     ['J / K / L', 'Play backwards / stop / play forwards (press again for 2×, 4×…)'],
@@ -104,6 +105,10 @@
       </table>
     </div>
   </div>
+  {#snippet footer()}
+    <button onclick={() => ((store.ui.dialog = null), (store.ui.welcome = true))}>Take the tour again</button>
+    <button class="primary" onclick={() => (store.ui.dialog = null)}>Close</button>
+  {/snippet}
 </Modal>
 
 <style>

@@ -36,6 +36,11 @@ try {
   sample = null;
 }
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+// start in the editor (not the home screen), without the first-run tour or the automatic first mosh
+await page.addInitScript(() => {
+  for (const [k, v] of Object.entries({ startHome: false, seenWelcome: true, autoMosh: false })) localStorage.setItem('moshpit:' + k, JSON.stringify(v));
+});
+
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => (m.type() === 'error' ? errors.push(m.text()) : /retrying/.test(m.text()) && console.log('  [warn]', m.text())));

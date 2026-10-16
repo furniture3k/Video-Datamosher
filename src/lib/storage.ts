@@ -120,6 +120,14 @@ export async function kvSet(key: string, value: unknown) {
   }
 }
 
+export async function kvDelete(key: string) {
+  try {
+    await tx('kv', 'readwrite', (s) => s.delete(key));
+  } catch (e) {
+    console.warn('kv delete failed', e);
+  }
+}
+
 export function localGet<T>(key: string, fallback: T): T {
   try {
     const v = localStorage.getItem('moshpit:' + key);
