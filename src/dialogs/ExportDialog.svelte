@@ -14,7 +14,7 @@
 
   /** A gallery post on GitHub with this mosh's recipe filled in (the video is attached there). */
   async function submitToGallery() {
-    const q = new URLSearchParams({ category: 'gallery', title: `My mosh: ${store.project.name || 'Untitled'}`, recipe: await shareCode() });
+    const q = new URLSearchParams({ category: 'show-and-tell', title: `My mosh: ${store.project.name || 'Untitled'}`, recipe: await shareCode() });
     window.open(`${REPO}/discussions/new?${q}`, '_blank', 'noopener');
   }
   import { isDesktop } from '../lib/platform';

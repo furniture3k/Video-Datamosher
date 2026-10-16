@@ -29,5 +29,5 @@ The [gallery](../../#gallery) shows moshes made with moshpit, each with its reci
 To add yours:
 
 1. Export it (a short MP4 or GIF works best) and copy its share code (**⋯ → Share code**).
-2. [Start a gallery post](https://github.com/furniture3k/Video-Datamosher/discussions/new?category=gallery) on GitHub: attach the video, paste the code and give it a title.
+2. [Start a gallery post](https://github.com/furniture3k/Video-Datamosher/discussions/new?category=show-and-tell) on GitHub: attach the video, paste the code and give it a title.
 3. Once it's added, it appears on the site with an **Open this recipe** link.

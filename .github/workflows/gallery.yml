@@ -1,4 +1,4 @@
-# Adds a gallery post (a GitHub Discussion in the "Gallery" category) to the website's gallery:
+# Adds a gallery post (a GitHub Discussion in the "Show and tell" category, using its gallery form) to the website's gallery:
 # label the discussion "gallery-approved", or run this by hand with its number. It opens a pull
 # request that adds the post to public/site/gallery.json; merging it publishes it.
 name: Add to the gallery
