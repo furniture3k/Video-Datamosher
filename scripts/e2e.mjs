@@ -102,6 +102,8 @@ try {
     await page.screenshot({ path: path.join(shots, '3-warp.png') });
   });
   await step('automate a parameter', async () => {
+    // automation is an Advanced control
+    await page.getByRole('button', { name: 'Advanced', exact: true }).click();
     await page.locator('.pc').first().getByTitle(/Automate/).click();
     await page.waitForSelector('.ae canvas');
   });

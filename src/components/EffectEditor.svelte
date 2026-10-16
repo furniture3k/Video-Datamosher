@@ -13,6 +13,8 @@
   import { audioSources, mediaOf } from '../engine/timeline';
   import { FLOW_TOOLS } from '../engine/flowfield';
   import { beatInfo } from '../lib/beatinfo.svelte';
+  import { fxPrefs, saveFxPreset, deleteFxPreset, applyFxPreset } from '../lib/fxprefs.svelte';
+  import { ask, askText } from '../lib/ask';
 
   let { effect }: { effect: EffectInstance } = $props();
   const def = $derived(EFFECTS[effect.type]);
@@ -48,6 +50,21 @@
   const trackedPaths = $derived(store.project.clips.flatMap((c) => (c.paths ?? []).map((p) => ({ clipId: c.id, pathId: p.id, name: `${mediaOf(store.project, c.mediaId)?.source.name ?? 'clip'} · ${p.name}` }))));
   const strokeCount = $derived(((effect.data?.strokes as unknown[]) ?? []).length);
 
+  // settings saved for this kind of effect
+  const saved = $derived(fxPrefs.presets[effect.type] ?? []);
+  async function onSaved(v: string) {
+    if (v.startsWith('use:')) {
+      const p = saved.find((x) => x.name === v.slice(4));
+      if (p) applyFxPreset(effect, p);
+    } else if (v === 'save') {
+      const name = await askText(`Name these ${def.name} settings`, `My ${def.name}`);
+      if (name?.trim()) {
+        saveFxPreset(effect, name.trim());
+        store.toast(`Saved. Any ${def.name} can use “${name.trim()}” from Saved…`, 'ok');
+      }
+    } else if (v.startsWith('del:') && (await ask(`Delete the saved settings “${v.slice(4)}”?`, 'Delete'))) deleteFxPreset(effect.type, v.slice(4));
+  }
+
 </script>
 
 <div class="editor" style="--c:{def.color}">
@@ -62,6 +79,16 @@
     />
     <button class="icon ghost" class:on={info} title="What does this do?" aria-label="About this effect" onclick={() => (store.ui.tips ? store.setPref('tips', false) : (showInfo = !showInfo))}><Icon name="help" size={14} /></button>
     <button class="icon ghost" title="Randomize unlocked settings" aria-label="Randomize settings" onclick={randomize}><Icon name="dice" size={14} /></button>
+    <select class="saved" aria-label="Saved settings" title="Settings you saved for {def.name}" value="" onchange={(e) => (onSaved((e.target as HTMLSelectElement).value), ((e.target as HTMLSelectElement).value = ''))}>
+      <option value="">Saved…</option>
+      {#each saved as p (p.name)}<option value={'use:' + p.name}>{p.name}</option>{/each}
+      <option value="save">Save these settings…</option>
+      {#if saved.length}
+        <optgroup label="Delete">
+          {#each saved as p (p.name)}<option value={'del:' + p.name}>Delete “{p.name}”</option>{/each}
+        </optgroup>
+      {/if}
+    </select>
   </div>
   {#if info}<p class="desc small muted">{def.description}</p>{/if}
   {#if usesBeats(effect) && !hasSound}
@@ -271,5 +298,12 @@
   }
   .seed {
     width: 100px;
+  }
+  .saved {
+    width: 74px;
+    height: 26px;
+    font-size: 11.5px;
+    padding: 0 4px;
+    flex: none;
   }
 </style>

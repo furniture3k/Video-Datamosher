@@ -48,7 +48,7 @@
   <div class="top">
     <span class="label-text" title={def.help}>{def.label}</span>
     <div class="tools">
-      {#if automatable}
+      {#if automatable && (store.ui.advanced || auto)}
         <button class="icon ghost" class:on={!!auto} title="Automate over time (curve or LFO)" aria-label="Automate" onclick={toggleAuto}><Icon name="curve" size={13} /></button>
       {/if}
       <button class="icon ghost" title="Randomize this" aria-label="Randomize" onclick={dice}><Icon name="dice" size={13} /></button>

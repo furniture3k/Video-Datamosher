@@ -5,6 +5,10 @@
   import { store } from '../lib/store.svelte';
   import { ALL_EFFECTS } from '../engine/effects';
   import { FAMILIES, guideOf } from '../lib/effectguide';
+  import { fxPrefs, toggleFavourite } from '../lib/fxprefs.svelte';
+  import { localGet, localSet } from '../lib/storage';
+  import EffectPreview from '../components/EffectPreview.svelte';
+  import { onDestroy } from 'svelte';
 
   let where = $state<'all' | 'playhead'>('all');
   let query = $state('');
@@ -12,11 +16,35 @@
   let showAll = $state(store.ui.advanced);
   const q = $derived(query.trim().toLowerCase());
   const match = (d: (typeof ALL_EFFECTS)[number]) => !q || (d.name + ' ' + d.description + ' ' + guideOf(d.type).looks).toLowerCase().includes(q);
-  const groups = $derived(
-    FAMILIES.map((f) => ({ ...f, items: ALL_EFFECTS.filter((d) => guideOf(d.type).family === f.id && match(d) && (showAll || q || guideOf(d.type).essential)) })).filter((g) => g.items.length),
-  );
+  const groups = $derived([
+    // your favourites first (☆ on any effect)
+    ...(!q && fxPrefs.favourites.length
+      ? [{ id: 'fav', title: 'Favourites', note: 'Effects you starred.', items: ALL_EFFECTS.filter((d) => fxPrefs.favourites.includes(d.type)) }]
+      : []),
+    ...FAMILIES.map((f) => ({ ...f, items: ALL_EFFECTS.filter((d) => guideOf(d.type).family === f.id && match(d) && (showAll || q || guideOf(d.type).essential || fxPrefs.favourites.includes(d.type))) })),
+  ].filter((g) => g.items.length));
   const hidden = $derived(ALL_EFFECTS.filter((d) => !guideOf(d.type).essential).length);
   const clip = $derived(store.selectedClip);
+  // live previews on your own footage (each one is a real render, so only for shorter timelines)
+  const PREVIEW_MAX_S = 30;
+  const canPreview = $derived(store.project.clips.length > 0 && store.duration <= PREVIEW_MAX_S);
+  let previewOn = $state(localGet('fxLivePreview', true));
+  let hovered = $state<string | null>(null);
+  let previewType = $state<string | null>(null);
+  let hoverTimer = 0;
+  onDestroy(() => clearTimeout(hoverTimer));
+  function hover(type: string | null) {
+    hovered = type;
+    clearTimeout(hoverTimer);
+    // wait for the pointer to rest, so sweeping across the grid doesn't start a render per effect
+    if (type) hoverTimer = window.setTimeout(() => hovered === type && (previewType = type), 650);
+  }
+  function rangeFor(type: string): [number, number] {
+    const total = store.totalFrames;
+    if (where === 'playhead') return [store.playFrame, Math.min(total, store.playFrame + Math.round(store.fps * 2))];
+    return clip ? store.defaultRange(type) : [0, total];
+  }
+
   function add(type: string) {
     if (where === 'all' && !clip) store.addEffect(type, [0, store.totalFrames]);
     else if (where === 'all') store.addEffect(type);
@@ -35,11 +63,26 @@
       <Icon name="fx" size={14} />
       <input placeholder="Search effects: smear, glitch, colour…" bind:value={query} aria-label="Search effects" />
     </div>
+    {#if canPreview}
+      <label class="pvt small" title="Rest the pointer on an effect to see it on your own footage">
+        <input type="checkbox" bind:checked={previewOn} onchange={() => localSet('fxLivePreview', previewOn)} />Preview on my footage
+      </label>
+    {/if}
     <div class="seg" role="group" aria-label="Place on">
       <button class:on={where === 'all'} onclick={() => (where = 'all')}>{clip ? 'Selected clip' : 'Whole video'}</button>
       <button class:on={where === 'playhead'} onclick={() => (where = 'playhead')}>2 s at playhead</button>
     </div>
   </div>
+
+  {#if canPreview && previewOn}
+    <div class="livepv">
+      {#if previewType}
+        {#key previewType + where}<EffectPreview type={previewType} range={rangeFor(previewType)} />{/key}
+      {:else}
+        <div class="hint small faint">Rest the pointer on an effect to see it on your own footage.</div>
+      {/if}
+    </div>
+  {/if}
 
   <div class="fams">
     {#each groups as g (g.id)}
@@ -51,7 +94,9 @@
         <div class="items">
           {#each g.items as d (d.type)}
             {@const gd = guideOf(d.type)}
-            <button class="item" style="--c:{d.color}" onclick={() => add(d.type)} title={d.description}>
+            {@const fav = fxPrefs.favourites.includes(d.type)}
+            <div class="cell">
+            <button class="item" style="--c:{d.color}" onclick={() => add(d.type)} title={d.description} onmouseenter={() => previewOn && canPreview && hover(d.type)} onmouseleave={() => hover(null)} onfocus={() => previewOn && canPreview && hover(d.type)}>
               <span class="top">
                 <span class="code">{d.icon}</span>
                 <span class="nm">{d.name}</span>
@@ -60,6 +105,8 @@
               <span class="ds">{gd.looks || d.description}</span>
               {#if gd.diagram}<FrameDiagram cells={gd.diagram} />{/if}
             </button>
+            <button class="star" class:on={fav} onclick={() => toggleFavourite(d.type)} aria-pressed={fav} aria-label="Favourite" title={fav ? 'Favourite (click to unstar)' : 'Add to favourites'}>{fav ? '★' : '☆'}</button>
+            </div>
           {/each}
         </div>
       </section>
@@ -131,6 +178,48 @@
     grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
     gap: 8px;
   }
+  .pvt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .livepv {
+    width: min(420px, 100%);
+    margin: 0 auto 14px;
+  }
+  .livepv .hint {
+    aspect-ratio: 16 / 9;
+    display: grid;
+    place-items: center;
+    border: 1px dashed var(--line-2);
+    border-radius: var(--r);
+    text-align: center;
+    padding: 12px;
+  }
+  .cell {
+    position: relative;
+    display: flex;
+  }
+  .cell .item {
+    flex: 1;
+  }
+  .star {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 15px;
+    color: var(--text-3);
+  }
+  .star:hover,
+  .star.on {
+    color: var(--warn);
+  }
   .item {
     height: auto;
     flex-direction: column;
@@ -153,6 +242,7 @@
     align-items: center;
     gap: 8px;
     width: 100%;
+    padding-right: 22px;
   }
   .nm {
     font-weight: 600;

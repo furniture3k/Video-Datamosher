@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.8.0
+
+- **Find a command** (Ctrl P, ⌘ P on a Mac, or ⋯ → Find a command): type a few letters of anything
+  the editor can do, any effect or any preset, and press Enter. What you used lately comes first.
+- **Your own shortcuts.** Help lists every command with its keys. Click one and press new keys to
+  change it (it moves off any command that had them). **Print** makes a cheat sheet, and
+  **Defaults** puts everything back.
+- **History** (⋯ → History, or Ctrl Alt Z): every step undo can take you back through, with a name
+  for what changed ("Add Bloom", "Trim beach", "Melt on a cut"). Click one to jump there.
+- **Favourite effects**: star an effect in the picker and it's always at the top.
+- **Saved settings per effect**: **Saved…** on an effect keeps its settings under a name, for any
+  effect of that kind later.
+- **See an effect on your own footage before adding it**: with **Preview on my footage** on, rest the
+  pointer on an effect in the picker (timelines up to 30 s).
+- **Render progress on the timeline**, with how long is left, there and under the player.
+- **Simple mode is simpler**: automation, the Trim and Blade tool buttons, scopes and compound clips
+  are in Advanced (their keys still work).
+
 ## 1.7.0
 
 - **A website.** The site's address now opens a landing page: what moshpit does, a before/after

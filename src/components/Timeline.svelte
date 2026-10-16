@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatSeconds } from '../engine/eta';
   import { compoundOf } from '../engine/compound';
   import { makeCompound, openCompound } from '../lib/compound.svelte';
   import { beatInfo, refreshBeats, beatInputs } from '../lib/beatinfo.svelte';
@@ -747,8 +748,11 @@
     <span class="tsep"></span>
     <span class="tools" role="radiogroup" aria-label="Timeline tool">
       <button class="icon ghost" class:on={store.ui.tool === 'select'} role="radio" aria-checked={store.ui.tool === 'select'} title="Select tool  A: drag clips to move, edges to trim (Alt: roll a cut, slip a clip)" aria-label="Select tool" onclick={() => (store.ui.tool = 'select')}><Icon name="pointer" /></button>
+      <!-- Simple mode: the Trim and Blade tools stay on their keys (T, B) -->
+      {#if store.ui.advanced || store.ui.tool !== 'select'}
       <button class="icon ghost" class:on={store.ui.tool === 'trim'} role="radio" aria-checked={store.ui.tool === 'trim'} title="Trim tool  T: drag a cut to roll it (one clip gets longer, the next shorter), drag a clip to slip its footage" aria-label="Trim tool" onclick={() => (store.ui.tool = 'trim')}><Icon name="trim" /></button>
       <button class="icon ghost" class:on={store.ui.tool === 'blade'} role="radio" aria-checked={store.ui.tool === 'blade'} title="Blade tool  B: click a clip to cut it there" aria-label="Blade tool" onclick={() => (store.ui.tool = 'blade')}><Icon name="blade" /></button>
+      {/if}
     </span>
     <button class="icon ghost" title="Add / remove a marker at the playhead  M" aria-label="Marker" onclick={edit.toggleMarker}><Icon name="marker" /></button>
     <button class="icon ghost" title="Freeze frame: hold the picture at the playhead for 2 s  Shift R" aria-label="Freeze frame" onclick={() => edit.freezeAtPlayhead()} disabled={!store.project.clips.length}><Icon name="freeze" /></button>
@@ -769,12 +773,22 @@
     <div class="inner" class:narrow style="width:{G + W}px;--g:{G}px">
       <!-- ruler -->
       <div class="trow ruler-row">
-        <div class="g g-ruler"><span class="label">Timeline</span></div>
+        <div class="g g-ruler" title={store.status.busy ? `Rendering the mosh: ${store.status.stage || 'starting'}, ${Math.round(store.status.overall * 100)}% done${store.status.eta !== null ? `, about ${formatSeconds(store.status.eta)} left` : ''}` : undefined}>
+          {#if store.status.busy}
+            <span class="label busy mono">{Math.round(store.status.overall * 100)}%{store.status.eta !== null ? ` · ${formatSeconds(store.status.eta)}` : ''}</span>
+          {:else}
+            <span class="label">Timeline</span>
+          {/if}
+        </div>
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div class="lane ruler" bind:this={rulerLane} style="width:{W}px" onpointerdown={rulerDown}>
           {#each ticks.out as s}
             <div class="tick" style="left:{x(s)}px"><span class="mono">{fmtTick(s)}</span></div>
           {/each}
+          {#if store.status.busy}
+            <!-- how far the mosh render has got, all its stages together -->
+            <div class="rprog" style="width:{Math.max(0.5, store.status.overall * 100)}%" aria-hidden="true"></div>
+          {/if}
           {#if beatInfo.grid && beatInfo.status === 'ready'}
             {@const down = new Set(beatInfo.downbeats.map((d) => Math.round(d * 1000)))}
             {@const gap = pps * (60 / Math.max(1, beatInfo.bpm))}
@@ -1124,7 +1138,7 @@
       {#if compoundOf(mediaOf(store.project, menuClip.mediaId))}
         <button class="ghost" onclick={() => openCompound(menuClip.mediaId)}><Icon name="folder" />Edit inside the compound</button>
       {:else if menuClip.track === VIDEO_TRACK}
-        <button class="ghost" onclick={() => makeCompound()} title="Fold the selected main-track clips (first to last) into one clip with its own timeline"><Icon name="folder" />Make compound clip{store.ui.selectedClips.length > 1 ? ` (${store.ui.selectedClips.length})` : ''}</button>
+        {#if store.ui.advanced}<button class="ghost" onclick={() => makeCompound()} title="Fold the selected main-track clips (first to last) into one clip with its own timeline"><Icon name="folder" />Make compound clip{store.ui.selectedClips.length > 1 ? ` (${store.ui.selectedClips.length})` : ''}</button>{/if}
       {/if}
       <button class="ghost" onclick={() => edit.markClip()}><Icon name="loop" />Mark In / Out on this clip<span class="kbd">X</span></button>
       <div class="labels" role="group" aria-label="Clip colour">
@@ -1265,6 +1279,20 @@
   }
   .ruler-row .g {
     z-index: 6;
+  }
+  .rprog {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 2px;
+    background: var(--accent);
+    pointer-events: none;
+    transition: width 0.3s linear;
+  }
+  .g-ruler .label.busy {
+    color: var(--accent);
+    font-size: 10.5px;
+    white-space: nowrap;
   }
   .ruler {
     height: 22px;

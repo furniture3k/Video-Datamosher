@@ -961,6 +961,71 @@ await step('home on a phone: fits the screen', async () => {
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+await step('command palette: find and run a command by name', async () => {
+  const loop = await S(() => window.__moshpit.store.ui.loopOn);
+  await page.keyboard.press('Control+p');
+  await page.locator('.pal input').waitFor();
+  await page.keyboard.type('loop on');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction((l) => window.__moshpit.store.ui.loopOn !== l && !window.__moshpit.store.ui.dialog, loop);
+  // effects and presets are in it too
+  await page.keyboard.press('Control+p');
+  await page.keyboard.type('add effect bloom');
+  if (!(await page.locator('.pal .row.on', { hasText: 'Add effect: Bloom' }).count())) throw new Error('the palette did not find Bloom');
+  await page.keyboard.press('Escape');
+  await page.locator('.pal').waitFor({ state: 'detached' });
+});
+
+await step('history: named steps, jump back and forward', async () => {
+  const n0 = await S(() => window.__moshpit.store.historySize.undo);
+  await S(() => window.__moshpit.store.addEffect('chroma'));
+  await page.keyboard.press('Control+Alt+z');
+  await page.locator('.steps .row.now', { hasText: 'Add Chroma Drift' }).waitFor();
+  // back one step, then forward again from the list
+  await page.locator('.steps .row').nth(1).click();
+  await page.waitForFunction((n) => window.__moshpit.store.historySize.undo === n, n0);
+  await page.locator('.steps .row.future', { hasText: 'Add Chroma Drift' }).click();
+  await page.waitForFunction((n) => window.__moshpit.store.historySize.undo === n + 1, n0);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+z');
+  await settle();
+});
+
+await step('shortcuts: change one in Help, use it, back to the defaults', async () => {
+  await page.keyboard.press('?');
+  const row = page.locator('tr', { hasText: 'Loop on / off' });
+  await row.locator('.keybtn').click();
+  await page.keyboard.press('Shift+L');
+  await row.locator('.kbd', { hasText: 'Shift L' }).waitFor();
+  await page.keyboard.press('Escape');
+  const loop = await S(() => window.__moshpit.store.ui.loopOn);
+  await page.keyboard.press('Shift+L');
+  if ((await S(() => window.__moshpit.store.ui.loopOn)) === loop) throw new Error('the new shortcut did nothing');
+  await page.keyboard.press('?');
+  await page.getByRole('button', { name: 'Defaults' }).click();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('/');
+  if ((await S(() => window.__moshpit.store.ui.loopOn)) !== loop) throw new Error('the default shortcut did not come back');
+});
+
+await step('effects: favourites, saved settings and a live preview', async () => {
+  await page.keyboard.press('Shift+A');
+  await page.locator('.cell', { hasText: 'Chroma Drift' }).locator('.star').click();
+  await page.locator('.fams h4', { hasText: 'Favourites' }).waitFor();
+  // a live preview on your own footage (short timelines only)
+  if (await page.locator('.pvt input').count()) {
+    if (!(await page.locator('.pvt input').isChecked())) await page.locator('.pvt input').check();
+    await page.locator('.cell', { hasText: 'Chroma Drift' }).first().locator('.item').hover();
+    await page.locator('.livepv img').waitFor({ timeout: 120000 });
+  }
+  await page.locator('.cell', { hasText: 'Chroma Drift' }).first().locator('.item').click();
+  await page.locator('.editor select.saved').selectOption('save'); // the prompt answers "Test preset"
+  await page.waitForFunction(() => [...document.querySelectorAll('.editor select.saved option')].some((o) => o.textContent === 'Test preset'));
+  await page.locator('.editor select.saved').selectOption('use:Test preset');
+  await page.keyboard.press('Control+z');
+  await settle();
+});
+
 await step('website: landing page, gallery and docs', async () => {
   await page.goto(root);
   await page.locator('h1', { hasText: 'Break your videos' }).waitFor();
