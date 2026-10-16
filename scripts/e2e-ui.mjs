@@ -286,7 +286,8 @@ await step('variations: breed two, next generation, back', async () => {
   const tiles = page.locator('.modal .cell .pv:not([disabled])');
   await tiles.nth(0).click();
   await tiles.nth(1).click();
-  await page.getByRole('button', { name: 'Breed 2' }).click();
+  // Breed waits for every tile to finish rendering
+  await page.getByRole('button', { name: 'Breed 2' }).click({ timeout: 180000 });
   await page.locator('.modal .gen', { hasText: 'Generation 2' }).waitFor();
   await page.waitForFunction(() => document.querySelectorAll('.modal .cell .pv:not([disabled])').length >= 4, null, { timeout: 180000 });
   await page.getByRole('button', { name: 'Back' }).click();

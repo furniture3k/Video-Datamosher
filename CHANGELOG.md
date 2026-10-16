@@ -8,8 +8,8 @@
 - **A phone editor built for phones**: a big preview, a timeline with the playhead fixed in the
   middle (swipe to scrub, pinch to zoom, handles to trim, hold to move), tools along the bottom that
   change with the selection, and sheets that slide over the timeline. Dialogs are bottom sheets.
-- **Sharper preview.** The mosh preview renders at the mosh resolution (it used to be 480 px wide),
-  with a Full / 1/2 / 1/4 quality button under the player; the edit preview draws the original files
+- **Sharper preview.** The mosh preview follows the mosh resolution (it used to be a fixed 480 px):
+  a Full / 1/2 / 1/4 button under the player, Full in the desktop app and 1/2 in the browser; the edit preview draws the original files
   at screen resolution and only uses the preview copies while scrubbing. Preview copies are sharper.
 - **Clearer effect picker**: effects grouped by what you'll see (Melts, Smears, Rhythm, Damage, Colour
   & pixels, Protect), plain-language descriptions, a frame diagram per effect, search, and the nine

@@ -6,6 +6,7 @@ import { migrate } from '../engine/migrate';
 import { rootWithInner } from '../engine/compound';
 import { renderPreview, renderKey, proxyKey, Cancelled, type RenderResult } from './renderer';
 import { outputSize } from '../engine/args';
+import { isDesktop } from './platform';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
@@ -79,7 +80,8 @@ class Store {
     zoom: 1,
     autoRender: localGet('autoRender', true),
     /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
-    previewRes: localGet<PreviewRes>('previewRes', typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches ? 'half' : 'full'),
+    // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
+    previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
     dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
