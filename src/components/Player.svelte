@@ -85,7 +85,8 @@
     } catch {
       return;
     }
-    if (tok !== drawToken) return;
+    // a newer frame was asked for, or the player went away (phone ↔ desktop layout) while decoding
+    if (tok !== drawToken || !canvas) return;
     if (!a.width || (b && !b.width)) return; // bitmap was closed meanwhile
     const w = a.width;
     const h = a.height;
