@@ -1,0 +1,23 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "moshpit",
+        "backgroundColor": "#0b0b0d",
+        "label": "main",
+        "url": "app/index.html"
+      }
+    ]
+  },
+  "bundle": {
+    "externalBin": [],
+    "resources": {
+      "../LICENSE": "LICENSE.txt",
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+    }
+  }
+}

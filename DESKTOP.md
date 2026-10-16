@@ -122,6 +122,36 @@ SmartScreen still warns about a new certificate until enough people have install
 The App Store and Microsoft Store need the same certificates plus their own developer accounts
 (Apple $99/year; Microsoft has a one-off fee). Google Play (for an Android build) is a one-off $25.
 
+## Android (experimental)
+
+The same Tauri project builds an Android app: the editor in the system webview, with the browser's
+video engine (ffmpeg.wasm) instead of a native FFmpeg. `src-tauri/src/lib.rs` has a separate
+`run()` for mobile: no native engine, no file opening and no single-window handling; exports are
+saved to Downloads by the `save_download` command (`src-tauri/src/mobile.rs`).
+`src-tauri/tauri.android.conf.json` leaves out the desktop's FFmpeg and builds the web app with its
+video engines (`npm run build`, not `build:desktop`). In the page, `isDesktop` is false on Android
+(`isAndroidApp` is true), so everything else behaves as in a browser.
+
+The **Android app** workflow (`.github/workflows/android.yml`) builds it on GitHub's runners (they
+have the Android SDK and NDK): `tauri android init`, then an arm64 release APK, signed. It runs on
+pull requests that touch the native side and by hand, and the Desktop app workflow attaches the APK
+to each release. To build it yourself: install Android Studio (SDK and NDK), set `ANDROID_HOME`
+and `NDK_HOME`, add the Rust target (`rustup target add aarch64-linux-android`), then
+`npx tauri android init` and `npx tauri android build --apk --target aarch64`.
+
+Signing: without the `ANDROID_KEYSTORE` (base64 of a `.jks`) and `ANDROID_KEYSTORE_PASSWORD`
+secrets, each build gets a new self-signed key, so a new APK only installs after uninstalling the
+old one (projects are kept in the app's storage, which uninstalling clears). Make one key once
+(`keytool -genkeypair -keystore moshpit.jks -alias moshpit -keyalg RSA -keysize 2048 -validity
+10000`) and add it as the secrets to keep updates in place.
+
+Not tested on a phone yet. Until it is, the installable web app (open the site in Chrome, then
+*Install app*) is the safer way to use moshpit on Android; it shares and opens files the same way.
+
+Paid, for later: Google Play needs a developer account (a one-off $25) and the APK as an app bundle
+(`tauri android build --aab`). iOS needs an Apple developer account ($99 a year) and a Mac to build
+(`tauri ios init` / `tauri ios build`); the same mobile `run()` applies.
+
 ## Next steps
 
 - Longer projects (over 30 minutes): keep preview frames in a disk cache and read them as the
@@ -132,5 +162,4 @@ The App Store and Microsoft Store need the same certificates plus their own deve
 - Open media by path instead of copying it into the app's storage, and save projects as files next
   to the media.
 - In-app updates with Tauri's updater plugin (needs a signing key for update bundles).
-- Phone apps from the same code (Tauri 2 also targets iOS and Android, using ffmpeg.wasm there).
-  Until then the installable web app covers phones.
+- Test the Android build on phones, then iOS (see Android above).

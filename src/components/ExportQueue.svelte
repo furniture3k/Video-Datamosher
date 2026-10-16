@@ -2,8 +2,8 @@
   // Exports running in the background (Export → Add to queue), in the bottom right corner.
   import Icon from './Icon.svelte';
   import { exportQueue, cancelJob, removeJob, saveJob } from '../lib/exportqueue.svelte';
-  import { isDesktop } from '../lib/platform';
-  import { hasSavePicker } from '../lib/storage';
+  import { isDesktop, isAndroidApp } from '../lib/platform';
+  import { hasSavePicker, download } from '../lib/storage';
 
   const active = $derived(exportQueue.jobs.filter((j) => j.status === 'running' || j.status === 'waiting').length);
   const mb = (n: number) => (n / 1048576).toFixed(n > 1e7 ? 0 : 1) + ' MB';
@@ -26,7 +26,7 @@
                 <button class="icon ghost" title="Cancel this export" aria-label="Cancel export" onclick={() => cancelJob(j.id)}><Icon name="x" size={12} /></button>
               {:else}
                 {#if j.status === 'done'}
-                  {#if j.url}<a class="small" href={j.url} download={j.result?.name}>Download</a>{/if}
+                  {#if j.url && isAndroidApp}<button class="ghost small" onclick={() => j.result?.blob && download(j.result.blob, j.result.name)}>Save</button>{:else if j.url}<a class="small" href={j.url} download={j.result?.name}>Download</a>{/if}
                   {#if isDesktop || hasSavePicker()}<button class="ghost small" onclick={() => saveJob(j.id)}>{isDesktop ? (j.savedTo ? 'Show' : 'Save…') : 'Save as…'}</button>{/if}
                 {/if}
                 <button class="icon ghost" title="Remove from the list" aria-label="Remove from the list" onclick={() => removeJob(j.id)}><Icon name="x" size={12} /></button>

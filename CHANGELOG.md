@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.12.0
+
+- **Your own layout**: drag the edge between a side panel and the player to make it wider or
+  narrower, or fold it away with its arrow. **⋯ → Layout** switches between **Edit**, **Mosh** and
+  **Big player**, and **+** saves the layout you have.
+- **In your language**: the home screen, the top bar, its menu and the effect names in Spanish,
+  Portuguese (Brazil), French, German and Japanese, picked from your browser's language or on the
+  home screen. These are drafts: corrections are very welcome (see CONTRIBUTING.md).
+- **Easier to read and to use with a keyboard**: dim text is brighter, dialogs keep the keyboard
+  inside them and give it back when they close, every control shows where the focus is, and
+  animations stop if your system asks for less motion.
+- **An Android app (experimental)**: an APK is attached to each release. It hasn't been tried on
+  many phones yet; the installable web app is still the safer choice on Android.
+
 ## 1.11.0
 
 - **H.264 moshing (experimental)**: Encode → Mosh codec → H.264. The codec of most videos today,

@@ -1,6 +1,6 @@
 // IndexedDB persistence for media files, autosaved project and user presets.
 import { blobToDisk, saveFromDisk, removeEngineFile } from './ffmpeg-native';
-import { isDesktop } from './platform';
+import { isDesktop, isAndroidApp } from './platform';
 import { tell } from './ask';
 
 const DB = 'moshpit';
@@ -266,6 +266,7 @@ export function localSet(key: string, value: unknown) {
 export function download(data: Blob | Uint8Array, name: string, type = 'application/octet-stream') {
   const blob = data instanceof Blob ? data : new Blob([data as BlobPart], { type });
   if (isDesktop) return void saveNative(blob, name);
+  if (isAndroidApp) return void saveAndroid(blob, name);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -335,6 +336,18 @@ async function saveNative(blob: Blob, name: string) {
   try {
     const path = await blobToDisk(blob, name);
     if (!(await saveFromDisk(path, name))) removeEngineFile(path); // cancelled
+  } catch (e) {
+    tell('Could not save ' + name + ': ' + ((e as Error)?.message ?? e));
+  }
+}
+
+/** Android app: the webview can't download, so the file goes to Downloads through the app. */
+async function saveAndroid(blob: Blob, name: string) {
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    const path = await invoke<string>('save_download', new Uint8Array(await blob.arrayBuffer()), { headers: { name: encodeURIComponent(name) } });
+    const { store } = await import('./store.svelte');
+    store.toast(`Saved to ${path.split('/').slice(-2).join('/')}.`, 'ok', 6000);
   } catch (e) {
     tell('Could not save ' + name + ': ' + ((e as Error)?.message ?? e));
   }
