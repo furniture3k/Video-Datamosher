@@ -11,10 +11,12 @@ order: 5
 | Format | Good for |
 |---|---|
 | **MP4** (H.264) | Anywhere: social media, messages, editors |
-| **WebM** (VP8) | The web |
+| **WebM** (VP9 or VP8) | The web |
 | **GIF** | Loops in chats and forums |
 | **PNG frames** | Taking frames into another tool (a zip) |
 | **AVI** | The raw broken file, which plays differently in every player |
+
+**Hardware encoding** (on by default) uses your device's own video encoder for MP4 and WebM where the browser has one: several times faster. **Add to queue** exports in the background while you keep editing; the queue in the corner shows how far each export is and saves it when it's done.
 
 **Made for** sets up the size and shape for TikTok, Reels and Shorts, the Instagram feed, square posts, YouTube or a Discord size limit. **Shape** exports a different aspect (9:16 from 16:9…) with the crop following the action, and **Loop** makes seamless loops. On phones and tablets, **Share…** sends the export straight to another app.
 

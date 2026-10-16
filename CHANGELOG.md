@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.9.0
+
+- **Faster exports in the browser.** MP4 and WebM are encoded with your device's own video encoder
+  (WebCodecs) where the browser has one: several times faster than before, and WebM gets VP9.
+  **Hardware encoding** in Export turns it off.
+- **The video engine uses several threads** in Chrome, Edge and Firefox (up to 4 of your
+  processor's cores), so renders and the built-in encoders run about twice as fast. It turns
+  itself back to one thread if it ever crashes; **Encode → Use 4 threads** turns it off.
+- **Export queue**: **Add to queue** in Export renders in the background while you keep editing,
+  one export after another, and tells you when each is ready (with a notification if the tab is in
+  the background).
+- **Preview copies of big videos are made with the browser's own decoders and encoders** where it
+  can, so large clips are ready to scrub much sooner. Clips with one show a **proxy** tag.
+- **Media is kept in the browser's file system** (where it has one) instead of its database: big
+  imports save faster and are read straight from disk. Files from older versions move over by
+  themselves.
+- The desktop app's installer is ~60 MB smaller: it no longer carries the browser's video engines.
+
 ## 1.8.0
 
 - **Find a command** (Ctrl P, ⌘ P on a Mac, or ⋯ → Find a command): type a few letters of anything

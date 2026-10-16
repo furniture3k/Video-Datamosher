@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright-core';
 
 const dist = path.resolve('dist');
@@ -12,7 +13,9 @@ const server = http
   .createServer((req, res) => {
     let f = path.join(dist, decodeURIComponent(req.url.split('?')[0]));
     if (f.endsWith('/')) f += 'index.html';
-    fs.readFile(f, (e, d) => (e ? res.writeHead(404).end() : res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream' }).end(d)));
+    // COI=1: cross-origin isolated, as the service worker makes the editor (the main e2e always is)
+    const coi = process.env.COI ? { 'cross-origin-opener-policy': 'same-origin', 'cross-origin-embedder-policy': 'credentialless' } : {};
+    fs.readFile(f, (e, d) => (e ? res.writeHead(404).end() : res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream', ...coi }).end(d)));
   })
   .listen(0);
 const root = `http://localhost:${server.address().port}/`;
@@ -41,6 +44,8 @@ const settle = async () => {
 };
 let failed = 0;
 const step = async (name, fn) => {
+  // ONLY=regex runs just the matching steps (while working on one)
+  if (process.env.ONLY && !new RegExp(process.env.ONLY, 'i').test(name)) return;
   process.stdout.write(`• ${name}… `);
   try {
     await fn();
@@ -1026,6 +1031,82 @@ await step('effects: favourites, saved settings and a live preview', async () =>
   await page.locator('.editor select.saved').selectOption('use:Test preset');
   await page.keyboard.press('Control+z');
   await settle();
+});
+
+await step('a big video gets a preview copy made by the browser\'s own encoder', async () => {
+  // 1280 px wide (preview copies are made above 960), VP9, which this Chromium can decode
+  const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-ui-')), 'wide.webm');
+  try {
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=1280x720:r=24:d=3', '-c:v', 'libvpx-vp9', '-b:v', '1M', '-deadline', 'realtime', '-cpu-used', '8', f]);
+  } catch {
+    console.log('(no ffmpeg, skipped)');
+    return;
+  }
+  await page.locator('aside input[type=file][multiple]').first().setInputFiles(f);
+  const badge = page.locator('.item', { hasText: 'wide.webm' }).locator('.proxy');
+  await badge.waitFor({ timeout: 120000 });
+  if (!(await badge.getAttribute('title')).includes('hardware')) throw new Error('the preview copy was not made with WebCodecs');
+  // the mosh preview reads the copy with ffmpeg
+  await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), clips: [], effects: [] }));
+  await page.locator('.item', { hasText: 'wide.webm' }).locator('button[aria-label="Add to timeline"]').click();
+  await settle();
+  if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error('no frames from the preview copy');
+});
+
+await step('media is kept in the file system (OPFS), and files from IndexedDB move there', async () => {
+  const r = await S(async () => {
+    const { storage } = window.__moshpit;
+    const dir = await storage.opfs();
+    if (!dir) return { opfs: false };
+    const names = [];
+    for await (const [name] of dir.entries()) names.push(name);
+    // a file as older versions kept it
+    const db = await new Promise((res, rej) => {
+      const q = indexedDB.open('moshpit', 1);
+      q.onsuccess = () => res(q.result);
+      q.onerror = () => rej(q.error);
+    });
+    await new Promise((res, rej) => {
+      const t = db.transaction('files', 'readwrite');
+      t.objectStore('files').put(new Blob([new Uint8Array(12345)], { type: 'video/mp4' }), 'legacy:test');
+      t.oncomplete = res;
+      t.onerror = () => rej(t.error);
+    });
+    const moved = await storage.moveFilesToDisk();
+    storage.files.delete('legacy:test');
+    const back = await storage.getFile('legacy:test');
+    const left = await new Promise((res) => {
+      const q = db.transaction('files', 'readonly').objectStore('files').get('legacy:test');
+      q.onsuccess = () => res(q.result);
+    });
+    const onDisk = back instanceof File;
+    await storage.pruneFiles((await window.__moshpit.store.keepFiles()));
+    return { opfs: true, names: names.length, moved, size: back?.size, onDisk, left: !!left };
+  });
+  if (!r.opfs) throw new Error('no OPFS in Chromium');
+  if (r.names < 2) throw new Error('imported media is not in OPFS: ' + JSON.stringify(r));
+  if (!r.moved || r.size !== 12345 || !r.onDisk || r.left) throw new Error('migration from IndexedDB: ' + JSON.stringify(r));
+});
+
+await step('export queue: exports in the background while editing carries on', async () => {
+  await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
+  await settle();
+  await page.keyboard.press('e');
+  await page.getByRole('button', { name: /^WebM/ }).click();
+  await page.getByRole('button', { name: 'Add to queue' }).click();
+  await page.locator('.queue .job').first().waitFor();
+  if (await S(() => window.__moshpit.store.ui.dialog)) throw new Error('the export dialog stayed open');
+  // the editor still renders while the queue works (on the other engine)
+  await page.keyboard.press('Shift+A');
+  await page.locator('.modal input[aria-label="Search effects"]').fill('Bloom');
+  await page.locator('.modal .item').filter({ hasText: 'Bloom' }).first().click();
+  await settle();
+  await page.locator('.queue .job.done').waitFor({ timeout: 300000 });
+  const link = page.locator('.queue .job.done a[download]');
+  if (!(await link.getAttribute('download'))?.endsWith('.webm')) throw new Error('no download for the queued export');
+  await page.screenshot({ path: path.resolve('test-results/export-queue.png') });
+  await page.locator('.queue .job.done button[aria-label="Remove from the list"]').click();
+  await page.locator('.queue').waitFor({ state: 'detached' });
 });
 
 await step('website: landing page, gallery and docs', async () => {

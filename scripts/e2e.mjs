@@ -17,7 +17,9 @@ const server = http
     if (f.endsWith('/')) f += 'index.html';
     fs.readFile(f, (err, data) => {
       if (err) return res.writeHead(404).end();
-      res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream' }).end(data);
+      // cross-origin isolated, as the service worker makes the editor: the multithreaded engine runs
+      // (the UI sweep runs without, on the single-threaded one)
+      res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream', 'cross-origin-opener-policy': 'same-origin', 'cross-origin-embedder-policy': 'credentialless' }).end(data);
     });
   })
   .listen(0);
@@ -62,6 +64,7 @@ try {
   await step('load app', async () => {
     await page.goto(url);
     await page.getByRole('button', { name: 'Load example' }).waitFor();
+    if (!(await page.evaluate(() => crossOriginIsolated))) throw new Error('not cross-origin isolated');
   });
   await step('load demo (generators + preset) and render', async () => {
     await page.getByRole('button', { name: 'Load example' }).click();
@@ -69,6 +72,9 @@ try {
     await waitRender();
     await page.waitForTimeout(500);
     await page.screenshot({ path: path.join(shots, '1-demo.png') });
+  });
+  await step('the video engine runs multithreaded', async () => {
+    if (!(await page.evaluate(() => window.__moshpit.ffmpeg.mt))) throw new Error('single-threaded engine loaded in an isolated page');
   });
   await step('frames rendered', async () => {
     const n = await page.evaluate(() => document.querySelector('.frameinfo')?.textContent);
@@ -162,11 +168,15 @@ try {
       const d = await dl;
       const p = path.join(shots, d.suggestedFilename());
       await d.saveAs(p);
+      // Chromium encodes VP9 itself (WebCodecs); the sound and the recipe are added by ffmpeg
+      if (!(await page.locator('.done').textContent()).includes('hardware encoded')) throw new Error('webm export did not use the hardware encoder');
       try {
-        const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', p]).toString();
+        const probe = execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name:format_tags=comment', '-of', 'csv=p=0', p]).toString();
         if (!probe.includes('audio')) throw new Error('export has no audio stream: ' + probe);
+        if (!probe.includes('vp9')) throw new Error('hardware export is not VP9: ' + probe);
+        if (!probe.includes('MOSH:')) throw new Error('hardware export lost its recipe: ' + probe.slice(0, 300));
       } catch (e) {
-        if (String(e.message).includes('no audio')) throw e;
+        if (/no audio|not VP9|recipe/.test(String(e.message))) throw e;
       }
       await page.keyboard.press('Escape');
     });

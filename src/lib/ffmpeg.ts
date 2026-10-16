@@ -3,6 +3,7 @@
 import { FFmpeg, FFFSType } from '@ffmpeg/ffmpeg';
 import { isDesktop } from './platform';
 import { NativeService } from './ffmpeg-native';
+import { localGet } from './storage';
 
 type LogFn = (line: string) => void;
 
@@ -50,14 +51,44 @@ export class Cancelled extends Error {
   }
 }
 
-let core: Promise<{ coreURL: string; wasmURL: string }> | null = null;
+type CoreUrls = { coreURL: string; wasmURL: string; workerURL?: string };
+const cores: Partial<Record<'st' | 'mt', Promise<CoreUrls>>> = {};
+
+/**
+ * The multithreaded engine can run: it needs SharedArrayBuffer, which browsers only give a page
+ * that is "cross-origin isolated" (the app's service worker adds the headers for it, see
+ * scripts/sw.js). It can be turned off in Settings; it also turns itself off for the session after
+ * crashing (its memory is fixed at 1 GB, which a very big job can run out of).
+ */
+export const threads = {
+  available: typeof crossOriginIsolated !== 'undefined' && crossOriginIsolated && typeof SharedArrayBuffer === 'function',
+  enabled: localGet<boolean>('ffmpegThreads', true),
+  /** set after the multithreaded engine crashed: single-threaded until the app is reloaded */
+  failed: false,
+};
+/**
+ * The multithreaded engine with the thread count left to ffmpeg crashes in x264 ("null function or
+ * function signature mismatch": it asks for more threads than the engine can start). A set count
+ * of up to 4 is solid and gets most of the speed: given to the encoder of the job's output.
+ */
+export const THREADS = Math.max(1, Math.min(4, (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 2));
+export function withThreads(args: string[]): string[] {
+  // no output (a probe: "-i file") or already set
+  if (args.includes('-threads') || args.length < 2 || args[args.length - 2] === '-i') return args;
+  return [...args.slice(0, -1), '-threads', String(THREADS), args[args.length - 1]];
+}
+
+const useThreads = () => threads.available && threads.enabled && !threads.failed;
+
 /**
  * The engine files as blob URLs, downloaded once per session with a byte count for the status line
  * (instances are recycled every few jobs and reuse them).
  */
-function coreUrls(status: (s: string) => void) {
-  core ??= (async () => {
-    const base = new URL('ffmpeg/', document.baseURI).href;
+function coreUrls(kind: 'st' | 'mt', status: (s: string) => void) {
+  let core = cores[kind];
+  if (core) return core;
+  core = cores[kind] = (async () => {
+    const base = new URL(kind === 'mt' ? 'ffmpeg-mt/' : 'ffmpeg/', document.baseURI).href;
     const get = async (name: string, type: string, onBytes?: (n: number, total: number) => void) => {
       const r = await fetch(base + name);
       if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
@@ -77,7 +108,7 @@ function coreUrls(status: (s: string) => void) {
     };
     const mb = (n: number) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0);
     let last = 0;
-    const [coreURL, wasmURL] = await Promise.all([
+    const [coreURL, wasmURL, workerURL] = await Promise.all([
       get('ffmpeg-core.js', 'text/javascript'),
       get('ffmpeg-core.wasm', 'application/wasm', (n, total) => {
         const now = performance.now();
@@ -85,10 +116,11 @@ function coreUrls(status: (s: string) => void) {
         last = now;
         status(total ? `Loading video engine ${mb(n)} / ${mb(total)} MB` : `Loading video engine ${mb(n)} MB`);
       }),
+      kind === 'mt' ? get('ffmpeg-core.worker.js', 'text/javascript') : undefined,
     ]);
-    return { coreURL, wasmURL };
+    return { coreURL, wasmURL, workerURL };
   })();
-  core.catch(() => (core = null));
+  core.catch(() => delete cores[kind]);
   return core;
 }
 
@@ -100,6 +132,8 @@ class FFmpegService implements Engine {
   private logListeners = new Set<LogFn>();
   private currentLog: string[] = [];
   ready = false;
+  /** this instance runs the multithreaded engine */
+  mt = false;
   private execs = 0;
   /** ffmpeg.wasm leaks internal state between runs; start a fresh instance every N jobs. */
   recycleEvery = 6;
@@ -118,8 +152,18 @@ class FFmpegService implements Engine {
         this.logListeners.forEach((l) => l(message));
       });
       try {
-        const { coreURL, wasmURL } = await coreUrls((s) => this.onStatus(s));
-        await ff.load({ coreURL, wasmURL });
+        const mt = useThreads();
+        try {
+          await ff.load(await coreUrls(mt ? 'mt' : 'st', (s) => this.onStatus(s)));
+          this.mt = mt;
+        } catch (e) {
+          if (!mt) throw e;
+          // no threads after all: the single-threaded engine
+          console.warn('multithreaded video engine failed to load, using the single-threaded one', e);
+          threads.failed = true;
+          await ff.load(await coreUrls('st', (s) => this.onStatus(s)));
+          this.mt = false;
+        }
       } catch (e) {
         this.onStatus('');
         throw new Error('Could not load the video engine (' + ((e as Error)?.message ?? e) + '). Check your connection and reload.');
@@ -197,8 +241,9 @@ class FFmpegService implements Engine {
       } catch (e) {
         if (gen !== this.cancelGen) throw new Cancelled();
         if (!(e instanceof EngineCrash)) throw e;
-        // fresh instance, one retry
+        // fresh instance, one retry (single-threaded from now on, if the threaded one crashed)
         console.warn('ffmpeg crashed, retrying on a fresh instance:', e.message);
+        if (this.mt) threads.failed = true;
         this.abort();
         return await this.runOnce(args, opts);
       }
@@ -209,7 +254,8 @@ class FFmpegService implements Engine {
     args: string[],
     opts: RunOptions,
   ): Promise<{ code: number; log: string; out: Record<string, Uint8Array> }> {
-    if (this.ff && this.execs >= this.recycleEvery) this.abort();
+    // a fresh instance every few jobs, or when threads were turned on or off
+    if (this.ff && (this.execs >= this.recycleEvery || this.mt !== useThreads())) this.abort();
     const ff = await this.load();
     for (const [name, get] of Object.entries(opts.inputs ?? {})) {
       if (this.files.has(name)) continue;
@@ -245,7 +291,7 @@ class FFmpegService implements Engine {
       });
       // ffmpeg.wasm keeps global options (like the log level) between runs, so always set them
       const level = args.includes('-loglevel') ? [] : ['-loglevel', 'info'];
-      code = await Promise.race([ff.exec(['-hide_banner', '-nostdin', '-y', ...level, ...args]), stalled]);
+      code = await Promise.race([ff.exec(['-hide_banner', '-nostdin', '-y', ...level, ...(this.mt ? withThreads(args) : args)]), stalled]);
     } catch (e) {
       this.abort();
       if (e instanceof EngineCrash) throw e;

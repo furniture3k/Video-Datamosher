@@ -7,6 +7,14 @@
   const setE = <K extends keyof EncoderSettings>(k: K) => (v: EncoderSettings[K]) => store.edit((p) => (p.encoder[k] = v), 'enc' + k);
   const setD = <K extends keyof DecoderSettings>(k: K) => (v: DecoderSettings[K]) => store.edit((p) => (p.decoder[k] = v), 'dec' + k);
   const adv = $derived(store.ui.advanced);
+  import { threads, THREADS } from '../lib/ffmpeg';
+  import { isDesktop } from '../lib/platform';
+  import { localSet } from '../lib/storage';
+  let useThreads = $state(threads.enabled);
+  function setThreads(v: boolean) {
+    useThreads = threads.enabled = v;
+    localSet('ffmpegThreads', v);
+  }
 </script>
 
 <div class="col">
@@ -75,6 +83,15 @@
     help="How sharp the moshed preview in the player is. Full shows exactly what you'll export; half and quarter render faster on slow machines and long timelines. Also in the player's quality button."
     onchange={(v: 'full' | 'half' | 'quarter') => store.setPref('previewRes', v)}
   />
+  {#if !isDesktop && threads.available}
+    <Field
+      type="bool"
+      label="Use {THREADS} threads"
+      value={useThreads}
+      help={threads.failed ? 'The multithreaded engine crashed earlier, so moshpit is on one thread until you reload.' : `Renders and exports run on ${THREADS} of your processor's cores, about twice as fast. Turn off if renders crash on this device.`}
+      onchange={setThreads}
+    />
+  {/if}
   <Field
     type="select"
     label="Aspect ratio"

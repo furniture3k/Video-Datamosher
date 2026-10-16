@@ -8,6 +8,7 @@
   import Timeline from './components/Timeline.svelte';
   import Inspector from './components/Inspector.svelte';
   import Toasts from './components/Toasts.svelte';
+  import ExportQueue from './components/ExportQueue.svelte';
   import PresetsDialog from './dialogs/PresetsDialog.svelte';
   import SnapshotsDialog from './dialogs/SnapshotsDialog.svelte';
   import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
@@ -202,6 +203,7 @@
 {#if store.ui.dialog === 'palette' && !store.ui.home}<CommandPalette />{/if}
 {#if store.ui.dialog === 'history'}<HistoryDialog />{/if}
 {#if store.ui.welcome && !store.ui.home}<Tour {phone} />{/if}
+<ExportQueue />
 <Toasts />
 
 <style>

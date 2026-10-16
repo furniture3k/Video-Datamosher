@@ -2,6 +2,8 @@
 export interface MediaRuntime {
   proxy: 'none' | 'pending' | 'working' | 'ready' | 'failed';
   progress: number;
+  /** the preview copy was made by the browser's hardware encoder (else by ffmpeg) */
+  proxyHw?: boolean;
   /** waveform: peak level per 1/PEAKS_PER_SEC s, 0..255 */
   peaks?: Uint8Array;
   /** the browser can play the original file directly */

@@ -1,7 +1,7 @@
 {
   "name": "moshpit",
   "private": true,
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Video editor with a datamosher built in, for the browser and desktop",
   "license": "GPL-3.0-or-later",
   "homepage": "https://furniture3k.github.io/Video-Datamosher/",
@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "node scripts/copy-ffmpeg-core.mjs && vite",
     "build": "node scripts/copy-ffmpeg-core.mjs && vite build",
+    "build:desktop": "vite build --mode desktop",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -28,9 +29,11 @@
   },
   "dependencies": {
     "@ffmpeg/core": "0.12.10",
+    "@ffmpeg/core-mt": "0.12.10",
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "0.12.2",
-    "@tauri-apps/api": "^2.12.3"
+    "@tauri-apps/api": "^2.12.3",
+    "mediabunny": "1.61.5"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "5.1.1",

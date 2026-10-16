@@ -29,6 +29,8 @@ function serviceWorker(): Plugin {
       let sig = files.join('|');
       for (const f of walk(appPublic)) {
         const rel = path.relative(appPublic, f).split(path.sep).join('/');
+        // the multithreaded engine is kept once it's first used (only some browsers can run it)
+        if (rel.startsWith('ffmpeg-mt/')) continue;
         files.push(rel);
         sig += `|${rel}:${fs.statSync(f).size}`;
       }
@@ -36,15 +38,31 @@ function serviceWorker(): Plugin {
       for (let i = 0; i < sig.length; i++) h = (Math.imul(h, 31) + sig.charCodeAt(i)) >>> 0;
       const src = fs.readFileSync(path.resolve('scripts/sw.js'), 'utf8');
       // build time first, so the service worker can tell which older cache is the previous version
-      const head = `const VERSION = '${Date.now()}-${h.toString(36)}';\nconst FILES = ${JSON.stringify(files.map((f) => (f.startsWith('.') ? f : './' + f)))};\n`;
+      const mt = JSON.parse(fs.readFileSync(path.resolve('node_modules/@ffmpeg/core-mt/package.json'), 'utf8')).version;
+      const head = `const VERSION = '${Date.now()}-${h.toString(36)}';\nconst MT_VERSION = '${mt}';\nconst FILES = ${JSON.stringify(files.map((f) => (f.startsWith('.') ? f : './' + f)))};\n`;
       this.emitFile({ type: 'asset', fileName: 'app/sw.js', source: head + src });
+    },
+  };
+}
+
+/** The desktop app has a native FFmpeg: its build leaves out the browser's video engines (~60 MB). */
+function desktopOnly(): Plugin {
+  let outDir = '';
+  return {
+    name: 'moshpit-desktop',
+    apply: (_, env) => env.command === 'build' && env.mode === 'desktop',
+    configResolved(c) {
+      outDir = c.build.outDir;
+    },
+    closeBundle() {
+      for (const d of ['ffmpeg', 'ffmpeg-mt']) fs.rmSync(path.join(outDir, 'app', d), { recursive: true, force: true });
     },
   };
 }
 
 export default defineConfig({
   base: './',
-  plugins: [svelte(), serviceWorker(), sitePages()],
+  plugins: [svelte(), serviceWorker(), sitePages(), desktopOnly()],
   // the desktop app (Tauri) runs the dev server on a fixed port
   server: { port: 5173, strictPort: true },
   clearScreen: false,
