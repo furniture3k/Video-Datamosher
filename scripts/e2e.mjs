@@ -21,7 +21,8 @@ const server = http
     });
   })
   .listen(0);
-const url = `http://localhost:${server.address().port}/`;
+// the editor (the website is at the root)
+const url = `http://localhost:${server.address().port}/app/`;
 const exe = process.env.CHROMIUM || ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => fs.existsSync(p));
 const browser = await chromium.launch({
   executablePath: exe,

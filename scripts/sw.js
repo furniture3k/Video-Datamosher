@@ -1,9 +1,10 @@
 // Service worker for the installable web app: keeps every file of the build (including the
 // ~30 MB video engine) on the device so the app opens and works offline.
-// The build (vite.config.ts) prepends VERSION and FILES.
+// It lives in app/ (the editor), so it only looks after the editor's pages, not the website's.
+// The build (vite.config.ts) prepends VERSION and FILES (relative to app/).
 /* global VERSION, FILES */
-const CACHE = 'moshpit-' + VERSION;
-const FONTS = 'moshpit-fonts';
+const CACHE = 'moshpit-app-' + VERSION;
+const FONTS = 'moshpit-app-fonts';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -20,7 +21,7 @@ self.addEventListener('activate', (e) => {
     caches
       .keys()
       .then((keys) => {
-        const ours = keys.filter((k) => /^moshpit-\d+-/.test(k) && k !== CACHE).sort((a, b) => parseInt(a.slice(8)) - parseInt(b.slice(8)));
+        const ours = keys.filter((k) => /^moshpit-app-\d+-/.test(k) && k !== CACHE).sort((a, b) => parseInt(a.slice(12)) - parseInt(b.slice(12)));
         return Promise.all(ours.slice(0, -1).map((k) => caches.delete(k)));
       })
       .then(() => self.clients.claim()),

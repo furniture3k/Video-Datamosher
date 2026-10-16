@@ -4,7 +4,7 @@
 
 Nothing is uploaded. Decoding and encoding happen locally with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm); the picture effects run on WebGL.
 
-**[Open moshpit →](https://furniture3k.github.io/Video-Datamosher/)**&emsp;[![CI](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml/badge.svg)](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml)
+**[Open moshpit →](https://furniture3k.github.io/Video-Datamosher/app/)**&emsp;[Website](https://furniture3k.github.io/Video-Datamosher/) · [Docs](https://furniture3k.github.io/Video-Datamosher/docs/)&emsp;[![CI](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml/badge.svg)](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml)
 
 <p align="center">
   <img src="docs/demo.gif" alt="A title over a test pattern that melts into a Mandelbrot zoom, then blooms into the next shot" width="420"><br>
@@ -28,7 +28,7 @@ npm install
 npm run dev            # http://localhost:5173
 ```
 
-`npm run build` writes a static copy to `dist/` that can be hosted anywhere. The ~30 MB video engine is bundled, so it works offline.
+`npm run build` writes a static copy to `dist/` that can be hosted anywhere: the website at the root (`index.html`, `docs/`) and the editor in `app/`. The ~30 MB video engine is bundled, so it works offline. The dev server serves both too: the website at http://localhost:5173 and the editor at http://localhost:5173/app/.
 
 A quick first video:
 

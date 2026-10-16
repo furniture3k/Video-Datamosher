@@ -1,51 +1,7 @@
 <script lang="ts">
   import Modal from '../components/Modal.svelte';
   import { store } from '../lib/store.svelte';
-  const keys: [string, string][] = [
-    ['Space', 'Play / pause'],
-    ['J / K / L', 'Play backwards / stop / play forwards (press again for 2×, 4×…)'],
-    ['← / →', 'Step one frame (Shift = one second)'],
-    ['↑ / ↓', 'Previous / next edit point (Shift = previous / next marker)'],
-    ['Home / End', 'Jump to start / end'],
-    ['Click the timecode', 'Type a time to jump to: 1:30, 00:01:12:05, +2, -10f'],
-    ['A / T / B', 'Select tool / Trim tool (roll edits, slip clips) / Blade tool (click to cut)'],
-    ['Alt + drag', 'Select tool: roll a cut (on an edge) or slip a clip (on its body)'],
-    ['S  or  Ctrl B', 'Split at playhead'],
-    ['Del / Shift Del', 'Delete / ripple delete (closes the gap on upper and audio tracks)'],
-    ['D', 'Turn the selected clips off / on'],
-    ['Ctrl D', 'Duplicate selected clip'],
-    ['Ctrl C / Ctrl V / Ctrl X', 'Copy / paste at playhead / cut clips'],
-    ['Ctrl A', 'Select all clips'],
-    [', / .', 'Nudge selected clips one frame (Shift = 10)'],
-    ['Shift R', 'Freeze frame (2 s hold) at the playhead'],
-    ['Ctrl T / Alt T', 'Melt / cross dissolve at the nearest cut'],
-    ['I / O / X', 'Mark In / Out / the clip under the playhead (loop and export range)'],
-    ['Alt X', 'Clear In and Out'],
-    ['/', 'Loop on / off'],
-    ['M', 'Add / remove a marker'],
-    ['F9 / F10', 'Insert / overwrite the picked media clip at the playhead'],
-    ['F12 / Shift F12', 'Place the picked media on top / append it at the end'],
-    ['N', 'Snapping on / off (Shift while dragging = no snap)'],
-    ['+ / − / Shift Z', 'Zoom timeline in / out / fit'],
-    ['Esc', 'Back to the Select tool / deselect'],
-    ['Enter', 'Render now'],
-    ['Shift A', 'Add effect'],
-    ['P', 'Presets'],
-    ['R', 'Randomize the stack'],
-    ['U', 'Nudge (mutate) effect settings'],
-    ['V', 'Variations grid (tick favourites and breed them)'],
-    ['Q / Shift Q', 'Chaos dial wilder / calmer'],
-    ['G', 'Add a Frame Sequencer at the playhead'],
-    ['Shift S', 'Scopes on / off'],
-    ['Shift K', 'Force a keyframe at playhead'],
-    ['C', 'Compare with original'],
-    ['E', 'Export'],
-    ['Ctrl Z / Ctrl Shift Z', 'Undo / redo'],
-    ['Ctrl S', 'Save project file'],
-    ['Ctrl Shift S', 'Save a snapshot'],
-    ['Ctrl + wheel / Alt + wheel', 'Zoom timeline'],
-    ['?', 'This help'],
-  ];
+  import { SHORTCUTS as keys } from '../lib/shortcuts';
 </script>
 
 <Modal title="Help" wide>

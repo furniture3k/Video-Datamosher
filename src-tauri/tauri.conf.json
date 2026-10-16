@@ -20,7 +20,8 @@
         "backgroundColor": "#0b0b0d",
         "dragDropEnabled": false,
         "create": false,
-        "label": "main"
+        "label": "main",
+        "url": "app/index.html"
       }
     ],
     "security": {

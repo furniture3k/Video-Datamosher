@@ -7,7 +7,7 @@ import os from 'node:os';
 import { chromium } from 'playwright-core';
 
 const dist = path.resolve('dist');
-const types = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.html': 'text/html', '.css': 'text/css' };
+const types = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.html': 'text/html', '.css': 'text/css', '.json': 'application/json', '.webm': 'video/webm', '.png': 'image/png', '.jpg': 'image/jpeg' };
 const server = http
   .createServer((req, res) => {
     let f = path.join(dist, decodeURIComponent(req.url.split('?')[0]));
@@ -15,7 +15,9 @@ const server = http
     fs.readFile(f, (e, d) => (e ? res.writeHead(404).end() : res.writeHead(200, { 'content-type': types[path.extname(f)] || 'application/octet-stream' }).end(d)));
   })
   .listen(0);
-const url = `http://localhost:${server.address().port}/`;
+const root = `http://localhost:${server.address().port}/`;
+// the editor; the website is at the root
+const url = root + 'app/';
 const exe = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] });
@@ -957,6 +959,32 @@ await step('home on a phone: fits the screen', async () => {
   await page.locator('.card.project .open').first().click();
   await page.waitForFunction(() => !window.__moshpit.store.ui.home);
   await page.setViewportSize({ width: 1440, height: 900 });
+});
+
+await step('website: landing page, gallery and docs', async () => {
+  await page.goto(root);
+  await page.locator('h1', { hasText: 'Break your videos' }).waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('#gallery-list .gcard').length >= 4);
+  // the website never loads the editor (or its video engine)
+  if (await S(() => !!window.__moshpit)) throw new Error('the editor loaded on the landing page');
+  await page.locator('.nav a', { hasText: 'Docs' }).click();
+  await page.locator('.prose h1', { hasText: 'moshpit docs' }).waitFor();
+  await page.locator('.prose a', { hasText: 'Effects' }).first().click();
+  await page.waitForFunction(() => document.querySelectorAll('.prose h3[id]').length >= 18);
+});
+
+await step('website: the installed app opening the old address lands in the editor', async () => {
+  await page.goto(root + '?source=pwa');
+  await page.waitForURL(/\/app\/\?source=pwa/);
+  await page.waitForFunction(() => window.__moshpit?.store);
+});
+
+await step('website: a gallery recipe link opens the mosh in the editor', async () => {
+  const code = JSON.parse(fs.readFileSync(path.join(dist, 'site/gallery.json'), 'utf8')).find((g) => g.title === 'Vortex').recipe;
+  await page.goto(url + '#recipe=' + encodeURIComponent(code));
+  await page.waitForFunction(() => window.__moshpit?.store && !window.__moshpit.store.ui.home && window.__moshpit.store.project.name === 'Shared recipe' && window.__moshpit.store.project.effects.length + window.__moshpit.store.project.clips.filter((c) => c.transition).length > 0, null, { timeout: 120000 });
+  if (await S(() => location.hash)) throw new Error('the recipe stayed in the address');
+  await settle();
 });
 
 await browser.close();

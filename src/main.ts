@@ -67,3 +67,5 @@ import * as starters from './lib/starters.svelte';
 import * as projectsMod from './lib/projects.svelte';
 import * as projectIndex from './lib/projectindex';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { starters, projects: projectsMod, projectIndex });
+import * as projectio from './lib/projectio.svelte';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { projectio });
