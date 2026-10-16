@@ -1229,7 +1229,11 @@ await step('export queue: exports in the background while editing carries on', a
 await step('recipe files: save one, clear the mosh, open it again; batch two videos through the queue', async () => {
   await page.goto(url);
   await page.waitForFunction(() => window.__moshpit?.store && !window.__moshpit.store.status.engine, null, { timeout: 120000 });
-  await page.getByRole('button', { name: 'Load example' }).click();
+  // a fresh project with the example in it (the editor reopens the last project)
+  await S(async () => {
+    await window.__moshpit.projects.startProject();
+    await window.__moshpit.media.loadExample();
+  });
   await page.waitForFunction(() => window.__moshpit.store.project.clips.some((c) => c.transition), null, { timeout: 120000 });
   // the example's mosh is in its transitions; recipes carry the effect stack
   await S(() => {
