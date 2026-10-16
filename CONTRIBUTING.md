@@ -31,6 +31,23 @@ CI runs the same checks plus the desktop app's WebDriver test on Linux.
 - Every FFmpeg job goes through `ffmpeg.run()` (`src/lib/ffmpeg.ts`) so it works on both the browser and native engines. Don't call ffmpeg.wasm directly.
 - Keep the web app working without the desktop shell: desktop-only code checks `isDesktop` (`src/lib/platform.ts`).
 
+## Translations
+
+The app's text is in English in the code, wrapped in `t('…')` (`src/lib/i18n.svelte.ts`). Each
+language has a file in `src/locales/` that maps the English text to its translation, for example
+`src/locales/fr.json`. Text with no translation shows in English, so a language can be added a
+piece at a time.
+
+- **Improving a translation:** edit its file and open a pull request. The Spanish, Portuguese
+  (Brazil), French, German and Japanese files started as drafts made by a machine, so a native
+  speaker's eye is very welcome.
+- **Adding a language:** copy one of the files, translate the right-hand sides, and add the language
+  to `LOCALES` in `src/lib/i18n.ts`.
+- **Adding text to the app:** wrap it in `t('…')` and add it to every file in `src/locales/`
+  (`npm test` checks that each language has every text, with the same `{placeholders}`).
+
+So far the home screen, the top bar and its menu, and the effect names are translated.
+
 ## Releases
 
 Bump `version` in `package.json` (and `src-tauri/Cargo.toml`), add an entry to `CHANGELOG.md`,

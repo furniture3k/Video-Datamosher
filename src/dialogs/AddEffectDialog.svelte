@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '../lib/i18n.svelte';
   import Modal from '../components/Modal.svelte';
   import FrameDiagram from '../components/FrameDiagram.svelte';
   import Icon from '../components/Icon.svelte';
@@ -15,7 +16,7 @@
   // Simple mode shows the effects that look the most different from each other first
   let showAll = $state(store.ui.advanced);
   const q = $derived(query.trim().toLowerCase());
-  const match = (d: (typeof ALL_EFFECTS)[number]) => !q || (d.name + ' ' + d.description + ' ' + guideOf(d.type).looks).toLowerCase().includes(q);
+  const match = (d: (typeof ALL_EFFECTS)[number]) => !q || (d.name + ' ' + t(d.name) + ' ' + d.description + ' ' + guideOf(d.type).looks).toLowerCase().includes(q);
   const groups = $derived([
     // your favourites first (☆ on any effect)
     ...(!q && fxPrefs.favourites.length
@@ -99,7 +100,7 @@
             <button class="item" style="--c:{d.color}" onclick={() => add(d.type)} title={d.description} onmouseenter={() => previewOn && canPreview && hover(d.type)} onmouseleave={() => hover(null)} onfocus={() => previewOn && canPreview && hover(d.type)}>
               <span class="top">
                 <span class="code">{d.icon}</span>
-                <span class="nm">{d.name}</span>
+                <span class="nm">{t(d.name)}</span>
                 {#if d.type === 'kill'}<span class="start">start here</span>{/if}
               </span>
               <span class="ds">{gd.looks || d.description}</span>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t } from '../lib/i18n.svelte';
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
   import Icon from './Icon.svelte';
@@ -46,7 +47,7 @@
         onchange={(e) => store.edit(() => (fx.enabled = (e.target as HTMLInputElement).checked))}
       />
       <span class="code">{def?.icon}</span>
-      <span class="nm">{fx.name || def?.name}</span>
+      <span class="nm">{fx.name || (def ? t(def.name) : '')}</span>
       {#if fx.locks.includes('__keep')}<span class="flag" title="Pinned"><Icon name="pin" size={12} /></span>{/if}
       <div class="tools">
         <button

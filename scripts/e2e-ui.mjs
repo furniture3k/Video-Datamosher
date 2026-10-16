@@ -1105,6 +1105,20 @@ await step('home: open an example, then come back to the list', async () => {
   if (!(await page.locator('.card.project').first().locator('img').count())) throw new Error('project card has no picture');
 });
 
+await step('languages: the home screen in Spanish and Japanese, then back to English', async () => {
+  await S(() => window.__moshpit.projects.goHome());
+  await page.locator('[data-testid=home]').waitFor();
+  const lang = page.locator('footer select[aria-label="Language"]');
+  await lang.selectOption('es');
+  await page.locator('h1', { hasText: 'Haz que algo se derrita' }).waitFor();
+  await page.getByRole('button', { name: 'Nuevo proyecto' }).waitFor();
+  if ((await S(() => document.documentElement.lang)) !== 'es') throw new Error('page language not set');
+  await page.locator('footer select[aria-label="Idioma"]').selectOption('ja');
+  await page.locator('h1', { hasText: '何かを溶かそう' }).waitFor();
+  await page.locator('footer select[aria-label="言語"]').selectOption('en');
+  await page.locator('h1', { hasText: 'Make something melt' }).waitFor();
+});
+
 await step('template: melt transitions with sample footage', async () => {
   await page.locator('.starter', { hasText: 'Melt transitions' }).click();
   await page.getByRole('button', { name: 'Try with sample footage' }).click();
