@@ -1,10 +1,12 @@
 // What each command in commandlist.ts does, and running commands from the keyboard or the palette.
+import { askText } from './ask';
 import { store } from './store.svelte';
 import * as edit from './edit';
 import { chaos, mutate } from '../engine/presets';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
 import { enableMidi, controls } from './controls.svelte';
+import { togglePanel, useLayout, saveLayout, BUILT_IN } from './layout.svelte';
 import { saveProjectFile, startNewProject, saveRecipeFile, pickRecipeFile } from './projectio.svelte';
 import { goHome } from './projects.svelte';
 import { reportProblem } from './report';
@@ -155,6 +157,17 @@ const ACTIONS: Record<string, Action> = {
   'save-recipe': { run: () => saveRecipeFile() },
   'open-recipe': { run: () => pickRecipeFile() },
   batch: { run: dialog('batch') },
+  'toggle-media': { run: () => togglePanel('left'), when: () => !store.ui.home },
+  'toggle-inspector': { run: () => togglePanel('right'), when: () => !store.ui.home },
+  'layout-edit': { run: () => useLayout(BUILT_IN[0].layout) },
+  'layout-mosh': { run: () => useLayout(BUILT_IN[1].layout) },
+  'layout-player': { run: () => useLayout(BUILT_IN[2].layout) },
+  'save-layout': {
+    run: async () => {
+      const name = await askText('Name this layout', 'My layout');
+      if (name?.trim()) (saveLayout(name.trim()), store.toast(`Saved. It's in ⋯ → Layout.`, 'ok'));
+    },
+  },
   midi: {
     run: () =>
       enableMidi().then((ok) => store.toast(ok ? `MIDI is on${controls.inputs.length ? ': ' + controls.inputs.join(', ') : ''}. Right-click a setting, then move a knob.` : 'No MIDI here (Chrome and Edge have it), or it was not allowed.', ok ? 'ok' : 'error', 6000)),

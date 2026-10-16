@@ -95,3 +95,5 @@ Object.assign((window as unknown as { __moshpit: object }).__moshpit, { controls
 controlsMod.startControls().catch((e) => console.warn('controls', e));
 import * as scriptsMod from './lib/scripts.svelte';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { scripts: scriptsMod });
+import * as layoutMod from './lib/layout.svelte';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { layout: layoutMod });

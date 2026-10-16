@@ -1,5 +1,7 @@
 <script lang="ts">
   import { t, i18n, LOCALES, setLocale, type Locale } from '../lib/i18n.svelte';
+  import { BUILT_IN, custom, useLayout, deleteLayout } from '../lib/layout.svelte';
+  import { runCommand } from '../lib/commands.svelte';
   import { store } from '../lib/store.svelte';
   import { saveProjectFile, loadProjectFile, startNewProject, saveRecipeFile, pickRecipeFile } from '../lib/projectio.svelte';
   import { hasSavePicker } from '../lib/storage';
@@ -116,6 +118,12 @@
         <button class="ghost" onclick={() => store.setPref('theme', store.ui.theme === 'dark' ? 'light' : 'dark')}
           ><Icon name="theme" />{t(store.ui.theme === 'dark' ? 'Light theme' : 'Dark theme')}</button
         >
+        <div class="layouts" role="group" aria-label="Layout">
+          <span class="small faint">Layout</span>
+          {#each BUILT_IN as l}<button class="ghost small" title={l.hint} onclick={() => useLayout(l.layout)}>{l.name}</button>{/each}
+          {#each custom.list as l (l.name)}<button class="ghost small" title="Your layout (right-click to delete)" oncontextmenu={(e) => (e.preventDefault(), deleteLayout(l.name))} onclick={() => useLayout(l.layout)}>{l.name}</button>{/each}
+          <button class="ghost small icon" title="Save this layout" aria-label="Save this layout" onclick={() => runCommand('save-layout')}><Icon name="plus" size={12} /></button>
+        </div>
         <button class="ghost" onclick={() => (store.ui.dialog = 'storage')}><Icon name="storage" />{t('Storage…')}</button>
         <label class="ghost lang"
           ><Icon name="text" />{t('Language')}
@@ -144,6 +152,16 @@
 </header>
 
 <style>
+  .layouts {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2px;
+    padding: 2px 10px;
+  }
+  .layouts .faint {
+    margin-right: 6px;
+  }
   .lang {
     display: flex;
     align-items: center;

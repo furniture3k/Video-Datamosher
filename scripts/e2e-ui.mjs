@@ -1381,6 +1381,39 @@ await step('recipe files: save one, clear the mosh, open it again; batch two vid
   if (!(names.some((n) => n.startsWith('one')) && names.some((n) => n.startsWith('two')) && names.every((n) => n.endsWith('.webm')))) throw new Error('batch exports: ' + names.join(', '));
 });
 
+await step('layout: fold and resize the panels, switch layouts, and it is kept', async () => {
+  await page.goto(url);
+  await page.waitForFunction(() => window.__moshpit?.store && !window.__moshpit.store.ui.home, null, { timeout: 60000 });
+  const width = (sel) => page.locator(sel).evaluate((el) => el.getBoundingClientRect().width);
+  const player0 = await width('main .center');
+  // fold the media panel with its arrow
+  await page.locator('main .colsize').first().hover();
+  await page.getByRole('button', { name: 'Fold away the media panel' }).click();
+  await page.locator('aside.left').waitFor({ state: 'hidden' });
+  if (!((await width('main .center')) > player0 + 200)) throw new Error('the player did not get the room: ' + player0 + ' → ' + (await width('main .center')) + ' ' + (await page.locator('main').evaluate((m) => getComputedStyle(m).gridTemplateColumns + ' | ' + m.getAttribute('style'))));
+  await page.getByRole('button', { name: 'Show the media panel' }).click();
+  await page.locator('aside.left').waitFor();
+  // drag the inspector's edge 120 px to the left: it gets wider
+  const r0 = await width('aside.right');
+  const edge = await page.locator('main .colsize').nth(1).boundingBox();
+  await page.mouse.move(edge.x + 3, edge.y + 40);
+  await page.mouse.down();
+  await page.mouse.move(edge.x - 117, edge.y + 40, { steps: 6 });
+  await page.mouse.up();
+  const r1 = await width('aside.right');
+  if (Math.abs(r1 - r0 - 120) > 6) throw new Error(`inspector ${r0} → ${r1}`);
+  // a layout from the palette, kept after a reload
+  await S(() => window.__moshpit.commands.runCommand('layout-mosh'));
+  await page.locator('aside.left').waitFor({ state: 'hidden' });
+  await page.reload();
+  await page.waitForFunction(() => window.__moshpit?.store && !window.__moshpit.store.ui.home, null, { timeout: 60000 });
+  if (await page.locator('aside.left').isVisible()) throw new Error('the layout was not kept');
+  if (Math.abs((await width('aside.right')) - 420) > 2) throw new Error('Mosh layout inspector width');
+  // back to the usual
+  await S(() => window.__moshpit.layout.useLayout({ left: 260, right: 330, leftOpen: true, rightOpen: true, timeline: 260 }));
+  await page.locator('aside.left').waitFor();
+});
+
 await step('website: landing page, gallery and docs', async () => {
   await page.goto(root);
   await page.locator('h1', { hasText: 'Break your videos' }).waitFor();
