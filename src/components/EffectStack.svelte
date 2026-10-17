@@ -29,6 +29,7 @@
       style="--c:{def?.color}"
       draggable="true"
       ondragstart={() => (dragFrom = i)}
+      ondragend={() => (dragFrom = -1)}
       ondragover={(e) => e.preventDefault()}
       ondrop={(e) => {
         e.preventDefault();
@@ -153,7 +154,8 @@
     align-items: center;
   }
   .item:hover .tools,
-  .item.sel .tools {
+  .item.sel .tools,
+  .item:focus-within .tools {
     display: flex;
   }
   .tools button {

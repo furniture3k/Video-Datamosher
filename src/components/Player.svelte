@@ -160,6 +160,8 @@
   onDestroy(() => {
     preview?.dispose();
     editAudio.dispose();
+    // decoded mosh frames hold their pixels until closed (switching phone ↔ desktop layout remounts the player)
+    resetCache();
   });
 
   /** A snapshot's mosh, one picture per timeline frame (so it lines up with the current render). */
@@ -489,10 +491,12 @@
       pts.push(p);
       liveStroke = [...pts];
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       liveStroke = [];
+      if (ev.type === 'pointercancel') return;
       const b = store.ui.brush;
       const round = pts.map(([x, y]) => [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]);
       const id = fx.id;
@@ -511,6 +515,7 @@
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
   /** Arrows showing the painted field. */
   const fieldArrows = $derived.by(() => {
@@ -553,14 +558,18 @@
     const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
-      const b = pictureUV(ev);
+      window.removeEventListener('pointercancel', up);
       trackRect = null;
+      // a cancelled touch: keep picking, draw the box again
+      if (ev.type === 'pointercancel') return;
+      const b = pictureUV(ev);
       store.ui.trackPick = null;
       if (Math.abs(b[0] - a[0]) < 0.01 || Math.abs(b[1] - a[1]) < 0.01) return store.toast('Drag a box around the thing to follow.', 'error');
       trackClip(id, [a[0], a[1], b[0], b[1]]).catch((err) => store.toast('Tracking failed: ' + (err as Error).message, 'error'));
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   /** Eyedropper: the colour under the pointer in the live edit picture (drawn without keys). */
@@ -640,6 +649,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stage"
+    class:compact
     class:picking={store.ui.eyedropper || !!store.ui.trackPick || !!paintFx}
     bind:this={wrap}
     onpointerdown={(e) => {
@@ -658,6 +668,7 @@
       }
     }}
     onpointermove={splitMove}
+    onpointercancel={() => ((draggingSplit = false), (tapAt = null))}
     onpointerup={(e) => {
       draggingSplit = false;
       if (tapAt && Math.hypot(e.clientX - tapAt.x, e.clientY - tapAt.y) < 10 && performance.now() - tapAt.t < 400) store.ui.playing = !store.ui.playing;
@@ -845,6 +856,8 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    /* the transport fits itself to the player's width (the side panels can be dragged wide) */
+    container-type: inline-size;
   }
   .stage {
     flex: 1;
@@ -917,8 +930,14 @@
     top: auto;
     bottom: 8px;
   }
+  /* phones: a pinch on the picture would zoom the whole page (and stay zoomed) */
+  .stage.compact {
+    touch-action: pan-x pan-y;
+  }
   .stage.picking {
     cursor: crosshair;
+    /* a finger paints / draws the box instead of panning the page (which cancels the stroke) */
+    touch-action: none;
   }
   canvas.split {
     cursor: ew-resize;
@@ -1159,6 +1178,20 @@
     .hide-s,
     .total {
       display: none;
+    }
+  }
+  /* too narrow for one row: timecode and play on top, the view settings below */
+  @container (max-width: 620px) {
+    .transport:not(.compact) {
+      grid-template-columns: auto 1fr;
+      row-gap: 4px;
+    }
+    .transport:not(.compact) .buttons {
+      justify-self: end;
+    }
+    .transport:not(.compact) .right {
+      grid-column: 1 / -1;
+      justify-self: center;
     }
   }
   .transport.compact {

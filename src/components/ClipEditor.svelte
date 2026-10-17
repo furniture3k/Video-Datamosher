@@ -138,12 +138,13 @@
   // ---- LUTs
   let lutInput = $state<HTMLInputElement>();
   async function pickLutFiles(files: FileList | null) {
-    if (!files?.length) return;
+    // the clip it was asked for, even if the selection changes while the files are read
+    const cid = c?.id;
+    if (!files?.length || !cid) return;
     const ids = await importLuts([...files]);
-    if (ids[0]) setGrLut(ids[0]);
+    if (ids[0]) setGrLut(ids[0], cid);
   }
-  const setGrLut = (id: string) => {
-    const cid = c!.id;
+  const setGrLut = (id: string, cid = c!.id) => {
     store.edit((p) => {
       const x = p.clips.find((y) => y.id === cid);
       if (!x) return;
@@ -343,8 +344,8 @@
       {#if !isAdjust}
       <div class="row sect"><span class="label grow">Transform</span>
         {#if anyKeys}
-          <button class="small ghost" title="Previous keyframe" onclick={() => jumpKey(-1)}>◀◆</button>
-          <button class="small ghost" title="Next keyframe" onclick={() => jumpKey(1)}>◆▶</button>
+          <button class="small ghost" title="Previous keyframe" aria-label="Previous keyframe" onclick={() => jumpKey(-1)}>◀◆</button>
+          <button class="small ghost" title="Next keyframe" aria-label="Next keyframe" onclick={() => jumpKey(1)}>◆▶</button>
           <button class="small ghost" title="Remove every keyframe of this clip" onclick={() => editKeys((x) => (x.keys = undefined))}>Clear keys</button>
         {/if}
         {#if !isIdentityTransform(T)}<button class="small ghost" onclick={() => resetC('transform')}><Icon name="reset" size={12} />Reset</button>{/if}

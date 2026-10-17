@@ -96,16 +96,34 @@
     if (!t) return false;
     // switches/checkboxes keep focus after a click; only Space should go to them
     if (t.tagName === 'INPUT' && ['checkbox', 'radio', 'button'].includes((t as HTMLInputElement).type)) return e.key === ' ';
+    // a slider keeps focus after a drag: only the keys that move it go to it, the rest are shortcuts
+    if (t.tagName === 'INPUT' && (t as HTMLInputElement).type === 'range') return ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key);
+    if (t.tagName === 'INPUT' && (t as HTMLInputElement).type === 'color') return e.key === ' ' || e.key === 'Enter';
+    // a button reached with the keyboard (Tab) is pressed with Enter or Space, not Render / Play
+    // (after a mouse click it isn't :focus-visible, and Space still plays)
+    if (t.matches?.('button, a[href], summary, [role=button]') && (e.key === 'Enter' || e.key === ' ')) {
+      try {
+        return t.matches(':focus-visible');
+      } catch {
+        return false;
+      }
+    }
     return t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable;
   }
 
 
 
 
+  /** Escape with the focus outside the dialog: an open Modal closes itself (through its onclose), so hand it the key. */
+  function closeDialog() {
+    const modal = document.querySelector('.modal[role=dialog]');
+    if (modal) modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    else store.ui.dialog = null;
+  }
   function onKey(e: KeyboardEvent) {
     // the home screen has no editor: only Escape (closing a dialog) applies
     if (store.ui.home) {
-      if (e.key === 'Escape' && store.ui.dialog && !inField(e)) store.ui.dialog = null;
+      if (e.key === 'Escape' && store.ui.dialog && !inField(e)) closeDialog();
       return;
     }
     const typing = inField(e);
@@ -116,7 +134,7 @@
     }
     if (e.key === 'Escape' && !typing && !(e.ctrlKey || e.metaKey || e.altKey)) {
       if (store.ui.trackPick || store.ui.eyedropper || store.ui.paintEffect) ((store.ui.trackPick = null), (store.ui.eyedropper = false), (store.ui.paintEffect = null));
-      else if (store.ui.dialog) store.ui.dialog = null;
+      else if (store.ui.dialog) closeDialog();
       else if (store.ui.tool !== 'select') store.ui.tool = 'select';
       else if (store.ui.selectedClips.length || store.ui.selectedTransition) {
         store.ui.selectedClips = [];
@@ -136,11 +154,14 @@
     const move = (ev: PointerEvent) => (store.ui.timelineHeight = Math.max(150, Math.min(window.innerHeight - 220, h0 - (ev.clientY - y0))));
     const up = () => {
       window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
       layout.timeline = store.ui.timelineHeight;
       keep();
     };
     window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up, { once: true });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   /** Drag a side panel's edge to resize it (a click without moving folds it away or back). */
@@ -156,12 +177,16 @@
       if (side === 'left') (layout.leftOpen = true), (layout.left = Math.max(PANEL.min, Math.min(PANEL.max, w0 + dx)));
       else (layout.rightOpen = true), (layout.right = Math.max(PANEL.min, Math.min(PANEL.max, w0 - dx)));
     };
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
-      keep();
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (!moved && ev.type === 'pointerup') togglePanel(side);
+      else keep();
     };
     window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up, { once: true });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   function onDrop(e: DragEvent) {
@@ -283,6 +308,7 @@
   .colsize {
     position: relative;
     cursor: ew-resize;
+    touch-action: none;
     background: var(--line);
   }
   .colsize:hover {
@@ -313,6 +339,7 @@
   .resizer {
     height: 5px;
     cursor: ns-resize;
+    touch-action: none;
     background: var(--line);
     border-top: 1px solid var(--line);
   }

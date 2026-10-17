@@ -51,8 +51,8 @@
       <div class="row">
         <input class="tname" value={t.name} aria-label="Track name" onchange={(e) => setTr(t, 'name')((e.target as HTMLInputElement).value)} />
         <span class="faint small mono">{count(t)}</span>
-        <button class="tb" class:on={t.muted} title="Mute" onclick={() => setTr(t, 'muted')(!t.muted)}>M</button>
-        <button class="tb" class:on={t.solo} title="Solo" onclick={() => setTr(t, 'solo')(!t.solo)}>S</button>
+        <button class="tb" class:on={t.muted} title="Mute" aria-label="Mute {t.name}" aria-pressed={!!t.muted} onclick={() => setTr(t, 'muted')(!t.muted)}>M</button>
+        <button class="tb" class:on={t.solo} title="Solo" aria-label="Solo {t.name}" aria-pressed={!!t.solo} onclick={() => setTr(t, 'solo')(!t.solo)}>S</button>
         {#if t.id !== CLIP_AUDIO}<button class="icon ghost" title="Remove track" aria-label="Remove track" onclick={() => removeTrack(t.id)}><Icon name="x" size={12} /></button>{/if}
       </div>
       <Field label="Volume" min={0} max={2} step={0.01} value={t.volume} help="Level of everything on this track." onchange={setTr(t, 'volume')} />

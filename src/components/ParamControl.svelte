@@ -19,6 +19,14 @@
   function set(v: number | boolean | string) {
     store.edit(() => (effect.params[def.key] = v), key);
   }
+  /** A typed number: kept in range (a cleared field puts the value back instead of setting 0). */
+  function setTyped(el: HTMLInputElement, min: number, max: number, int: boolean) {
+    const v = el.valueAsNumber;
+    if (!Number.isFinite(v)) return void (el.value = String(value));
+    const c = Math.max(min, Math.min(max, int ? Math.round(v) : v));
+    el.value = String(c);
+    set(c);
+  }
   function toggleLock() {
     store.edit(() => (effect.locks = locked ? effect.locks.filter((l) => l !== def.key) : [...effect.locks, def.key]));
   }
@@ -75,7 +83,7 @@
     </div>
     {#if def.type === 'number' || def.type === 'int'}
       {#if !auto}
-        <input class="val" type="number" min={def.min} max={def.max} step={def.type === 'int' ? 1 : (def.step ?? 0.01)} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
+        <input class="val" type="number" min={def.min} max={def.max} step={def.type === 'int' ? 1 : (def.step ?? 0.01)} value={value} onchange={(e) => setTyped(e.target as HTMLInputElement, def.min, def.max, def.type === 'int')} />
         {#if def.unit}<span class="unit">{def.unit}</span>{/if}
       {:else}
         <span class="val auto mono">auto</span>
@@ -116,7 +124,7 @@
   {:else if def.type === 'frame'}
     <div class="row">
       <input type="range" aria-label={def.label} min="0" max={Math.max(0, store.totalFrames - 1)} value={Number(value)} oninput={(e) => set(+(e.target as HTMLInputElement).value)} />
-      <input class="val" type="number" min="0" max={store.totalFrames} value={value} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
+      <input class="val" type="number" min="0" max={Math.max(0, store.totalFrames - 1)} value={value} onchange={(e) => setTyped(e.target as HTMLInputElement, 0, Math.max(0, store.totalFrames - 1), true)} />
       <button class="icon ghost" title="Use playhead position" aria-label="Use playhead" onclick={() => set(playSrc)}><Icon name="import" size={13} /></button>
     </div>
   {/if}

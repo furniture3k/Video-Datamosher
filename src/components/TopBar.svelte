@@ -282,6 +282,9 @@
     flex-direction: column;
     padding: 4px;
     min-width: 220px;
+    /* the editor clips what hangs below it: on short windows the menu scrolls instead */
+    max-height: calc(100vh - 56px);
+    overflow-y: auto;
     background: var(--surface-2);
     border: 1px solid var(--line-2);
     border-radius: var(--r);

@@ -28,13 +28,21 @@
     children?: Snippet;
   } = $props();
   const set = (v: unknown) => onchange(v as never);
+  /** A typed number, kept in the field's range (a cleared box goes back to the value, not 0). */
+  function setTyped(el: HTMLInputElement) {
+    const v = el.valueAsNumber;
+    if (!Number.isFinite(v)) return void (el.value = String(value));
+    const c = Math.max(min, Math.min(max, v));
+    el.value = String(c);
+    set(c);
+  }
 </script>
 
 <div class="field" class:inline={type === 'bool' || type === 'number'}>
   <div class="top">
     <span class="lab" class:has-help={!!help} title={help}>{label}</span>
     {#if type === 'range' || type === 'number'}
-      <input class="val" type="number" {min} {max} {step} {value} aria-label={label} onchange={(e) => set(+(e.target as HTMLInputElement).value)} />
+      <input class="val" type="number" {min} {max} {step} {value} aria-label={label} onchange={(e) => setTyped(e.target as HTMLInputElement)} />
       {#if unit}<span class="unit">{unit}</span>{/if}
     {:else if type === 'bool'}
       <input type="checkbox" class="switch" checked={!!value} aria-label={label} onchange={(e) => set((e.target as HTMLInputElement).checked)} />

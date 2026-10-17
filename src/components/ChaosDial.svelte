@@ -21,12 +21,13 @@
     const y0 = e.clientY;
     const v0 = value;
     const move = (ev: PointerEvent) => set(v0 + (y0 - ev.clientY) / 120);
+    // fires after pointerup and after a cancelled touch alike
     const up = () => {
       el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', up);
+      el.removeEventListener('lostpointercapture', up);
     };
     el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up);
+    el.addEventListener('lostpointercapture', up);
   }
   function key(e: KeyboardEvent) {
     const step = e.shiftKey ? 0.25 : 0.05;
