@@ -281,7 +281,8 @@
   }
   main {
     display: grid;
-    grid-template-columns: var(--left) 6px minmax(0, 1fr) 6px var(--right);
+    /* the panels give way before the player gets narrower than 360px */
+    grid-template-columns: minmax(0, var(--left)) 6px minmax(360px, 1fr) 6px minmax(0, var(--right));
     min-height: 0;
     gap: 0;
     border-top: 1px solid var(--line);
@@ -380,7 +381,7 @@
   }
   @media (max-width: 1100px) {
     main {
-      grid-template-columns: min(var(--left), 220px) 6px minmax(0, 1fr) 6px min(var(--right), 300px);
+      grid-template-columns: minmax(0, min(var(--left), 220px)) 6px minmax(360px, 1fr) 6px minmax(0, min(var(--right), 300px));
     }
   }
   footer {
