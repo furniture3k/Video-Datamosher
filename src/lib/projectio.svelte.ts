@@ -3,7 +3,7 @@ import { localGet, localSet, saveAs, hasSavePicker } from './storage';
 import { type MediaItem, type Project } from '../engine/types';
 import { migrate } from '../engine/migrate';
 import { uid, type Preset } from '../engine/presets';
-import { applyRecipe, decodeRecipe, encodeRecipe } from '../engine/recipe';
+import { applyRecipe, decodeRecipe, encodeRecipe, recipeFile, parseRecipeFile, RECIPE_EXT } from '../engine/recipe';
 
 /** The file Ctrl+S last saved this project to (browsers with a Save dialog); New / Open forget it. */
 let saved: Awaited<ReturnType<typeof saveAs>> = null;
@@ -55,6 +55,39 @@ export async function loadProjectFile(file: File) {
   } catch (e) {
     store.toast('Could not load project: ' + (e as Error).message, 'error');
   }
+}
+
+// ---------- recipe files: the mosh without the footage ----------
+
+/** Save the effects and settings as a .moshrecipe file, to use on other footage or share. */
+export async function saveRecipeFile() {
+  const p = $state.snapshot(store.project) as Project;
+  const blob = new Blob([JSON.stringify(recipeFile(p, store.totalFrames), null, 2)], { type: 'application/json' });
+  await saveAs(blob, `${(p.name || 'mosh').replace(/[^\w-]+/g, '_')}${RECIPE_EXT}`);
+}
+
+/** Put a recipe file's mosh on the open project (Undo takes it off), or on sample footage from the home screen. */
+export async function openRecipeFile(file: File) {
+  try {
+    const { name, recipe } = parseRecipeFile(await file.text());
+    if (store.ui.home || !store.project.clips.length) {
+      const { openRecipeData } = await import('./starters.svelte');
+      return void (await openRecipeData(recipe, name));
+    }
+    store.set(applyRecipe(store.project, recipe, store.totalFrames));
+    store.toast(`Put the ${name} recipe on this project.`, 'ok', 6000, { label: 'Undo', run: () => store.undo() });
+  } catch (e) {
+    store.toast(`Could not open ${file.name}: ${(e as Error).message}`, 'error', 6000);
+  }
+}
+
+/** Ask for a recipe file and open it. */
+export function pickRecipeFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = `${RECIPE_EXT},.json,application/json`;
+  input.onchange = () => input.files?.[0] && openRecipeFile(input.files[0]);
+  input.click();
 }
 
 // ---------- share codes: effects + settings, compressed ----------

@@ -9,6 +9,7 @@ import { newText } from './edit';
 import { GENERATORS, even } from '../engine/args';
 import { PRESETS, applyPreset } from '../engine/presets';
 import { beatEdit, defaultBeatEdit } from '../engine/beatedit';
+import { applyRecipe, type Recipe } from '../engine/recipe';
 import { newProject, VIDEO_TRACK, type Aspect, type MediaItem, type Project, type TransitionType } from '../engine/types';
 
 export interface Starter {
@@ -275,6 +276,12 @@ export async function openExample(e: Starter) {
 export async function openRecipe(code: string) {
   const { applyShareCode } = await import('./projectio.svelte');
   await run({ id: 'recipe', name: 'Shared recipe', description: '', thumb: '', sample: [['testsrc2', 3], ['mandelbrot', 4]], build: () => applyShareCode(code) }, null);
+  store.toast('The recipe is on sample footage. Drop your own clips in and it follows them.', 'ok', 7000);
+}
+
+/** A recipe file opened from the home screen: the same, under its own name. */
+export async function openRecipeData(data: Recipe, name = 'Recipe') {
+  await run({ id: 'recipe', name, description: '', thumb: '', sample: [['testsrc2', 3], ['mandelbrot', 4]], build: () => store.set(applyRecipe(store.project, data, store.totalFrames)) }, null);
   store.toast('The recipe is on sample footage. Drop your own clips in and it follows them.', 'ok', 7000);
 }
 

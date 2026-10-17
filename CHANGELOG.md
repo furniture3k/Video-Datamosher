@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.10.0
+
+- **Mosh Maps**: Subject Guard can follow a map instead of a subject, and grey parts mosh half way:
+  a **gradient** (linear or radial; automate its centre to sweep the mosh across), a map you
+  **paint** on the player, a **picture or video** from the project (white stays clean, black
+  moshes), or the **depth** of the scene (near stays clean), from a small model that runs on your
+  device and is downloaded once.
+- **Retro looks**: **VHS** (wobbling lines, a rolling tracking band, bleeding colour, tape noise),
+  **CRT** (curved glass, scanlines, glowing stripes), **Film Grain** (with a faded-print look) and
+  **Posterise** (a few colours with a retro dither, and chunky pixels).
+- **Titles can come in animated**: typewriter, glitch in, slide up or pop (Clip tab → **Comes in**).
+- **Recipe files**: **⋯ → Save recipe file** keeps a mosh (its effects and settings, no footage) as
+  a `.moshrecipe` file to use on other videos or share. Open one, or drop it on the app, to put it on
+  the open project.
+- **Batch**: **⋯ → Batch** puts the same mosh on many videos at once and exports them all through
+  the export queue, each fitted to its own length.
+
 ## 1.9.0
 
 - **Faster exports in the browser.** MP4 and WebM are encoded with your device's own video encoder

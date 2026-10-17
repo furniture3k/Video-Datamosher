@@ -49,6 +49,9 @@
   /** tracked objects in the project, for Subject Guard */
   const trackedPaths = $derived(store.project.clips.flatMap((c) => (c.paths ?? []).map((p) => ({ clipId: c.id, pathId: p.id, name: `${mediaOf(store.project, c.mediaId)?.source.name ?? 'clip'} · ${p.name}` }))));
   const strokeCount = $derived(((effect.data?.strokes as unknown[]) ?? []).length);
+  const maskStrokes = $derived(((effect.data?.maskStrokes as unknown[]) ?? []).length);
+  /** pictures and videos that can be a Mosh Map */
+  const mapMedia = $derived(store.project.media.filter((m) => m.source.kind === 'file' && (m.hasVideo || m.source.isImage)));
 
   // settings saved for this kind of effect
   const saved = $derived(fxPrefs.presets[effect.type] ?? []);
@@ -148,6 +151,29 @@
         <label class="row small">Colour <input type="color" value={String(effect.data?.color ?? '#00ff00')} oninput={(e) => store.edit(() => (effect.data = { ...(effect.data ?? {}), color: (e.target as HTMLInputElement).value }), 'guardcol' + effect.id)} /></label>
       {:else if effect.params.source === 'person'}
         <p class="small faint">The people model (a few MB) is downloaded the first time and runs on this device. Shows in the Mosh view.</p>
+      {:else if effect.params.source === 'paint'}
+        <div class="row">
+          <button class="tiny" class:on={store.ui.paintEffect === effect.id && !store.ui.maskErase} onclick={() => ((store.ui.maskErase = false), (store.ui.paintEffect = store.ui.paintEffect === effect.id && !store.ui.maskErase ? null : effect.id))} title="Paint where the picture stays clean">{store.ui.paintEffect === effect.id && !store.ui.maskErase ? 'Painting…' : 'Paint clean'}</button>
+          <button class="tiny" class:on={store.ui.paintEffect === effect.id && store.ui.maskErase} onclick={() => ((store.ui.paintEffect = store.ui.paintEffect === effect.id && store.ui.maskErase ? null : effect.id), (store.ui.maskErase = true))} title="Paint where it moshes again">Erase</button>
+        </div>
+        <label class="row small">Size <input type="range" min="0.01" max="0.3" step="0.005" bind:value={store.ui.brush.radius} /></label>
+        <div class="row">
+          <span class="small faint grow">{maskStrokes} stroke{maskStrokes === 1 ? '' : 's'}</span>
+          <button class="tiny" disabled={!maskStrokes} onclick={() => store.edit(() => (effect.data = { ...(effect.data ?? {}), maskStrokes: ((effect.data?.maskStrokes as unknown[]) ?? []).slice(0, -1) }))}>Undo stroke</button>
+          <button class="tiny" disabled={!maskStrokes} onclick={() => store.edit(() => (effect.data = { ...(effect.data ?? {}), maskStrokes: [] }))}>Clear</button>
+        </div>
+      {:else if effect.params.source === 'media'}
+        {#if mapMedia.length}
+          <select class="full" value={effect.data?.mediaId ?? ''} aria-label="Map picture or video" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; store.edit(() => (effect.data = { ...(effect.data ?? {}), mediaId: v || undefined })); }}>
+            <option value="">Pick a picture or video…</option>
+            {#each mapMedia as m}<option value={m.id}>{m.source.name}</option>{/each}
+          </select>
+          <p class="small faint">Its grey levels say where the picture stays clean (white) or moshes (black). Import any picture or video to use it; it doesn't need to be on the timeline.</p>
+        {:else}
+          <p class="small warn">Import a picture or video to use as the map (it doesn't need to be on the timeline).</p>
+        {/if}
+      {:else if effect.params.source === 'depth'}
+        <p class="small faint">The depth model (about 25 MB) is downloaded the first time and runs on this device. Near things stay clean; flip it with Keep clean. Shows in the Mosh view.</p>
       {/if}
     </section>
   {/if}

@@ -37,6 +37,7 @@ export const FAMILIES: Family[] = [
   },
   { id: 'damage', title: 'Damage', note: 'Corrupts the compressed data itself: blocks, tears and colour bursts.' },
   { id: 'colour', title: 'Colour & pixels', note: 'Works on the finished picture, so it looks the same on any footage.' },
+  { id: 'retro', title: 'Retro looks', note: 'Old tape, old screens, film and cheap colour, on top of the finished picture.' },
   { id: 'protect', title: 'Protect', note: 'Decides where the mosh is allowed to happen.' },
 ];
 
@@ -93,7 +94,11 @@ export const GUIDE: Record<string, Guide> = {
   chroma: { family: 'colour', essential: true, looks: 'Red, green and blue split apart, with VHS-style tearing.' },
   pixelSort: { family: 'colour', essential: true, looks: 'Streaks of sorted pixels pour across the bright or dark parts.' },
   rawbend: { family: 'colour', looks: 'Diagonal ghosts, colour smears and posterised bands.' },
-  mask: { family: 'protect', essential: true, looks: 'Keeps a person, a tracked object or a colour clean while everything else moshes. Or the reverse.' },
+  vhs: { family: 'retro', essential: true, looks: 'A worn tape: wobbling lines, a rolling tracking band, bleeding colour and hiss.' },
+  crt: { family: 'retro', looks: 'An old TV: curved glass, scanlines and glowing stripes.' },
+  grain: { family: 'retro', looks: 'Dancing film grain, and a faded print if you like.' },
+  posterize: { family: 'retro', looks: 'A handful of colours with a retro dither, and chunky pixels.' },
+  mask: { family: 'protect', essential: true, looks: 'Keeps a person, a tracked object or a colour clean while everything else moshes, or follows a map you paint, a gradient, a video or the depth of the scene.' },
 };
 
 export const guideOf = (type: string): Guide => GUIDE[type] ?? { family: 'damage', looks: '' };

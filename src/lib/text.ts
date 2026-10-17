@@ -1,5 +1,29 @@
 // Draws text titles onto a 2D canvas (edit preview, clean titles on the mosh, burned-in titles).
-import type { TextClip } from '../engine/types';
+import type { TextClip, TextAnim } from '../engine/types';
+
+export const TEXT_ANIMS: { value: TextAnim; label: string; hint: string }[] = [
+  { value: 'none', label: 'None', hint: 'Just appears (or fades, with Fade).' },
+  { value: 'type', label: 'Typewriter', hint: 'Letter by letter.' },
+  { value: 'glitch', label: 'Glitch in', hint: 'Scrambled, jumping letters that settle into the words.' },
+  { value: 'slide', label: 'Slide up', hint: 'Rises into place.' },
+  { value: 'pop', label: 'Pop', hint: 'Grows in with a little bounce.' },
+];
+
+/** How far a title is through coming in (0..1) at timeline time t. */
+export function animProgress(tx: TextClip, t: number): number {
+  if (!tx.anim || tx.anim === 'none' || tx.moshed) return 1;
+  const d = Math.max(0.05, tx.animIn ?? 0.6);
+  return Math.max(0, Math.min(1, (t - tx.start) / d));
+}
+
+const easeOut = (p: number) => 1 - (1 - p) ** 3;
+const easeOutBack = (p: number) => 1 + 2.2 * (p - 1) ** 3 + 1.2 * (p - 1) ** 2;
+/** Repeatable noise for the glitch: the same letter, frame and title give the same jump. */
+const noise = (a: number, b: number) => {
+  const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
+const GLYPHS = '!<>-_\\/[]{}=+*^?#%&@$01';
 
 const FONTS: Record<TextClip['font'], string> = {
   sans: "-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
@@ -37,6 +61,11 @@ export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number,
   if (alpha <= 0 || !tx.text.trim()) return;
   const [px, py] = textPos(tx, t);
   const size = Math.max(4, tx.size * h);
+  const p = animProgress(tx, t);
+  const anim = p < 1 ? tx.anim : 'none';
+  if (anim === 'slide') alpha *= easeOut(p);
+  if (anim === 'pop') alpha *= Math.min(1, p * 3);
+  if (alpha <= 0) return;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.font = `${tx.bold ? 700 : 400} ${size}px ${FONTS[tx.font] ?? FONTS.sans}`;
@@ -45,7 +74,14 @@ export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number,
   const lines = tx.text.split('\n');
   const lh = size * 1.2;
   const cx = px * w;
-  const cy = py * h - ((lines.length - 1) * lh) / 2;
+  let cy = py * h - ((lines.length - 1) * lh) / 2;
+  if (anim === 'slide') cy += (1 - easeOut(p)) * size * 1.2;
+  if (anim === 'pop') {
+    const k = 0.4 + 0.6 * easeOutBack(p);
+    ctx.translate(cx, py * h);
+    ctx.scale(k, k);
+    ctx.translate(-cx, -py * h);
+  }
   if (tx.box) {
     const widths = lines.map((l) => ctx.measureText(l).width);
     const bw = Math.max(...widths) + size * 0.8;
@@ -74,6 +110,46 @@ export function drawText(ctx: CanvasRenderingContext2D, tx: TextClip, w: number,
       ctx.fillStyle = local >= wd.t0 && local < wd.t1 + 0.05 ? tx.highlight! : tx.color;
       ctx.fillText(wd.text, x, cy);
       x += widths[i] + space;
+    });
+  } else if (anim === 'type') {
+    // the letters so far, line after line, laid out where the whole text will sit
+    let left = Math.floor(p * lines.reduce((n, l) => n + l.length, 0));
+    lines.forEach((l, i) => {
+      const shown = l.slice(0, Math.max(0, left));
+      left -= l.length;
+      if (!shown) return;
+      const full = ctx.measureText(l).width;
+      const x = tx.align === 'left' ? cx : tx.align === 'right' ? cx - full : cx - full / 2;
+      ctx.textAlign = 'left';
+      ctx.fillText(shown, x, cy + i * lh);
+    });
+  } else if (anim === 'glitch') {
+    // each letter jumps about and flickers between symbols, less and less until it settles
+    const frame = Math.floor(t * 24);
+    const amt = 1 - easeOut(p);
+    ctx.textAlign = 'left';
+    let k = 0;
+    lines.forEach((l, i) => {
+      const full = ctx.measureText(l).width;
+      let x = tx.align === 'left' ? cx : tx.align === 'right' ? cx - full : cx - full / 2;
+      for (const ch of l) {
+        const cw = ctx.measureText(ch).width;
+        const r = noise(k, frame);
+        const swap = ch.trim() && r < amt * 0.8;
+        const glyph = swap ? GLYPHS[Math.floor(noise(k + 0.5, frame) * GLYPHS.length)] : ch;
+        const dx = (noise(k, frame + 0.3) - 0.5) * size * amt * 0.6;
+        const dy = (noise(k, frame + 0.7) - 0.5) * size * amt * 0.8;
+        if (r > 1 - amt * 0.15) {
+          // a split colour copy, like a bad signal
+          ctx.save();
+          ctx.fillStyle = noise(k, frame + 0.9) > 0.5 ? '#ff2a6d' : '#05d9e8';
+          ctx.fillText(glyph, x + dx + size * 0.08, cy + i * lh + dy);
+          ctx.restore();
+        }
+        ctx.fillText(glyph, x + dx, cy + i * lh + dy);
+        x += cw;
+        k++;
+      }
     });
   } else lines.forEach((l, i) => ctx.fillText(l, cx, cy + i * lh));
   ctx.restore();

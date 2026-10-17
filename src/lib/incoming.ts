@@ -1,24 +1,28 @@
 // Files arriving from outside the app: dropped on the window, opened with moshpit from the
 // system ("Open with", double-click), shared to it from another app, or passed to the desktop app.
 import { addFiles } from './media';
-import { loadProjectFile } from './projectio.svelte';
+import { loadProjectFile, openRecipeFile } from './projectio.svelte';
 import { store } from './store.svelte';
 import { isDesktop } from './platform';
 import { startProject } from './projects.svelte';
 import { openRecipe } from './starters.svelte';
 
-const isProject = (f: File) => /\.json$/i.test(f.name) || f.type === 'application/json';
+const isRecipe = (f: File) => /\.moshrecipe$/i.test(f.name);
+const isProject = (f: File) => !isRecipe(f) && (/\.json$/i.test(f.name) || f.type === 'application/json');
 
-/** Project files are opened; everything else goes into the media library. */
+/** Project files are opened, recipes put on the project; everything else goes into the media library. */
 export async function openFiles(files: File[]) {
+  const recipes = files.filter(isRecipe);
   const projects = files.filter(isProject);
-  const media = files.filter((f) => !isProject(f));
+  const media = files.filter((f) => !isProject(f) && !isRecipe(f));
   // a project replaces the timeline, so open it first and add media to it after
   if (projects.length) await loadProjectFile(projects[0]);
   if (projects.length > 1) store.toast('Opened the first project; one at a time.', 'info');
   // from the home screen, media starts a new project; in the editor it joins the open one
   if (!projects.length && media.length && store.ui.home) await startProject();
   if (media.length) await addFiles(media);
+  // last, so it lands on the media that came with it
+  if (recipes.length) await openRecipeFile(recipes[0]);
 }
 
 /** The cache the service worker puts shared files in (see scripts/sw.js). */

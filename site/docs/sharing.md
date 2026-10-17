@@ -24,6 +24,12 @@ order: 5
 
 Every MP4, WebM, AVI and GIF export carries its **recipe**: the effects and settings that made it. Drop a video made in moshpit into the app and it offers to put the same mosh on your own footage. **⋯ → Share code** copies the recipe as text to paste anywhere.
 
+## Recipe files and batches
+
+**⋯ → Save recipe file** keeps the mosh (effects, settings and seeds, no footage) as a `.moshrecipe` file. Its positions are shares of the timeline, so it fits a video of any length. Open it with **⋯ → Open recipe file**, or drop it on the app, to put it on the open project (Undo takes it off).
+
+**⋯ → Batch** puts one mosh (this project's or a recipe file's) on many videos at once. Each gets a project of its own and goes through the export queue, so you can keep editing while they render.
+
 ## The gallery
 
 The [gallery](../../#gallery) shows moshes made with moshpit, each with its recipe.

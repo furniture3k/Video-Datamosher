@@ -103,6 +103,9 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'new-project', title: 'New project', group: 'Project', keys: [] },
   { id: 'home', title: 'All projects', group: 'Project', keys: [], words: 'home' },
   { id: 'share-code', title: 'Share code…', group: 'Project', keys: [], words: 'recipe' },
+  { id: 'save-recipe', title: 'Save recipe file…', group: 'Project', keys: [], words: 'moshrecipe preset effects' },
+  { id: 'open-recipe', title: 'Open recipe file…', group: 'Project', keys: [], words: 'moshrecipe load effects' },
+  { id: 'batch', title: 'Batch: same mosh on many videos…', group: 'Project', keys: [], words: 'export many files queue' },
   { id: 'record', title: 'Record from camera or screen…', group: 'Project', keys: [] },
   { id: 'generate', title: 'Generate footage…', group: 'Project', keys: [] },
 

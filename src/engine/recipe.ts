@@ -1,6 +1,7 @@
 // Recipes: the effect stack, automation, seeds and encoder settings as a short text code
 // ("MOSH:…"). Used by share codes and embedded in exported videos so any export can be remixed.
-import type { Project } from './types';
+import { newProject, VIDEO_TRACK, type MediaItem, type Project } from './types';
+import { makeClip, timelineDuration } from './timeline';
 
 export const RECIPE_PREFIX = 'MOSH:';
 
@@ -19,6 +20,18 @@ export function recipePayload(p: Project, total: number) {
   };
 }
 export type Recipe = ReturnType<typeof recipePayload>;
+
+/** A recipe file (.moshrecipe): readable JSON, so it can be looked at, edited and shared. */
+export const RECIPE_EXT = '.moshrecipe';
+export const recipeFile = (p: Project, total: number, name = p.name) => ({ moshpit: 'recipe', version: 1, name, recipe: recipePayload(p, total) });
+
+/** The recipe in a recipe file's text (also takes a bare payload, or a MOSH: code via decodeRecipe). */
+export function parseRecipeFile(text: string): { name: string; recipe: Recipe } {
+  const data = JSON.parse(text);
+  const recipe = data?.moshpit === 'recipe' ? data.recipe : data;
+  if (!recipe || typeof recipe !== 'object' || !Array.isArray(recipe.fx)) throw new Error('not a moshpit recipe');
+  return { name: typeof data?.name === 'string' && data.name ? data.name : 'Recipe', recipe };
+}
 
 /** Apply a recipe to a project whose timeline is `total` frames long. */
 export function applyRecipe(p: Project, data: Recipe, total: number): Project {
@@ -122,5 +135,17 @@ export function gifComments(gif: Uint8Array): string[] {
       skipBlocks();
     } else break;
   }
+  return out;
+}
+
+// ---------- batch ----------
+
+/** The project a batch makes for one video. `keepShape`: the video's own shape, not the recipe's. */
+export function batchProject(m: MediaItem, recipe: Recipe, keepShape = true): Project {
+  const p: Project = { ...newProject(), name: m.source.kind === 'file' ? m.source.name.replace(/\.[^.]+$/, '') : 'Batch', media: [m] };
+  p.clips = [makeClip(m, VIDEO_TRACK, { start: 0 })];
+  const fps = recipe.enc?.fps ?? p.encoder.fps;
+  const out = applyRecipe(p, recipe, Math.max(1, Math.round(timelineDuration(p) * fps)));
+  if (keepShape) out.encoder = { ...out.encoder, aspect: 'auto' };
   return out;
 }

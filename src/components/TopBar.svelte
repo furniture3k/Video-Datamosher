@@ -1,6 +1,6 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
-  import { saveProjectFile, loadProjectFile, startNewProject } from '../lib/projectio.svelte';
+  import { saveProjectFile, loadProjectFile, startNewProject, saveRecipeFile, pickRecipeFile } from '../lib/projectio.svelte';
   import { hasSavePicker } from '../lib/storage';
   import { reportProblem } from '../lib/report';
   import { goHome } from '../lib/projects.svelte';
@@ -97,6 +97,9 @@
         {#if hasSavePicker()}<button class="ghost" onclick={() => saveProjectFile(true)}><Icon name="save" />Save project as…</button>{/if}
         <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />Open project…</button>
         <button class="ghost" onclick={() => (store.ui.dialog = 'share')}><Icon name="link" />Share code…</button>
+        <button class="ghost" onclick={() => saveRecipeFile()}><Icon name="save" />Save recipe file…</button>
+        <button class="ghost" onclick={() => pickRecipeFile()}><Icon name="folder" />Open recipe file…</button>
+        <button class="ghost" onclick={() => (store.ui.dialog = 'batch')}><Icon name="export" />Batch…</button>
         <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'bake')}><Icon name="film" />Bake the mosh into a clip…</button>
         <button class="ghost" disabled={!hasClips} onclick={() => (store.ui.dialog = 'captions')}><Icon name="text" />Auto captions…</button>
         <hr />

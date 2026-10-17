@@ -4,6 +4,10 @@ import { FlowEngine, CHROMA, defaultFlow, type FlowParams } from './flow';
 import { rasterizeField, encodeField, FIELD_MAX, type Stroke } from '../engine/flowfield';
 import { linearAt } from '../engine/track';
 import { personMask } from './segment';
+import { paintedMask, mediaMap, depthMap, type MaskStroke } from './maps';
+import { VHS, CRT, GRAIN, POSTERIZE } from './retro';
+
+const RETRO: Record<string, string> = { vhs: VHS, crt: CRT, grain: GRAIN, posterize: POSTERIZE };
 import { pathOnTimeline } from './motion.svelte';
 import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
@@ -86,16 +90,21 @@ export function rawBendPixels(px: Uint8Array, o: BendOptions) {
 
 // ---------- Subject Guard shaders ----------
 
-/** The mask (white = subject) from the clean picture, a people mask, or an oval. */
+/**
+ * The mask (white = subject) from the clean picture, a map (people, painted, a picture or video,
+ * depth), an oval, or a gradient.
+ */
 const MASKGEN = `#version 300 es
 precision highp float; in vec2 uv; out vec4 o;
 uniform sampler2D clean; uniform sampler2D person; uniform float mode; uniform float thr;
-uniform vec2 center; uniform vec2 radius; uniform vec3 key;
+uniform vec2 center; uniform vec2 radius; uniform vec3 key; uniform vec2 dir; uniform float spread; uniform float aspect;
 float lum(vec3 c){ return dot(c, vec3(0.299, 0.587, 0.114)); }
 void main(){
   vec3 c = texture(clean, uv).rgb;
   float m;
   if (mode < 0.5) m = texture(person, uv).r;
+  else if (mode > 4.5 && mode < 5.5) m = clamp(0.5 - dot(uv - center, dir) / spread, 0., 1.);
+  else if (mode > 5.5) m = 1. - smoothstep(0., spread, length((uv - center) * vec2(aspect, 1.)));
   else if (mode < 1.5) m = 1. - smoothstep(0.8, 1.0, length((uv - center) / radius));
   else if (mode < 2.5) m = smoothstep(thr - 0.05, thr + 0.05, lum(c));
   else if (mode < 3.5) m = 1. - smoothstep(thr - 0.05, thr + 0.05, lum(c));
@@ -117,14 +126,20 @@ void main(){
 const MASKMIX = `#version 300 es
 precision highp float; in vec2 uv; out vec4 o;
 uniform sampler2D cur; uniform sampler2D clean; uniform sampler2D mask;
-uniform float expand; uniform float soft; uniform float keepBg; uniform float amt;
+uniform float expand; uniform float soft; uniform float keepBg; uniform float amt; uniform float cont;
 void main(){
-  float m = smoothstep(0.5 - expand - soft, 0.5 - expand + soft, texture(mask, uv).r);
+  float v = texture(mask, uv).r;
+  // maps blend (grey moshes half way); the other sources are a cut-out
+  float m = cont > 0.5 ? clamp(v + expand * 2., 0., 1.) : smoothstep(0.5 - expand - soft, 0.5 - expand + soft, v);
   if (keepBg > 0.5) m = 1. - m;
   o = vec4(mix(texture(cur, uv).rgb, texture(clean, uv).rgb, clamp(m * amt, 0., 1.)), 1.);
 }`;
 
-const MASK_MODES: Record<string, number> = { person: 0, track: 1, luma: 2, dark: 3, chroma: 4 };
+const MASK_MODES: Record<string, number> = { person: 0, paint: 0, media: 0, depth: 0, track: 1, luma: 2, dark: 3, chroma: 4, gradient: 5 };
+/** Sources whose mask is a picture of its own (drawn into the `person` texture). */
+const PICTURE_SOURCES = new Set(['person', 'paint', 'media', 'depth']);
+/** Sources that blend by their grey level instead of cutting out. */
+const MAP_SOURCES = new Set(['gradient', 'paint', 'media', 'depth']);
 
 /** What Subject Guard needs for one frame, worked out before it is processed. */
 export interface FrameExtras {
@@ -133,6 +148,8 @@ export interface FrameExtras {
   person?: CanvasImageSource | null;
   /** effect id → tracked point [x, y] (shares of the frame) */
   track?: Map<string, [number, number] | null>;
+  /** effect id → its map (painted, from media, depth) */
+  maps?: Map<string, CanvasImageSource | null>;
 }
 
 const hexRgb = (hex: string): [number, number, number] => {
@@ -154,7 +171,7 @@ export class PostProcessor {
   private maskB: Target | null = null;
   private fields = new Map<string, { key: string; t: Target }>();
   private scratch = document.createElement('canvas');
-  constructor(public w: number, public h: number) {
+  constructor(public w: number, public h: number, public fps = 24) {
     this.canvas = document.createElement('canvas');
     this.canvas.width = w;
     this.canvas.height = h;
@@ -188,7 +205,8 @@ export class PostProcessor {
     const gl = this.gl;
     if (!x.clean) return false;
     const source = String(e.params.source);
-    if (source === 'person' && !x.person) return false;
+    const picture = source === 'person' ? x.person : PICTURE_SOURCES.has(source) ? x.maps?.get(e.id) : null;
+    if (PICTURE_SOURCES.has(source) && !picture) return false;
     const pt = source === 'track' ? x.track?.get(e.id) : null;
     if (source === 'track' && !pt) return false;
     this.cleanT ??= gl.target(this.w, this.h);
@@ -197,22 +215,26 @@ export class PostProcessor {
     const mh = Math.max(8, Math.ceil(this.h / 2));
     this.maskA ??= gl.target(mw, mh);
     this.maskB ??= gl.target(mw, mh);
-    if (source === 'person') {
-      const pc = x.person as HTMLCanvasElement;
+    if (picture) {
+      const pc = picture as HTMLCanvasElement;
       if (!this.personT || this.personT.w !== pc.width || this.personT.h !== pc.height) {
         gl.dispose(this.personT);
         this.personT = gl.target(pc.width, pc.height);
       }
       gl.upload(this.personT, pc);
     }
+    const ang = (Number(paramAt(e, 'angle', t)) * Math.PI) / 180;
     const size = Number(paramAt(e, 'size', t));
     const col = hexRgb(String(e.data?.color ?? '#00ff00'));
     gl.pass(MASKGEN, this.maskA, { clean: this.cleanT.tex, person: (this.personT ?? this.cleanT).tex }, {
-      mode: MASK_MODES[source] ?? 2,
+      mode: source === 'gradient' && e.params.shape === 'radial' ? 6 : (MASK_MODES[source] ?? 2),
       thr: Number(paramAt(e, 'threshold', t)),
-      center: pt ? [pt[0], 1 - pt[1]] : [0.5, 0.5],
+      center: pt ? [pt[0], 1 - pt[1]] : source === 'gradient' ? [Number(paramAt(e, 'gx', t)), 1 - Number(paramAt(e, 'gy', t))] : [0.5, 0.5],
       radius: [size, (size * this.w) / this.h],
       key: col,
+      dir: [Math.cos(ang), -Math.sin(ang)],
+      spread: Math.max(0.01, Number(paramAt(e, 'spread', t))),
+      aspect: this.w / this.h,
     });
     const feather = Number(paramAt(e, 'feather', t));
     if (feather > 0) {
@@ -225,6 +247,7 @@ export class PostProcessor {
       soft: 0.04 + feather * 2,
       keepBg: e.params.keep === 'background' ? 1 : 0,
       amt: Number(paramAt(e, 'mix', t)),
+      cont: MAP_SOURCES.has(source) ? 1 : 0,
     });
     return true;
   }
@@ -281,6 +304,17 @@ export class PostProcessor {
         const ang = ((Number(paramAt(e, 'angle', t)) + wob * 90 * (rng() * 2 - 1)) * Math.PI) / 180;
         gl.pass(CHROMA, other, { src: cur.tex }, { size: [this.w, this.h], off: [Math.cos(ang) * off, Math.sin(ang) * off], tear: Number(paramAt(e, 'scanTear', t)), seed: index % 997 });
         [cur, other] = [other, cur];
+      } else if (RETRO[e.type]) {
+        const n = (k: string) => Number(paramAt(e, k, t));
+        const common = { size: [this.w, this.h], time: index / this.fps, seed: (e.seed % 997) + (index % 101) };
+        const u: Record<string, Record<string, number | number[]>> = {
+          vhs: { tracking: n('tracking'), bleed: n('bleed'), noise: n('noise'), wobble: n('wobble'), colour: n('colour') },
+          crt: { curve: n('curve'), scan: n('scan'), mask: n('mask'), glow: n('glow'), vignette: n('vignette') },
+          grain: { amount: n('amount'), grain: n('grain'), colour: paramAt(e, 'colour', t) ? 1 : 0, fade: n('fade') },
+          posterize: { levels: n('levels'), dither: ({ none: 0, bayer: 1, noise: 2 } as Record<string, number>)[String(e.params.dither)] ?? 1, pixel: n('pixel'), mixAmt: n('mix') },
+        };
+        gl.pass(RETRO[e.type], other, { src: cur.tex }, { ...common, ...u[e.type] });
+        [cur, other] = [other, cur];
       } else if (e.type === 'rawbend') {
         const px = gl.read(cur);
         rawBendPixels(px, {
@@ -328,6 +362,8 @@ export class PostRunner {
   private c2d: HTMLCanvasElement | null = null;
   private paths = new Map<string, [number, number, number][]>();
   private personCache = new Map<number, HTMLCanvasElement>();
+  private depthCache = new Map<number, HTMLCanvasElement>();
+  private project: Project;
   /** withTexts: also draw clean (non-melting) titles into the frames, for exports */
   constructor(
     project: Project,
@@ -336,6 +372,7 @@ export class PostRunner {
     audio?: MoshAudio,
     private clean?: { get(pos: number): Promise<Uint8Array | null> },
   ) {
+    this.project = project;
     this.effects = pixelEffectsOf(project, audio);
     // tracked objects for Subject Guard, as timeline paths
     for (const e of this.effects) {
@@ -362,7 +399,7 @@ export class PostRunner {
       let src: CanvasImageSource = bmp;
       let extras: FrameExtras = {};
       if (this.effects.length) {
-        this.pp ??= new PostProcessor(bmp.width, bmp.height);
+        this.pp ??= new PostProcessor(bmp.width, bmp.height, this.fps);
         extras = await this.extrasFor(fr, bmp.width, bmp.height);
         this.pp.processFrame(bmp, fr, k, this.effects, extras);
         src = this.pp.canvas;
@@ -406,13 +443,28 @@ export class PostRunner {
         this.personCache.set(pos, person);
       }
     }
+    const maps = new Map<string, CanvasImageSource | null>();
+    for (const e of guards) {
+      const src = e.params.source;
+      if (src === 'paint') maps.set(e.id, paintedMask(e.id, (e.data?.maskStrokes as MaskStroke[] | undefined) ?? [], 256, Math.max(8, Math.round((256 * h) / w))));
+      else if (src === 'media') maps.set(e.id, await mediaMap(this.project, e.data?.mediaId as string | undefined, pos - e.start));
+      else if (src === 'depth') {
+        let d = this.depthCache.get(pos);
+        if (!d) {
+          d = await depthMap(clean);
+          if (this.depthCache.size > 240) this.depthCache.clear();
+          this.depthCache.set(pos, d);
+        }
+        maps.set(e.id, d);
+      }
+    }
     const track = new Map<string, [number, number] | null>();
     const t = pos / this.fps;
     for (const [id, path] of this.paths) {
       const inside = path.length && t >= path[0][0] - 1e-6 && t <= path[path.length - 1][0] + 1e-6;
       track.set(id, inside ? [linearAt(path.map(([a, x]) => [a, x]), t), linearAt(path.map(([a, , y]) => [a, y]), t)] : null);
     }
-    return { clean, person, track };
+    return { clean, person, track, maps };
   }
 
   dispose() {

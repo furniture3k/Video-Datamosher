@@ -12,6 +12,7 @@
   import Scopes from './Scopes.svelte';
   import { trackClip } from '../lib/motion.svelte';
   import { rasterizeField, type Stroke } from '../engine/flowfield';
+  import { drawMask, type MaskStroke } from '../lib/maps';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawTexts } from '../lib/text';
@@ -452,7 +453,19 @@
     return [(e.clientX - (rc.left + (rc.width - shown.width * k) / 2)) / (shown.width * k), (e.clientY - (rc.top + (rc.height - shown.height * k) / 2)) / (shown.height * k)];
   }
   // ---- flow painting
-  const paintFx = $derived(store.ui.paintEffect ? store.project.effects.find((x) => x.id === store.ui.paintEffect && (x.type === 'flowPaint' || x.type === 'mvedit')) : undefined);
+  const paintFx = $derived(store.ui.paintEffect ? store.project.effects.find((x) => x.id === store.ui.paintEffect && (x.type === 'flowPaint' || x.type === 'mvedit' || (x.type === 'mask' && x.params.source === 'paint'))) : undefined);
+  /** painting a Mosh Map (Subject Guard), not a flow */
+  const paintMask = $derived(paintFx?.type === 'mask');
+  /** the painted map so far, shown over the picture */
+  const maskImage = $derived.by(() => {
+    if (!paintFx || !paintMask) return '';
+    const { w, h } = outputSize(store.project, store.project.encoder.previewWidth);
+    const c = document.createElement('canvas');
+    c.width = 160;
+    c.height = Math.max(8, Math.round((160 * h) / w));
+    drawMask(c.getContext('2d')!, (paintFx.data?.maskStrokes as MaskStroke[] | undefined) ?? [], c.width, c.height);
+    return c.toDataURL();
+  });
   let liveStroke = $state<[number, number][]>([]);
   /** The picture's box inside the stage, in stage pixels. */
   function pictureBox() {
@@ -481,8 +494,16 @@
       window.removeEventListener('pointerup', up);
       liveStroke = [];
       const b = store.ui.brush;
-      const stroke = { tool: b.tool, pts: pts.map(([x, y]) => [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]), radius: b.radius, strength: b.strength };
+      const round = pts.map(([x, y]) => [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]);
       const id = fx.id;
+      if (fx.type === 'mask') {
+        const stroke: MaskStroke = { pts: round as [number, number][], radius: b.radius, ...(store.ui.maskErase ? { erase: true } : {}) };
+        return store.edit((p) => {
+          const x = p.effects.find((y) => y.id === id);
+          if (x) x.data = { ...(x.data ?? {}), maskStrokes: [...((x.data?.maskStrokes as unknown[]) ?? []), stroke] };
+        });
+      }
+      const stroke = { tool: b.tool, pts: round, radius: b.radius, strength: b.strength };
       store.edit((p) => {
         const x = p.effects.find((y) => y.id === id);
         if (x) x.data = { ...(x.data ?? {}), strokes: [...((x.data?.strokes as unknown[]) ?? []), stroke] };
@@ -493,7 +514,7 @@
   }
   /** Arrows showing the painted field. */
   const fieldArrows = $derived.by(() => {
-    if (!paintFx) return [];
+    if (!paintFx || paintMask) return [];
     const strokes = (paintFx.data?.strokes as Stroke[] | undefined) ?? [];
     const { w, h } = outputSize(store.project, store.project.encoder.previewWidth);
     const gw = 24;
@@ -654,9 +675,10 @@
         {#each fieldArrows as a}
           <line x1={a.x} y1={a.y} x2={a.x + a.dx} y2={a.y + a.dy} class="arrow" />
         {/each}
+        {#if paintMask && maskImage}<image href={maskImage} x="0" y="0" width="1" height="1" preserveAspectRatio="none" class="maskimg" />{/if}
         {#if liveStroke.length > 1}<polyline points={liveStroke.map(([x, y]) => `${x},${y}`).join(' ')} class="stroke" />{/if}
       </svg>
-      <div class="stage-note mono picknote">painting {store.ui.brush.tool}: drag on the picture · Esc to stop</div>
+      <div class="stage-note mono picknote">{paintMask ? (store.ui.maskErase ? 'erasing the map' : 'painting where it stays clean') : `painting ${store.ui.brush.tool}`}: drag on the picture · Esc to stop</div>
     {/if}
     {#if trackRect}
       <div class="trackbox" style="left:{trackRect.x}px;top:{trackRect.y}px;width:{trackRect.w}px;height:{trackRect.h}px"></div>
@@ -873,6 +895,10 @@
     stroke-width: 2px;
     vector-effect: non-scaling-stroke;
     stroke-linecap: round;
+  }
+  .paintlayer .maskimg {
+    opacity: 0.4;
+    mix-blend-mode: screen;
   }
   .paintlayer .stroke {
     fill: none;
