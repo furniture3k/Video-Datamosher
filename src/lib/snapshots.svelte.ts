@@ -67,7 +67,8 @@ export async function snapshotFileIds(): Promise<string[]> {
 
 export async function takeSnapshot(name?: string, auto = false): Promise<Snapshot | null> {
   await loadSnapshots();
-  const live = $state.snapshot(store.project) as Project;
+  // the whole project, also while a compound clip is open
+  const live = store.rootProject();
   if (!live.clips.length && !live.effects.length) return null;
   // the project gets its place in the list first, so the snapshot can belong to it
   await store.flush();
@@ -99,6 +100,8 @@ export async function takeSnapshot(name?: string, auto = false): Promise<Snapsho
 export async function restoreSnapshot(id: string) {
   const s = snapshots.list.find((x) => x.id === id);
   if (!s) return;
+  // a snapshot is the whole project: it can't go in place of a compound's timeline
+  if (store.seqStack.length) return void store.toast('Close the compound clip first (Done, top left), then restore the snapshot.', 'error', 6000);
   await takeSnapshot('Before restoring ' + s.name, true);
   const cur = store.project.media;
   const media = [...cur, ...s.project.media.filter((m) => !cur.some((c) => c.id === m.id))].map((m) => cur.find((c) => c.id === m.id) ?? m);
