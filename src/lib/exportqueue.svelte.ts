@@ -136,7 +136,12 @@ export async function saveJob(id: number) {
 function askToNotify() {
   if (typeof Notification === 'undefined' || Notification.permission !== 'default') return;
   // asked from the click that queued the export
-  Notification.requestPermission().catch(() => {});
+  // (older Safari answers through a callback and returns nothing)
+  try {
+    Promise.resolve(Notification.requestPermission()).catch(() => {});
+  } catch {
+    /* not allowed here */
+  }
 }
 
 function notifyDone(j: QueueJob) {

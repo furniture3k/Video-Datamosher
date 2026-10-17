@@ -21,7 +21,11 @@ export function parseTimecode(v: string, fps: number, now = 0): number | null {
   let t: number | null = null;
   if (/^\d+(\.\d+)?f$/i.test(body)) t = parseFloat(body) / fps;
   else if (/^\d+(\.\d+)?$/.test(body)) t = parseFloat(body);
-  else if (/^\d+([:;.]\d+){1,3}$/.test(body)) {
+  else if (/^\d+:\d+\.\d+$/.test(body)) {
+    // M:SS.s: the part after the dot is a fraction of a second (HH:MM:SS.FF keeps it as frames)
+    const g = body.split(':').map(Number);
+    t = g.reduce((acc, x) => acc * 60 + x, 0);
+  } else if (/^\d+([:;.]\d+){1,3}$/.test(body)) {
     const g = body.split(/[:;.]/).map(Number);
     if (g.length === 4) t = g[0] * 3600 + g[1] * 60 + g[2] + g[3] / fps;
     else if (g.length === 3) t = g[0] * 3600 + g[1] * 60 + g[2];

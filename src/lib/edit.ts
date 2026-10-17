@@ -2,23 +2,28 @@
 import { store } from './store.svelte';
 import { ask } from './ask';
 import { forgetMedia } from './media';
-import { splitClip, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips } from '../engine/timeline';
+import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips } from '../engine/timeline';
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TextClip, type TransitionType } from '../engine/types';
 import { addToTimeline } from './media';
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 
-/** Split the selected clips under the playhead (or every clip under it when none is selected). */
+/** Split the selected clips and titles under the playhead (or every clip under it when none is selected). */
 export function splitAtPlayhead() {
   const t = store.ui.time;
-  const under = clipsAt(store.project, t);
-  const sel = under.filter((c) => store.ui.selectedClips.includes(c.id));
-  const targets = (sel.length ? sel : under).map((c) => c.id);
-  if (!targets.length) return store.toast('Move the playhead over a clip to split it.');
+  const selected = store.ui.selectedClips;
+  const under = clipsAt(store.project, t).filter((c) => !lockedTrack(c.track));
+  const titles = store.project.texts.filter((x) => selected.includes(x.id) && t > x.start + 0.05 && t < x.start + x.duration - 0.05);
+  const targets = (selected.length ? under.filter((c) => selected.includes(c.id)) : under).map((c) => c.id);
+  if (!targets.length && !titles.length) return store.toast(selected.length ? 'Move the playhead over the selected clip to split it.' : 'Move the playhead over a clip to split it.');
   const created: string[] = [];
   store.editTimeline((p) => {
     for (const id of targets) {
       const b = splitClip(p, id, t);
+      if (b) created.push(b.id);
+    }
+    for (const x of titles) {
+      const b = splitText(p, x.id, t);
       if (b) created.push(b.id);
     }
   });

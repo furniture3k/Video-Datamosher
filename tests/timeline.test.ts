@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { fileMedia, clipOf } from './helpers';
 import { newProject, type Project } from '../src/engine/types';
-import { clipLen, deleteClips, detachAudio, insertVideo, layoutVideo, mapTime, moveVideo, nearestCut, remapToFootage, segments, splitClip, timelineDuration, trimClip, audioSources, makeClip } from '../src/engine/timeline';
+import { clipLen, deleteClips, detachAudio, insertVideo, layoutVideo, mapTime, moveVideo, nearestCut, remapToFootage, segments, splitClip, splitText, timelineDuration, trimClip, audioSources, makeClip } from '../src/engine/timeline';
 import { migrate } from '../src/engine/migrate';
 import { makeEffect } from '../src/engine/presets';
 
@@ -54,6 +54,17 @@ describe('edit operations', () => {
     expect(q.clips.slice(0, 2).map((c) => [c.in, c.out])).toEqual([[3, 4], [0, 3]]);
     // too close to an edge does nothing
     expect(splitClip(proj(), 'A', 0.01)).toBeNull();
+  });
+
+  it('split a title: two halves, word timings follow', () => {
+    const p = proj();
+    p.texts = [{ id: 'T', text: 'a b', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans', bold: false, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, anim: 'pop', words: [{ t0: 0, t1: 0.5, text: 'a' }, { t0: 1.2, t1: 1.6, text: 'b' }] }];
+    const b = splitText(p, 'T', 2)!;
+    expect(p.texts.map((t) => [t.start, t.duration])).toEqual([[1, 1], [2, 1]]);
+    expect(p.texts[0].words!.map((w) => w.text)).toEqual(['a']);
+    expect(b.words!.map((w) => [w.text, +w.t0.toFixed(6), +w.t1.toFixed(6)])).toEqual([['b', 0.2, 0.6]]);
+    expect(b.anim).toBeUndefined();
+    expect(splitText(p, 'T', 1.01)).toBeNull();
   });
 
   it('split with speed maps through source time', () => {
