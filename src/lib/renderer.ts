@@ -7,7 +7,7 @@ import { lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { regenArgs, generationEncoder, loopPassArgs, type TextOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
-import { packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
+import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
 import { audioKey, audioKeysNeeded, type MoshAudio } from '../engine/audiofx';
@@ -221,6 +221,15 @@ export const renderKey = (p: Project) => JSON.stringify({
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
+// ---------------------------------------------------------------- scripts
+
+/** Run the Script effects (in their sandbox) so the mosh that follows has their answers. */
+async function runScripts(project: Project, prep: Prepared, cuts: number[], audio?: MoshAudio, packs?: Packs) {
+  if (!hasScripts(project)) return;
+  const { planScript } = await import('./scripts.svelte');
+  await prepareScripts(prep, project, cuts, (e, input) => planScript(e, input, project.encoder.fps, prep.frames.length), audio, packs);
+}
+
 // ---------------------------------------------------------------- motion packs
 
 const packCache = new Map<string, Promise<Frame[]>>();
@@ -265,7 +274,9 @@ export async function generations(project: Project, prep: Prepared, frames: Fram
     check(signal);
     const next = framesFromAvi(r.out['gen.avi'], enc.codec);
     if (!next.frames.length) break;
-    const out = applyBitstream(next, { ...project, encoder: enc, globalSeed: hashSeed(project.globalSeed, g) }, cuts, audio, packs);
+    const gp = { ...project, encoder: enc, globalSeed: hashSeed(project.globalSeed, g) };
+    await runScripts(gp, next, cuts, audio, packs);
+    const out = applyBitstream(next, gp, cuts, audio, packs);
     cur = traceGeneration(cur, out);
     curPrep = next;
   }
@@ -282,6 +293,7 @@ export async function renderPreview(project: Project, width: number, progress?: 
   progress?.('Moshing', 0);
   const audio = await moshAudioFor(project);
   const packs = await packsFor(project, width);
+  await runScripts(project, prep, cuts, audio, packs);
   check(signal);
   let frames = applyBitstream(prep, project, cuts, audio, packs);
   check(signal);
@@ -632,7 +644,8 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
   // doesn't grow with the length of the video.
   // generation loss re-encodes the mosh in memory, so it doesn't use the on-disk path
   const gens = (project.encoder.generations ?? 1) > 1;
-  const disk = isDesktop && !gens;
+  // (H.264 too: its frames are renumbered after the mosh, which needs them in memory)
+  const disk = isDesktop && !gens && project.encoder.codec !== 'h264';
   try {
     let prep = await prepare(project, width, progress, signal, false, disk, eng);
     const clean0 = prep;
@@ -642,6 +655,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     progress('Moshing', 0);
     const audioFx = await moshAudioFor(project);
     const packs = await packsFor(project, width, eng);
+    await runScripts(project, prep, cutsOf(project), audioFx, packs);
     let frames = disk ? await applyBitstreamDisk(prep, project, cutsOf(project), loadFrames, audioFx, packs) : applyBitstream(prep, project, cutsOf(project), audioFx, packs);
     if (gens) ({ prep, frames } = await generations(project, prep, frames, cutsOf(project), audioFx, progress, signal, packs, eng));
     const fps = project.encoder.fps;

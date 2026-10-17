@@ -106,6 +106,7 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'save-recipe', title: 'Save recipe file…', group: 'Project', keys: [], words: 'moshrecipe preset effects' },
   { id: 'open-recipe', title: 'Open recipe file…', group: 'Project', keys: [], words: 'moshrecipe load effects' },
   { id: 'batch', title: 'Batch: same mosh on many videos…', group: 'Project', keys: [], words: 'export many files queue' },
+  { id: 'midi', title: 'Use a MIDI controller', group: 'Mosh', keys: [], words: 'knob fader osc controller hardware' },
   { id: 'record', title: 'Record from camera or screen…', group: 'Project', keys: [] },
   { id: 'generate', title: 'Generate footage…', group: 'Project', keys: [] },
 

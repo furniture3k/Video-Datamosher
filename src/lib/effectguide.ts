@@ -37,6 +37,7 @@ export const FAMILIES: Family[] = [
   },
   { id: 'damage', title: 'Damage', note: 'Corrupts the compressed data itself: blocks, tears and colour bursts.' },
   { id: 'colour', title: 'Colour & pixels', note: 'Works on the finished picture, so it looks the same on any footage.' },
+  { id: 'code', title: 'Your own', note: 'Write the effect yourself, in JavaScript.' },
   { id: 'retro', title: 'Retro looks', note: 'Old tape, old screens, film and cheap colour, on top of the finished picture.' },
   { id: 'protect', title: 'Protect', note: 'Decides where the mosh is allowed to happen.' },
 ];
@@ -94,6 +95,7 @@ export const GUIDE: Record<string, Guide> = {
   chroma: { family: 'colour', essential: true, looks: 'Red, green and blue split apart, with VHS-style tearing.' },
   pixelSort: { family: 'colour', essential: true, looks: 'Streaks of sorted pixels pour across the bright or dark parts.' },
   rawbend: { family: 'colour', looks: 'Diagonal ghosts, colour smears and posterised bands.' },
+  script: { family: 'code', looks: 'Whatever you write: frames in any order, repeated, left out or damaged.', diagram: [P(1), P(3, 'moved'), P(3, 'repeat'), P(2, 'moved'), P(5, 'glitch'), P(6)] },
   vhs: { family: 'retro', essential: true, looks: 'A worn tape: wobbling lines, a rolling tracking band, bleeding colour and hiss.' },
   crt: { family: 'retro', looks: 'An old TV: curved glass, scanlines and glowing stripes.' },
   grain: { family: 'retro', looks: 'Dancing film grain, and a faded print if you like.' },

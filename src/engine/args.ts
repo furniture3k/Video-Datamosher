@@ -368,6 +368,20 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
 
 export function encoderArgs(enc: EncoderSettings, keyTimes: number[]): string[] {
   const a: string[] = [];
+  if (enc.codec === 'h264') {
+    // H.264 for moshing: Baseline (CAVLC, so damaged bytes don't derail a whole slice), one
+    // reference frame and no B-frames (motion only ever points back at the frame before), the same
+    // quantiser throughout, and parameter sets before every keyframe (dropping one leaves the
+    // stream readable)
+    const qp = Math.round(10 + ((enc.quality - 1) * 41) / 30);
+    a.push('-c:v', 'libx264', '-vtag', 'H264', '-profile:v', 'baseline', '-preset', 'veryfast', '-refs', '1', '-bf', '0', '-qp', String(qp));
+    // one slice per frame, so each frame has one header (see renumberH264)
+    a.push('-x264-params', `keyint=${Math.max(1, enc.gop)}:min-keyint=1:scenecut=${enc.sceneCut ? 40 : 0}:repeat-headers=1:sliced-threads=0:slices=1`);
+    a.push('-pix_fmt', 'yuv420p');
+    const kt = keyTimes.filter((t) => t > 0.001);
+    if (kt.length) a.push('-force_key_frames', kt.map((t) => r3(Math.max(0.001, t - 0.5 / enc.fps))).join(','));
+    return a;
+  }
   if (enc.codec === 'mpeg4') {
     a.push('-c:v', 'mpeg4', '-vtag', 'XVID');
     a.push('-motion_est', enc.motionEst);

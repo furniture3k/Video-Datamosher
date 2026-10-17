@@ -29,8 +29,9 @@
       { value: 'mpeg4', label: 'MPEG-4 Part 2 (Xvid)' },
       { value: 'mpeg2', label: 'MPEG-2' },
       { value: 'mpeg1', label: 'MPEG-1' },
+      { value: 'h264', label: 'H.264 (experimental)', hint: 'The codec of most videos today: smoother, finer smears with fewer blocks. Vector Edit needs Xvid.' },
     ]}
-    help="Xvid is the classic datamosh codec. MPEG-1/2 give chunkier, older-looking smears."
+    help="Xvid is the classic datamosh codec. MPEG-1/2 give chunkier, older-looking smears. H.264 is experimental."
     onchange={setE('codec')}
   />
   <Field label="Quality → crunch" min={1} max={31} step={1} value={e.quality} help="1 = clean and detailed, 31 = huge blocky artefacts. Mid values (4–10) look the most 'datamoshy'." onchange={setE('quality')} />
@@ -49,6 +50,7 @@
   {/if}
   <Field type="bool" label="Keyframe at every clip cut" value={e.keyAtCuts} help="Forces a keyframe where each clip starts, so 'Cut Transitions' can find and remove it." onchange={setE('keyAtCuts')} />
   <Field type="bool" label="Scene-cut detection" value={e.sceneCut} help="Let the encoder add keyframes when the picture changes a lot. Usually off for moshing." onchange={setE('sceneCut')} />
+  {#if e.codec !== 'h264'}
   <Field
     type="select"
     label="Motion search"
@@ -61,6 +63,7 @@
     help="How the encoder looks for movement. 'Zero' stores no motion at all, so moshes become ghostly dissolves; 'X1' gives jumpier vectors."
     onchange={setE('motionEst')}
   />
+  {/if}
 
   <div class="label sect">Size & time</div>
   <Field

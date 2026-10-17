@@ -23,9 +23,11 @@ const root = `http://localhost:${server.address().port}/`;
 const url = root + 'app/';
 const exe = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write'] });
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write', 'midi'] });
 // start in the editor (not the home screen), without the first-run tour or the automatic first mosh
 await ctx.addInitScript(() => {
+  // not in sandboxed frames (the Script effect's), which have no storage
+  if (window !== window.top) return;
   for (const [k, v] of Object.entries({ startHome: false, seenWelcome: true, autoMosh: false })) localStorage.setItem('moshpit:' + k, JSON.stringify(v));
 });
 const page = await ctx.newPage();
@@ -74,12 +76,12 @@ await step('demo', async () => {
   await settle();
 });
 
-const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'mvedit', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend', 'flowPaint', 'vhs', 'crt', 'grain', 'posterize', 'mask']);
+const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'mvedit', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend', 'flowPaint', 'script', 'vhs', 'crt', 'grain', 'posterize', 'mask']);
 for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
     await page.keyboard.press('Shift+A');
-    const name = { kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', vhs: 'VHS', crt: 'CRT', grain: 'Film Grain', posterize: 'Posterise', mask: 'Subject Guard' }[t];
+    const name = { kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', script: 'Script', vhs: 'VHS', crt: 'CRT', grain: 'Film Grain', posterize: 'Posterise', mask: 'Subject Guard' }[t];
     // Simple mode lists the essentials; searching finds every effect
     await page.locator('.modal input[aria-label="Search effects"]').fill(name);
     await page.locator('.modal .item').filter({ hasText: name }).first().click();
@@ -108,12 +110,16 @@ await step('LFO automation on a number param', async () => {
   if (auto !== 'lfo') throw new Error('lfo not set');
 });
 
-for (const codec of ['mpeg2', 'mpeg1', 'mpeg4'])
+for (const codec of ['mpeg2', 'mpeg1', 'h264', 'mpeg4'])
   await step(`codec ${codec} at 12 fps`, async () => {
     await page.locator('.tabs button', { hasText: 'Encode' }).click();
     await page.locator('.field').filter({ hasText: 'Mosh codec' }).locator('select').selectOption(codec);
     await page.locator('.field').filter({ hasText: 'Frame rate' }).locator('select').selectOption('12');
     await settle();
+    // H.264: every frame decodes (they're renumbered after the mosh). MPEG-1/2/4 decoders drop a
+    // few frames of some moshes, as they always have; those only need to render.
+    const r = await S(() => ({ n: window.__moshpit.store.render.frames.length, j: window.__moshpit.store.render.jpegs.length }));
+    if (!r.n || !r.j || (codec === 'h264' && r.j < r.n - 1)) throw new Error(`${codec}: ${r.j} pictures for ${r.n} frames`);
   });
 
 await step('encoder internals toggles', async () => {
@@ -847,6 +853,88 @@ await step('text animations: each one draws less (or moves) while coming in, the
   if ((await S(() => window.__moshpit.store.project.texts.find((t) => t.id === 'tt').anim)) !== 'glitch') throw new Error('animation not set from the Clip tab');
   await S(() => window.__moshpit.store.edit((p) => (p.texts = p.texts.filter((t) => t.id !== 'tt'))));
   await settle();
+});
+
+await step('MIDI: right-click a setting, move a knob, it follows; undo, then forget', async () => {
+  await S(() => {
+    const st = window.__moshpit.store;
+    const total = st.totalFrames;
+    st.edit((p) => (p.effects = [{ id: 'cm', type: 'chroma', enabled: true, solo: false, start: 0, end: total, seed: 1, params: { offset: 6, angle: 0, wobble: 0.2, scanTear: 0 }, auto: {}, locks: [] }]));
+    st.ui.selectedEffect = 'cm';
+  });
+  await page.locator('.tabs button', { hasText: 'Effects' }).click();
+  const offset = page.locator('.pc', { hasText: 'Offset' }).first();
+  // this Chromium has no MIDI system: a stand-in with one (silent) keyboard plugged in
+  await S(() => (navigator.requestMIDIAccess = async () => ({ inputs: new Map([['k', { name: 'Test keys', onmidimessage: null }]]), onstatechange: null })));
+  await offset.click({ button: 'right' });
+  await offset.locator('.ctl.learn').waitFor();
+  const st = await S(() => window.__moshpit.controls.controls.midi);
+  if (st !== 'on') throw new Error('MIDI is ' + st);
+  // a knob: CC 21 on channel 1, all the way up
+  await S(() => window.__moshpit.controls.simulate('cc:1:21', 0.5));
+  await offset.locator('.ctl', { hasText: 'CC 21' }).waitFor();
+  await S(() => window.__moshpit.controls.simulate('cc:1:21', 1));
+  await page.waitForFunction(() => window.__moshpit.store.project.effects[0].params.offset === 40);
+  await S(() => window.__moshpit.controls.simulate('cc:1:21', 0.25));
+  await page.waitForFunction(() => window.__moshpit.store.project.effects[0].params.offset === 10);
+  // one undo step for the whole move
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(() => window.__moshpit.store.project.effects[0].params.offset === 6);
+  // other controls don't touch it
+  await S(() => window.__moshpit.controls.simulate('cc:1:22', 1));
+  await page.waitForTimeout(100);
+  if ((await S(() => window.__moshpit.store.project.effects[0].params.offset)) !== 6) throw new Error('an unmapped control moved the setting');
+  // the mapping is listed in Help
+  await S(() => window.__moshpit.commands.runCommand('help'));
+  await page.locator('.ctrls li', { hasText: 'Chroma Drift · Offset' }).waitFor();
+  await S(() => (window.__moshpit.store.ui.dialog = null));
+  await page.locator('.modal').waitFor({ state: 'detached' });
+  await offset.click({ button: 'right' });
+  if (await S(() => (window.__moshpit.store.project.controls ?? []).length)) throw new Error('right-click did not forget the control');
+  await settle();
+});
+
+await step('script: runs in a sandbox without the network, endless loops stop, and code from elsewhere asks first', async () => {
+  // the sandbox: no network APIs, an opaque origin, and a time limit
+  const probe = await S(() => window.__moshpit.scripts.runScript('function mosh(){ return [typeof fetch, typeof XMLHttpRequest, typeof importScripts, typeof WebSocket, typeof indexedDB, self.location.href.slice(0, 9)]; }', [], { seed: 1 }));
+  if (JSON.stringify(probe.plan) !== JSON.stringify(['undefined', 'undefined', 'undefined', 'undefined', 'undefined', 'blob:null'])) throw new Error('sandbox: ' + JSON.stringify(probe));
+  const loop = await S(() => window.__moshpit.scripts.runScript('function mosh(){ for(;;){} }', [], { seed: 1 }, 800));
+  if (!/longer than/.test(loop.error ?? '')) throw new Error('an endless loop was not stopped: ' + JSON.stringify(loop));
+  const after = await S(() => window.__moshpit.scripts.runScript('function mosh(f){ return [1, 0]; }', [{}, {}], { seed: 1 }));
+  if (JSON.stringify(after.plan) !== '[1,0]') throw new Error('the sandbox did not recover: ' + JSON.stringify(after));
+
+  // code from elsewhere: shown first, does nothing until allowed
+  const code = 'function mosh(frames) { /* from a recipe */ return frames.map((f, i) => frames.length - 1 - i); }';
+  const range = await S((code) => {
+    const st = window.__moshpit.store;
+    const a = Math.floor(st.totalFrames * 0.25);
+    const b = Math.floor(st.totalFrames * 0.5);
+    st.edit((p) => (p.effects = [{ id: 'sc', type: 'script', enabled: true, solo: false, start: a, end: b, seed: 3, params: { amount: 0.5, timing: 'fit' }, auto: {}, locks: [], data: { code } }]));
+    return [a, b];
+  }, code);
+  await page.locator('.modal', { hasText: 'This mosh contains code' }).waitFor({ timeout: 60000 });
+  if (!(await page.locator('.modal pre').textContent()).includes('from a recipe')) throw new Error('the code is not shown');
+  await page.getByRole('button', { name: "Don't run it" }).click();
+  await settle();
+  const srcs = () => S(([a, b]) => window.__moshpit.store.render.frames.slice(a, b).map((f) => f.src), range);
+  const plain = await srcs();
+  if (plain[0] !== range[0]) throw new Error('the code ran without being allowed');
+  // allowed now (as if from the dialog), it reverses its part of the video
+  await S((code) => window.__moshpit.scripts.approve(code), code);
+  await S(() => window.__moshpit.store.edit((p) => (p.effects[0].seed = 4)));
+  await settle();
+  const rev = await srcs();
+  if (!(rev[0] > rev[rev.length - 1])) throw new Error('the script did not reverse the frames: ' + rev.join(','));
+  // a broken script says why under its code
+  await S(() => {
+    const code = 'function mosh(){ return 5; }';
+    window.__moshpit.scripts.approve(code);
+    window.__moshpit.store.edit((p) => (p.effects[0].data = { code }));
+    window.__moshpit.store.ui.selectedEffect = 'sc';
+  });
+  await settle();
+  await page.locator('.tabs button', { hasText: 'Effects' }).click();
+  await page.locator('.err', { hasText: 'must return an array' }).waitFor();
 });
 
 await step('flow paint: paint a stroke on the player and it moves the picture', async () => {

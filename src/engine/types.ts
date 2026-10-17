@@ -246,6 +246,14 @@ export interface TextClip {
   animIn?: number;
 }
 
+/** A knob, fader, pad (MIDI) or OSC address that moves one effect setting. */
+export interface ControlMap {
+  /** "cc:<channel>:<number>", "note:<channel>:<number>" or "osc:<address>" */
+  key: string;
+  effectId: string;
+  param: string;
+}
+
 export type TextAnim = 'none' | 'type' | 'glitch' | 'slide' | 'pop';
 
 export type Aspect = 'auto' | '16:9' | '4:3' | '1:1' | '9:16' | '4:5' | '21:9';
@@ -343,6 +351,8 @@ export interface Project {
   encoder: EncoderSettings;
   decoder: DecoderSettings;
   effects: EffectInstance[];
+  /** MIDI / OSC controls mapped to effect settings */
+  controls?: ControlMap[];
   audio: AudioSettings;
   globalSeed: number;
   markers?: Marker[];

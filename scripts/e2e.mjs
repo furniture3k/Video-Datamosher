@@ -41,6 +41,8 @@ try {
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
 // start in the editor (not the home screen), without the first-run tour or the automatic first mosh
 await page.addInitScript(() => {
+  // not in sandboxed frames (the Script effect's), which have no storage
+  if (window !== window.top) return;
   for (const [k, v] of Object.entries({ startHome: false, seenWelcome: true, autoMosh: false })) localStorage.setItem('moshpit:' + k, JSON.stringify(v));
 });
 

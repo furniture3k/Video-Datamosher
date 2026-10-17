@@ -1,4 +1,5 @@
 import { EFFECTS, defaultParams, type ParamDef } from './effects';
+import { SCRIPT_EXAMPLES } from './effects/script';
 import type { EffectInstance, EncoderSettings, ParamValue, Project, Automation } from './types';
 import { makeRng, randomSeed, type Rng } from './rng';
 import { randomSteps } from './effects/bend';
@@ -10,7 +11,10 @@ export const uid = () => Math.random().toString(36).slice(2, 10);
 
 export function makeEffect(type: string, start: number, end: number, params: Record<string, ParamValue> = {}, seed = randomSeed()): EffectInstance {
   const def = EFFECTS[type];
-  return { id: uid(), type, enabled: true, solo: false, start, end, seed, params: { ...defaultParams(def.params), ...params }, auto: {}, locks: [] };
+  const e: EffectInstance = { id: uid(), type, enabled: true, solo: false, start, end, seed, params: { ...defaultParams(def.params), ...params }, auto: {}, locks: [] };
+  // a new Script starts from the first example
+  if (type === 'script') e.data = { code: SCRIPT_EXAMPLES[0].code, name: SCRIPT_EXAMPLES[0].name };
+  return e;
 }
 
 type Pos = number | { cut: number; offset: number };

@@ -20,6 +20,7 @@
   import HelpDialog from './dialogs/HelpDialog.svelte';
   import ShareDialog from './dialogs/ShareDialog.svelte';
   import BatchDialog from './dialogs/BatchDialog.svelte';
+  import ScriptConsent from './dialogs/ScriptConsent.svelte';
   import AddEffectDialog from './dialogs/AddEffectDialog.svelte';
   import GenerateDialog from './dialogs/GenerateDialog.svelte';
   import RecordDialog from './dialogs/RecordDialog.svelte';
@@ -205,6 +206,7 @@
 {#if store.ui.dialog === 'palette' && !store.ui.home}<CommandPalette />{/if}
 {#if store.ui.dialog === 'history'}<HistoryDialog />{/if}
 {#if store.ui.welcome && !store.ui.home}<Tour {phone} />{/if}
+<ScriptConsent />
 <ExportQueue />
 <Toasts />
 

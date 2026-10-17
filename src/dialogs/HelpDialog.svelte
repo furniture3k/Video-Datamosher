@@ -2,6 +2,7 @@
   import Modal from '../components/Modal.svelte';
   import { store } from '../lib/store.svelte';
   import ShortcutList from '../components/ShortcutList.svelte';
+  import ControllersPanel from '../components/ControllersPanel.svelte';
 </script>
 
 <Modal title="Help" wide>
@@ -54,6 +55,8 @@
     <div class="col">
       <h4>Keyboard shortcuts</h4>
       <ShortcutList />
+      <h4>MIDI and OSC controllers</h4>
+      <ControllersPanel />
     </div>
   </div>
   {#snippet footer()}

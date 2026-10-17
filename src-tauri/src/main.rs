@@ -3,6 +3,7 @@
 
 mod engine;
 mod opened;
+mod osc;
 
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
 use tauri::{Manager, Url, WebviewWindowBuilder};
@@ -76,6 +77,7 @@ fn main() {
             engine::reveal,
             opened::opened_files,
             opened::read_opened_file,
+            osc::osc_listen,
         ])
         .build(tauri::generate_context!())
         .expect("error while building moshpit")

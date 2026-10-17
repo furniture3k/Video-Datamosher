@@ -15,6 +15,8 @@
   import { beatInfo } from '../lib/beatinfo.svelte';
   import { fxPrefs, saveFxPreset, deleteFxPreset, applyFxPreset } from '../lib/fxprefs.svelte';
   import { ask, askText } from '../lib/ask';
+  import { SCRIPT_EXAMPLES } from '../engine/effects/script';
+  import { scripts, approve } from '../lib/scripts.svelte';
 
   let { effect }: { effect: EffectInstance } = $props();
   const def = $derived(EFFECTS[effect.type]);
@@ -197,6 +199,37 @@
     </section>
   {/if}
 
+  {#if effect.type === 'script'}
+    <section>
+      <div class="sh">
+        <span class="label">Code</span>
+        <select class="examples" aria-label="Examples" value="" onchange={(e) => { const x = SCRIPT_EXAMPLES.find((s) => s.name === (e.target as HTMLSelectElement).value); (e.target as HTMLSelectElement).value = ''; if (x) store.edit(() => (effect.data = { ...(effect.data ?? {}), code: x.code, name: x.name })); }}>
+          <option value="">Examples…</option>
+          {#each SCRIPT_EXAMPLES as x}<option value={x.name}>{x.name}</option>{/each}
+        </select>
+      </div>
+      <textarea
+        class="code mono"
+        spellcheck="false"
+        aria-label="Script code"
+        value={String(effect.data?.code ?? '')}
+        oninput={(e) => {
+          const code = (e.target as HTMLTextAreaElement).value;
+          // typed here: yours, so it may run
+          approve(code);
+          store.edit(() => (effect.data = { ...(effect.data ?? {}), code }), 'code' + effect.id);
+        }}
+      ></textarea>
+      {#if scripts.errors[effect.id]}<p class="small err">{scripts.errors[effect.id]}</p>{/if}
+      <details class="small faint">
+        <summary>How it works</summary>
+        <p>Write <code>function mosh(frames, ctx)</code>. <code>frames</code> are the frames under the bar: <code>{'{'} type, src, pos, size {'}'}</code> (type 'I' is a full picture, 'P' motion). Return the frames to play, as their numbers in that list: repeat them, reorder them, leave them out. <code>{'{'} i, glitch: 3 {'}'}</code> also damages 3 bytes of frame <code>i</code>.</p>
+        <p><code>ctx</code> has <code>amount</code> (the setting below, which can be automated or put on a knob), <code>random()</code> (repeatable), <code>fps</code>, <code>start</code>, <code>end</code> and <code>total</code>.</p>
+        <p>It runs in a sandbox with no network and no access to the editor or your files, for at most 3 seconds a render.</p>
+      </details>
+    </section>
+  {/if}
+
   {#if effect.type === 'sequence'}
     <section>
       <div class="sh"><span class="label">Pattern</span></div>
@@ -234,6 +267,23 @@
 </div>
 
 <style>
+  .code {
+    width: 100%;
+    min-height: 180px;
+    resize: vertical;
+    font-size: 11.5px;
+    line-height: 1.45;
+    tab-size: 2;
+    white-space: pre;
+  }
+  .examples {
+    margin-left: auto;
+    max-width: 60%;
+  }
+  .err {
+    color: var(--danger);
+    white-space: pre-wrap;
+  }
   .tools {
     display: flex;
     flex-wrap: wrap;
