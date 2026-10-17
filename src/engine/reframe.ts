@@ -1,5 +1,5 @@
 // Auto-reframe: export in another shape (9:16 from 16:9…) with the crop following the action.
-import { simplify, linearExpr, type Gray } from './track';
+import { simplify, linearExpr, linearAt, type Gray } from './track';
 
 /** Width / height of an aspect like "9:16". */
 export const aspectRatio = (a: string): number => {
@@ -70,3 +70,6 @@ export function reframeFilter(p: ReframePath, offset = 0): string {
     ? `crop=w='trunc(iw*${p.size.toFixed(5)}/2)*2':h=ih:x='(${c})*iw-ow/2':y=0`
     : `crop=w=iw:h='trunc(ih*${p.size.toFixed(5)}/2)*2':x=0:y='(${c})*ih-oh/2'`;
 }
+
+/** Where the crop's centre is at time `t` (s): the same line `reframeFilter` gives ffmpeg. */
+export const centreAt = (p: ReframePath, t: number): number => linearAt(p.pts, t);

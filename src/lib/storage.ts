@@ -32,8 +32,82 @@ async function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectS
 
 export const files = new Map<string, Blob>();
 
+// ---------- media on disk (OPFS) ----------
+// Where the browser has it, media files are kept in its private file system (OPFS) instead of
+// IndexedDB: they come back as Files read straight from disk (no copy into memory, which ffmpeg's
+// WORKERFS mounts read in pieces) and big imports write faster. IndexedDB stays the fallback, and
+// files kept there by older versions are moved over in the background (moveFilesToDisk).
+
+type DirHandle = FileSystemDirectoryHandle & { entries(): AsyncIterable<[string, FileSystemHandle]> };
+type Writable = { write(b: Blob): Promise<void>; close(): Promise<void>; abort?(): Promise<void> };
+type FileHandle = FileSystemFileHandle & { createWritable?: () => Promise<Writable> };
+
+let opfsDir: Promise<DirHandle | null> | null = null;
+/** The folder media is kept in, or null where there's no OPFS that the page can write to. */
+export function opfs(): Promise<DirHandle | null> {
+  opfsDir ??= (async () => {
+    if (isDesktop || !navigator.storage?.getDirectory) return null;
+    try {
+      const root = await navigator.storage.getDirectory();
+      const dir = (await root.getDirectoryHandle('files', { create: true })) as DirHandle;
+      // writing from the page (not a worker) needs createWritable: Chromium, Firefox, newer Safari
+      const probe = (await dir.getFileHandle('.probe', { create: true })) as FileHandle;
+      if (typeof probe.createWritable !== 'function') return null;
+      return dir;
+    } catch {
+      return null;
+    }
+  })();
+  return opfsDir;
+}
+
+/** File ids ("proxy:abc", "lut:x"…) as file names. */
+const diskName = (id: string) => encodeURIComponent(id);
+const diskId = (name: string) => decodeURIComponent(name);
+
+async function writeDisk(dir: DirHandle, id: string, blob: Blob): Promise<boolean> {
+  let w: Writable | null = null;
+  try {
+    const h = (await dir.getFileHandle(diskName(id), { create: true })) as FileHandle;
+    w = await h.createWritable!();
+    await w.write(blob);
+    await w.close();
+    return true;
+  } catch (e) {
+    console.warn('Could not write to the file system (storage full?)', e);
+    await w?.abort?.().catch(() => {});
+    await dir.removeEntry(diskName(id)).catch(() => {});
+    return false;
+  }
+}
+
+async function readDisk(dir: DirHandle, id: string): Promise<File | undefined> {
+  try {
+    return await (await dir.getFileHandle(diskName(id))).getFile();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Ids of the files on disk. */
+async function diskIds(dir: DirHandle): Promise<string[]> {
+  const out: string[] = [];
+  try {
+    for await (const [name, h] of dir.entries()) if (h.kind === 'file' && name !== '.probe' && !name.endsWith('.crswap')) out.push(diskId(name));
+  } catch {
+    /* none */
+  }
+  return out;
+}
+
 export async function putFile(id: string, blob: Blob) {
   files.set(id, blob);
+  const dir = await opfs();
+  if (dir && (await writeDisk(dir, id, blob))) {
+    // a copy from before is no longer needed
+    tx('files', 'readwrite', (s) => s.delete(id)).catch(() => {});
+    return;
+  }
   try {
     await tx('files', 'readwrite', (s) => s.put(blob, id));
   } catch (e) {
@@ -43,6 +117,12 @@ export async function putFile(id: string, blob: Blob) {
 
 export async function getFile(id: string): Promise<Blob | undefined> {
   if (files.has(id)) return files.get(id);
+  const dir = await opfs();
+  const f = dir ? await readDisk(dir, id) : undefined;
+  if (f) {
+    files.set(id, f);
+    return f;
+  }
   try {
     const b = await tx<Blob | undefined>('files', 'readonly', (s) => s.get(id));
     if (b) files.set(id, b);
@@ -53,19 +133,22 @@ export async function getFile(id: string): Promise<Blob | undefined> {
 }
 
 export async function pruneFiles(keep: string[]) {
+  const k = new Set(keep);
   try {
     const keys = await tx<IDBValidKey[]>('files', 'readonly', (s) => s.getAllKeys());
-    for (const k of keys) if (!keep.includes(String(k))) await tx('files', 'readwrite', (s) => s.delete(k));
+    for (const key of keys) if (!k.has(String(key))) await tx('files', 'readwrite', (s) => s.delete(key));
   } catch {
     /* ignore */
   }
-  for (const k of [...files.keys()]) if (!keep.includes(k)) files.delete(k);
+  const dir = await opfs();
+  if (dir) for (const id of await diskIds(dir)) if (!k.has(id)) await dir.removeEntry(diskName(id)).catch(() => {});
+  for (const key of [...files.keys()]) if (!k.has(key)) files.delete(key);
 }
 
 /** Every stored file and its size in bytes. */
 export async function fileSizes(): Promise<Map<string, number>> {
   const d = await db();
-  return new Promise((res, rej) => {
+  const out = await new Promise<Map<string, number>>((res, rej) => {
     const out = new Map<string, number>();
     const r = d.transaction('files', 'readonly').objectStore('files').openCursor();
     r.onsuccess = () => {
@@ -77,6 +160,41 @@ export async function fileSizes(): Promise<Map<string, number>> {
     };
     r.onerror = () => rej(r.error);
   });
+  const dir = await opfs();
+  if (dir) for (const id of await diskIds(dir)) out.set(id, (await readDisk(dir, id))?.size ?? 0);
+  return out;
+}
+
+/**
+ * Move files kept in IndexedDB (by older versions, or when OPFS failed) to OPFS, one at a time in
+ * the background. Each is checked on disk before its IndexedDB copy is deleted.
+ */
+export async function moveFilesToDisk(): Promise<number> {
+  const dir = await opfs();
+  if (!dir) return 0;
+  let moved = 0;
+  let keys: IDBValidKey[] = [];
+  try {
+    keys = await tx<IDBValidKey[]>('files', 'readonly', (s) => s.getAllKeys());
+  } catch {
+    return 0;
+  }
+  for (const key of keys) {
+    const id = String(key);
+    const blob = await tx<Blob | undefined>('files', 'readonly', (s) => s.get(key)).catch(() => undefined);
+    if (!blob) continue;
+    if (!(await writeDisk(dir, id, blob))) break; // disk full: leave the rest where they are
+    if ((await readDisk(dir, id))?.size !== blob.size) {
+      await dir.removeEntry(diskName(id)).catch(() => {});
+      break;
+    }
+    await tx('files', 'readwrite', (s) => s.delete(key)).catch(() => {});
+    // the File on disk replaces the in-memory copy
+    if (files.has(id)) files.set(id, (await readDisk(dir, id)) ?? blob);
+    moved++;
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  return moved;
 }
 
 /** How much the browser lets this site keep, and whether it may clear it under pressure. */

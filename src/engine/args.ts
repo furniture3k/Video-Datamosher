@@ -577,6 +577,8 @@ export interface ExportOptions {
   loopSeconds?: number;
   /** worked out when exporting: frames in the video and frames overlapped */
   crossfade?: { frames: number; overlap: number };
+  /** MP4 / WebM: encode with the browser's own (hardware) encoder where it can, see webcodecs.ts */
+  hardware?: boolean;
 }
 
 /**
@@ -599,6 +601,7 @@ export const defaultExport = (): ExportOptions => ({
   gifFps: 15,
   loop: true,
   audio: true,
+  hardware: true,
 });
 
 /**

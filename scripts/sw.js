@@ -2,9 +2,26 @@
 // ~30 MB video engine) on the device so the app opens and works offline.
 // It lives in app/ (the editor), so it only looks after the editor's pages, not the website's.
 // The build (vite.config.ts) prepends VERSION and FILES (relative to app/).
-/* global VERSION, FILES */
+/* global VERSION, MT_VERSION, FILES */
 const CACHE = 'moshpit-app-' + VERSION;
 const FONTS = 'moshpit-app-fonts';
+// the multithreaded video engine: not downloaded up front, kept once used (see below)
+const LAZY = 'moshpit-app-lazy-' + MT_VERSION;
+
+/**
+ * The editor's pages are "cross-origin isolated", which lets the video engine use several threads
+ * (SharedArrayBuffer). GitHub Pages can't send these headers, so the service worker adds them.
+ * `credentialless` still lets the page load other sites' files (fonts, models) without changes;
+ * browsers that don't know it simply stay single-threaded.
+ */
+function isolated(res) {
+  if (!res || res.type === 'opaque' || res.type === 'opaqueredirect' || res.status === 0) return res;
+  const h = new Headers(res.headers);
+  h.set('Cross-Origin-Opener-Policy', 'same-origin');
+  h.set('Cross-Origin-Embedder-Policy', 'credentialless');
+  h.set('Cross-Origin-Resource-Policy', 'same-origin');
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+}
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -22,7 +39,8 @@ self.addEventListener('activate', (e) => {
       .keys()
       .then((keys) => {
         const ours = keys.filter((k) => /^moshpit-app-\d+-/.test(k) && k !== CACHE).sort((a, b) => parseInt(a.slice(12)) - parseInt(b.slice(12)));
-        return Promise.all(ours.slice(0, -1).map((k) => caches.delete(k)));
+        const oldLazy = keys.filter((k) => k.startsWith('moshpit-app-lazy-') && k !== LAZY);
+        return Promise.all([...ours.slice(0, -1), ...oldLazy].map((k) => caches.delete(k)));
       })
       .then(() => self.clients.claim()),
   );
@@ -73,8 +91,27 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return;
   if (req.mode === 'navigate') {
     // the page itself: fresh when online, cached when not
-    e.respondWith(fetch(req).catch(() => caches.match('./index.html', { ignoreSearch: true })));
+    e.respondWith(
+      fetch(req)
+        .catch(() => caches.match('./index.html', { ignoreSearch: true }))
+        .then(isolated),
+    );
     return;
   }
-  e.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req)));
+  if (url.pathname.includes('/ffmpeg-mt/')) {
+    e.respondWith(
+      caches.open(LAZY).then((c) =>
+        c.match(req, { ignoreSearch: true }).then(
+          (hit) =>
+            hit ||
+            fetch(req).then((r) => {
+              if (r.ok) c.put(req, r.clone());
+              return r;
+            }),
+        ),
+      ).then(isolated),
+    );
+    return;
+  }
+  e.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req)).then(isolated));
 });

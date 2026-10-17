@@ -75,7 +75,7 @@
             <span class="meta">
               <span class="nm">{m.source.name}</span>
               <span class="sub mono">
-                {#if k === 'adjust'}adjustment layer{:else if k === 'image'}still{:else}{#if k === 'compound'}compound · {/if}{tc(m.duration)}{/if}{#if m.hasVideo && m.width}&ensp;{m.width}×{m.height}{/if}{#if m.hasAudio}&ensp;♪{/if}
+                {#if k === 'adjust'}adjustment layer{:else if k === 'image'}still{:else}{#if k === 'compound'}compound · {/if}{tc(m.duration)}{/if}{#if m.hasVideo && m.width}&ensp;{m.width}×{m.height}{/if}{#if m.hasAudio}&ensp;♪{/if}{#if st?.proxy === 'ready'}&ensp;<span class="proxy" title="Previews use a smaller copy of this video, so they're quicker{st.proxyHw ? ' (made with your device’s hardware encoder)' : ''}. Exports always use the original.">proxy</span>{/if}
               </span>
               {#if st?.proxy === 'working' || st?.proxy === 'pending'}
                 <span class="prep small"><span class="pbar"><span style="width:{Math.round((st.progress ?? 0) * 100)}%"></span></span>preview copy</span>
@@ -129,6 +129,13 @@
 </div>
 
 <style>
+  .proxy {
+    padding: 0 4px;
+    border: 1px solid var(--line-2);
+    border-radius: 3px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
   .bin {
     height: 100%;
     display: flex;

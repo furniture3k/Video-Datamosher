@@ -16,7 +16,7 @@ Current Chrome, Edge, Firefox and Safari (iOS 15.4 or later), on computers and p
 
 ## It says it's out of memory, or the tab closed during a render
 
-Long or high-resolution moshes need a lot of memory in the browser. Lower the preview resolution (the **1/2** button under the player), use fewer Bloom or Stutter repeats, or try the [desktop app](../desktop/). If moshpit closes mid-render it starts again with auto-render paused, so you can change things first.
+Long or high-resolution moshes need a lot of memory in the browser. Lower the preview resolution (the **1/2** button under the player), use fewer Bloom or Stutter repeats, or try the [desktop app](../desktop/). If renders keep failing, turn off **Encode → Use 4 threads** (the multithreaded engine has less memory) and **Hardware encoding** in Export. If moshpit closes mid-render it starts again with auto-render paused, so you can change things first.
 
 ## How long can a video be?
 

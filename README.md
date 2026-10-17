@@ -171,7 +171,7 @@ Phones get their own editor, laid out like the mobile editors you already know r
 
 ## Exporting
 
-MP4 (H.264) and WebM (VP8) with sound, GIF, a zip of PNG frames, or the raw moshed AVI. **Shape** exports another aspect than the project (9:16 from 16:9…) with the crop following the action, and **Loop** makes seamless loops: a crossfade, or a melt where the start grows out of the end picture. **Made for** sets everything up for TikTok / Reels / Shorts, the Instagram feed, square posts, YouTube (1080p and 4K), X, Discord (aimed under 10 MB) or chat GIFs. It warns when the video is too long or the wrong shape, and can show the apps' safe zones in the player. The **mosh resolution** (Encode tab) and the **output size** are separate: mosh at 720p for chunky smears and save at 1080p or 4K, or mosh at full resolution. 1080p exports work well in the browser; 1440p and 4K are fine for short videos.
+MP4 (H.264) and WebM (VP9 or VP8) with sound, GIF, a zip of PNG frames, or the raw moshed AVI. **Shape** exports another aspect than the project (9:16 from 16:9…) with the crop following the action, and **Loop** makes seamless loops: a crossfade, or a melt where the start grows out of the end picture. **Made for** sets everything up for TikTok / Reels / Shorts, the Instagram feed, square posts, YouTube (1080p and 4K), X, Discord (aimed under 10 MB) or chat GIFs. It warns when the video is too long or the wrong shape, and can show the apps' safe zones in the player. The **mosh resolution** (Encode tab) and the **output size** are separate: mosh at 720p for chunky smears and save at 1080p or 4K, or mosh at full resolution. 1080p exports work well in the browser; 1440p and 4K are fine for short videos. Where the browser has its own video encoder (WebCodecs), MP4 and WebM are encoded with it, several times faster; **Add to queue** exports in the background while you keep editing.
 
 ![The export dialog, set to save a 720p mosh at 1080p](docs/export.png)
 
@@ -192,7 +192,7 @@ flowchart LR
 2. A TypeScript AVI parser splits the file into frames and reads each frame's header to find its type.
 3. The effect stack rewrites that list of compressed frames. It's deterministic for a given seed.
 4. The result is written back to an AVI and decoded by FFmpeg, which conceals the errors in its own way.
-5. Picture effects run on the GPU, then everything is encoded for export.
+5. Picture effects run on the GPU, then everything is encoded for export: by the browser's own encoder (WebCodecs) where it has one, else by FFmpeg.
 
 ## Keyboard
 
@@ -219,10 +219,10 @@ flowchart LR
 
 ## Notes
 
-- Browser FFmpeg is single-threaded and slower than a native install. Clips import at full length; the output is capped at 14,400 frames (10 minutes at 24 fps) in the browser and 43,200 frames (30 minutes at 24 fps) in the desktop app. 1080p export works well; 1440p and 4K work for short videos but take a while. Large files are read in place rather than copied into memory, and preview copies are made in the background.
+- Browser FFmpeg is slower than a native install. Where the browser allows it (Chrome, Edge, Firefox), it runs on up to 4 threads; exports use the browser's own hardware encoder where there is one. Clips import at full length; the output is capped at 14,400 frames (10 minutes at 24 fps) in the browser and 43,200 frames (30 minutes at 24 fps) in the desktop app. 1080p export works well; 1440p and 4K work for short videos but take a while. Large files are read in place rather than copied into memory, and preview copies are made in the background.
 - The [desktop app](#apps) uses native FFmpeg and doesn't have these limits in practice: it's the better choice for 4K and long videos.
 - A moshed AVI plays differently in every player because each one conceals errors differently. The MP4, WebM and GIF exports contain exactly what the preview shows.
-- WebM export uses VP8 and Vorbis; the VP9 and Opus encoders in ffmpeg.wasm crash.
+- WebM export uses VP9 (the browser's own encoder) or VP8 (ffmpeg.wasm's), with Vorbis sound; the VP9 and Opus encoders in ffmpeg.wasm crash.
 - Works in current Chrome, Edge, Firefox and Safari (iOS 15.4 or later), on desktop and on phones. Dragging media from the library needs a mouse; on touch screens use the **+** button.
 
 ## Development

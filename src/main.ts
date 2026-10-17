@@ -69,3 +69,13 @@ import * as projectIndex from './lib/projectindex';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { starters, projects: projectsMod, projectIndex });
 import * as projectio from './lib/projectio.svelte';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { projectio });
+
+// media kept in IndexedDB by older versions moves to the file system (OPFS) once the app is idle
+import * as storage from './lib/storage';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { storage });
+setTimeout(() => {
+  storage
+    .moveFilesToDisk()
+    .then((n) => n && console.info(`moved ${n} media files to the file system`))
+    .catch((e) => console.warn('moving media files', e));
+}, 8000);

@@ -1,6 +1,7 @@
 node_modules
 dist
 public/app/ffmpeg
+public/app/ffmpeg-mt
 *.log
 test-results
 .DS_Store

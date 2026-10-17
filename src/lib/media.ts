@@ -222,7 +222,8 @@ export async function prepareMedia(m: MediaItem) {
         r.proxy = 'working';
         try {
           const px = await makeProxy(m, blob, (p) => (r.progress = p), !canH264());
-          await putFile(proxyKey(m.id), px);
+          await putFile(proxyKey(m.id), px.blob);
+          r.proxyHw = px.hardware;
           r.proxy = 'ready';
         } catch (e) {
           console.warn('proxy failed', e);

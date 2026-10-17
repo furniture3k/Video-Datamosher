@@ -8,6 +8,7 @@
   import { ffmpeg } from '../lib/ffmpeg';
   import { download, localGet, localSet, saveAs, hasSavePicker, canShareFile, shareFile } from '../lib/storage';
   import { busy } from '../lib/recovery';
+  import { enqueue } from '../lib/exportqueue.svelte';
   import { reportProblem } from '../lib/report';
   import { shareCode } from '../lib/projectio.svelte';
   import { REPO } from '../lib/about';
@@ -24,6 +25,7 @@
   import { audioSources } from '../engine/timeline';
   import { SOCIAL_PRESETS, bitrateFor } from '../engine/social';
   import { EFFECTS } from '../engine/effects';
+  import { hasWebCodecs, hardwareCodec, encodedSize } from '../lib/webcodecs';
 
   const marked = markedRange();
   let onlyRange = $state(!!marked);
@@ -32,7 +34,7 @@
   let stage = $state('');
   let progress = $state(0);
   /** url: web preview/download; file: desktop, the export on disk until saved; savedTo: where it was saved */
-  let result = $state<{ url?: string; blob?: Blob; file?: string; savedTo?: string; name: string; size: number; type: string } | null>(null);
+  let result = $state<{ url?: string; blob?: Blob; file?: string; savedTo?: string; name: string; size: number; type: string; hardware?: boolean } | null>(null);
   const shareable = $derived(result?.blob ? new File([result.blob], result.name, { type: result.type }) : null);
   let error = $state('');
   let signal = { cancelled: false };
@@ -72,11 +74,20 @@
     });
     store.toast(`The project is now ${aspect}. Clips on the main track fill the frame; adjust their position in the Clip tab.`, 'ok', 6000);
   }
+  // whether the browser's hardware encoder can take this export (else ffmpeg encodes it)
+  const webCodecs = hasWebCodecs();
+  let hwCodec = $state<string | null>(null);
+  $effect(() => {
+    const f = o.format;
+    const { w, h } = encodedSize({ srcW: mosh.w, srcH: mosh.h, width: o.width });
+    if (!webCodecs || (f !== 'mp4' && f !== 'webm')) return void (hwCodec = null);
+    hardwareCodec(f, w, h).then((c) => (hwCodec = c));
+  });
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
   const FORMATS = [
     { id: 'mp4', label: 'MP4', desc: 'H.264' },
-    { id: 'webm', label: 'WebM', desc: 'VP8 + Vorbis' },
+    { id: 'webm', label: 'WebM', desc: 'VP8/9 + Vorbis' },
     { id: 'gif', label: 'GIF', desc: 'no sound' },
     { id: 'avi', label: 'AVI', desc: 'the broken file' },
     { id: 'png', label: 'PNG', desc: 'zip of frames' },
@@ -96,7 +107,7 @@
         running = false;
         await save();
       } else {
-        result = { url: URL.createObjectURL(r.blob!), blob: r.blob!, name: r.name, size: r.size, type: r.type };
+        result = { url: URL.createObjectURL(r.blob!), blob: r.blob!, name: r.name, size: r.size, type: r.type, hardware: r.hardware };
         download(r.blob!, r.name);
       }
     } catch (e) {
@@ -105,6 +116,13 @@
       done();
       running = false;
     }
+  }
+  /** Export in the background (on the second engine) and close: editing carries on meanwhile. */
+  function queue() {
+    localSet('exportOpts', $state.snapshot(o));
+    enqueue($state.snapshot(store.project) as Project, { ...($state.snapshot(o) as ExportOptions), range: onlyRange ? marked : null });
+    store.toast('Added to the export queue (bottom right). Keep editing.', 'ok');
+    store.ui.dialog = null;
   }
   /** Desktop: native Save dialog; the export is moved to the chosen place. */
   async function save() {
@@ -212,6 +230,17 @@
         />
       {/if}
     {/if}
+    {#if webCodecs && (o.format === 'mp4' || o.format === 'webm')}
+      <Field
+        type="bool"
+        label="Hardware encoding"
+        value={o.hardware ?? true}
+        help={hwCodec
+          ? `Encode with your device's own ${hwCodec === 'avc' ? 'H.264' : hwCodec.toUpperCase()} encoder: several times faster. Turn off to use the built-in encoder (slower, follows Encoding speed exactly).`
+          : `This browser has no ${o.format === 'mp4' ? 'H.264' : 'VP8/VP9'} encoder of its own at this size, so the built-in one is used.`}
+        onchange={(v: boolean) => (o.hardware = v)}
+      />
+    {/if}
     {#if o.format === 'gif'}
       <Field label="GIF frame rate" unit="fps" min={5} max={30} step={1} value={o.gifFps} help="Lower = smaller file." onchange={(v: number) => (o.gifFps = v)} />
       <Field label="Colours" min={8} max={256} step={8} value={o.gifColors} help="Fewer colours give a smaller, posterised GIF." onchange={(v: number) => (o.gifColors = v)} />
@@ -282,7 +311,7 @@
           <img src={result.url} alt="export preview" />
         {/if}
         <div class="row small">
-          <span class="grow mono">{result.savedTo ?? result.name} · {mb(result.size)}</span>
+          <span class="grow mono">{result.savedTo ?? result.name} · {mb(result.size)}{#if result.hardware} · hardware encoded{/if}</span>
           {#if result.savedTo}
             <button class="link" onclick={() => revealFile(result!.savedTo!)}>Show in folder</button>
           {:else if result.file}
@@ -302,6 +331,7 @@
       <button onclick={cancel}>Cancel</button>
     {:else}
       <button onclick={() => (store.ui.dialog = null)}>Close</button>
+      <button onclick={queue} title="Export in the background and keep editing; you'll be told when it's ready">Add to queue</button>
       <button class="primary" onclick={go}>Export {o.format.toUpperCase()}</button>
     {/if}
   {/snippet}
