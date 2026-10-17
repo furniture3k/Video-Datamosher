@@ -7,7 +7,7 @@ import { busy } from './recovery';
 import { store } from './store.svelte';
 import { saveAs, download } from './storage';
 import { isDesktop } from './platform';
-import { saveFromDisk, revealFile } from './ffmpeg-native';
+import { saveFromDisk, revealFile, removeEngineFile } from './ffmpeg-native';
 import { Eta, formatSeconds } from '../engine/eta';
 import type { ExportOptions } from '../engine/args';
 import type { Project } from '../engine/types';
@@ -110,6 +110,8 @@ export function removeJob(id: number) {
   const j = job(id);
   if (!j || j.status === 'running' || j.status === 'waiting') return;
   if (j.url) URL.revokeObjectURL(j.url);
+  // desktop: an export never saved is still in the engine's folder (saving moves it out)
+  if (j.result?.file && !j.savedTo) removeEngineFile(j.result.file);
   exportQueue.jobs = exportQueue.jobs.filter((x) => x.id !== id);
 }
 

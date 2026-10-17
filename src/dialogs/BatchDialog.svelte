@@ -38,11 +38,18 @@
     if (!recipe || !files.length) return;
     error = '';
     const o: ExportOptions = { ...defaultExport(), ...localGet<Partial<ExportOptions>>('exportOpts', {}), format, range: null };
-    const r = await batchExport(files, recipe, o, { keepShape, onStatus: (s) => (status = s) });
-    if (r.skipped.length) store.toast(`Skipped (no video): ${r.skipped.join(', ')}`, 'error', 7000);
-    if (r.queued) {
-      store.toast(`${r.queued} export${r.queued === 1 ? '' : 's'} added to the queue (bottom right).`, 'ok', 6000);
-      store.ui.dialog = null;
+    try {
+      const r = await batchExport(files, recipe, o, { keepShape, onStatus: (s) => (status = s) });
+      if (r.skipped.length) store.toast(`Skipped (no video): ${r.skipped.join(', ')}`, 'error', 7000);
+      if (r.queued) {
+        store.toast(`${r.queued} export${r.queued === 1 ? '' : 's'} added to the queue (bottom right).`, 'ok', 6000);
+        store.ui.dialog = null;
+      }
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      // the buttons are locked while there's a status: never leave one behind
+      status = '';
     }
   }
 </script>

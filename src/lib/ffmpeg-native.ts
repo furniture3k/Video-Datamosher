@@ -173,15 +173,18 @@ export class NativeService implements Engine {
         }
         this.files.add(name);
       }
-      for (const name of opts.outputs ?? []) {
-        try {
-          out[name] = new Uint8Array(await invoke<ArrayBuffer>('engine_read', { path: `${this.dir}/${name}` }));
-        } catch {
-          if (gen !== this.cancelGen) throw new Cancelled();
-          throw new Error(`ffmpeg produced no ${name} (exit ${code}).\n${log.split('\n').slice(-12).join('\n')}`);
-        } finally {
-          removeFile(`${this.dir}/${name}`);
+      try {
+        for (const name of opts.outputs ?? []) {
+          try {
+            out[name] = new Uint8Array(await invoke<ArrayBuffer>('engine_read', { path: `${this.dir}/${name}` }));
+          } catch {
+            if (gen !== this.cancelGen) throw new Cancelled();
+            throw new Error(`ffmpeg produced no ${name} (exit ${code}).\n${log.split('\n').slice(-12).join('\n')}`);
+          }
         }
+      } finally {
+        // every output, also the ones after a failed read
+        for (const name of opts.outputs ?? []) removeFile(`${this.dir}/${name}`);
       }
       return { code, log, out };
     } finally {

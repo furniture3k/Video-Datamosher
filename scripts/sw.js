@@ -23,6 +23,16 @@ function isolated(res) {
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
 }
 
+// This version's copy first: caches.match() looks through the caches oldest first, so files whose
+// names don't change between versions (index.html, the video engine, icons) would otherwise come
+// from the previous version kept below.
+function cached(req) {
+  return caches
+    .open(CACHE)
+    .then((c) => c.match(req, { ignoreSearch: true }))
+    .then((hit) => hit || caches.match(req, { ignoreSearch: true }));
+}
+
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches
@@ -90,10 +100,11 @@ self.addEventListener('fetch', (e) => {
   }
   if (url.origin !== location.origin) return;
   if (req.mode === 'navigate') {
-    // the page itself: fresh when online, cached when not
+    // the page itself: fresh when online (checked with the server, not taken from the HTTP cache,
+    // which GitHub Pages lets keep a page for 10 minutes after a deploy), cached when not
     e.respondWith(
-      fetch(req)
-        .catch(() => caches.match('./index.html', { ignoreSearch: true }))
+      fetch(req, { cache: 'no-cache' })
+        .catch(() => cached('./index.html'))
         .then(isolated),
     );
     return;
@@ -113,5 +124,5 @@ self.addEventListener('fetch', (e) => {
     );
     return;
   }
-  e.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req)).then(isolated));
+  e.respondWith(cached(req).then((hit) => hit || fetch(req)).then(isolated));
 });

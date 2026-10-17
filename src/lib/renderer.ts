@@ -758,7 +758,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
         const src = avi ?? 'mosh.avi';
         const chunk = whole ? await decode(project, src, 2, n, 'Decoding', (s, p) => progress(s, p), {}, eng) : await decode(project, src, 2, b, 'Decoding', (s, p) => progress(`${s} ${a - lo + 1}–${b - lo} of ${n}`, span(p)), { from: a, to: b }, eng);
         check(signal);
-        const done = await runner.run(chunk, frames, a, (p) => progress(`Pixel effects ${a + 1}–${b} of ${n}`, span(p)), signal);
+        const done = await runner.run(chunk, frames, a, (p) => progress(`Pixel effects ${a - lo + 1}–${b - lo} of ${n}`, span(p)), signal);
         check(signal);
         if (o.format === 'png') {
           for (let i = 0; i < done.length; i++) {
@@ -784,7 +784,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
             } catch (e) {
               throw new HardwareFailed('hardware encoder', { cause: e });
             }
-            progress(`Encoding ${o.format.toUpperCase()} (hardware) ${a + 1}–${b} of ${n}`, span((i + 1) / done.length));
+            progress(`Encoding ${o.format.toUpperCase()} (hardware) ${a - lo + 1}–${b - lo} of ${n}`, span((i + 1) / done.length));
           }
         } else {
           const cat = concatBytes(done);
@@ -793,7 +793,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
           const r = await eng.run(exportArgs({ ...o, crossfade: undefined, timeOffset: (a - lo) / fps }, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, out), {
             inputs: { 'frames.mjpeg': async () => cat },
             ...(isDesktop ? { leave: [out] } : { outputs: [out] }),
-            onFrame: (x) => progress(`Encoding ${o.format.toUpperCase()} ${a + 1}–${b} of ${n}`, span(Math.min(1, x / (b - a)))),
+            onFrame: (x) => progress(`Encoding ${o.format.toUpperCase()} ${a - lo + 1}–${b - lo} of ${n}`, span(Math.min(1, x / (b - a)))),
           });
           pieceNames.push(out);
           if (!isDesktop) pieces.push(r.out[out]);
@@ -810,6 +810,8 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
       try {
         video = await hw.finish();
       } catch (e) {
+        // release the browser's encoder before ffmpeg takes over
+        await hw.cancel();
         throw new HardwareFailed('hardware encoder', { cause: e });
       }
       check(signal);

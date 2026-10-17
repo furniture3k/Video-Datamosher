@@ -12,7 +12,12 @@
   onMount(() => {
     if (!video || reduced) return;
     // only play what can be seen (a grid of videos all playing at once is heavy on phones)
-    const io = new IntersectionObserver(([e]) => (e.isIntersecting ? video!.play().catch(() => {}) : video!.pause()), { threshold: 0.4 });
+    // the entry's own element: `video` is unset once a missing preview is swapped for the placeholder
+    const io = new IntersectionObserver(([e]) => {
+      const v = e.target as HTMLVideoElement;
+      if (e.isIntersecting) v.play().catch(() => {});
+      else v.pause();
+    }, { threshold: 0.4 });
     io.observe(video);
     return () => io.disconnect();
   });

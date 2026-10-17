@@ -3,6 +3,8 @@
 import { detectOs, pickAsset, type Os, type ReleaseAsset } from './os';
 
 const REPO = 'furniture3k/Video-Datamosher';
+// with reduced motion, videos don't play by themselves (they get controls instead)
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // ---------------------------------------------------------------- downloads
 
@@ -61,7 +63,6 @@ function beforeAfter() {
   const range = box.querySelector('input') as HTMLInputElement;
   const set = (v: number) => box.style.setProperty('--split', `${Math.max(0, Math.min(100, v))}%`);
   range.addEventListener('input', () => set(+range.value));
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // play both while on screen, kept in step
   const io = new IntersectionObserver(([e]) => {
     if (e.isIntersecting && !reduced) {
@@ -77,6 +78,15 @@ function beforeAfter() {
   setInterval(() => {
     if (!before.paused && Math.abs(before.currentTime - after.currentTime) > 0.08) after.currentTime = before.currentTime;
   }, 1000);
+}
+
+// the hero video is autoplay in the page; stop it when motion should be reduced
+function hero() {
+  const v = document.querySelector<HTMLVideoElement>('.hero-media video');
+  if (!v || !reduced) return;
+  v.autoplay = false;
+  v.pause();
+  v.controls = true;
 }
 
 // ---------------------------------------------------------------- gallery
@@ -115,7 +125,8 @@ async function gallery() {
     if (isVideo) {
       Object.assign(m, { muted: true, loop: true, playsInline: true, preload: 'none' });
       if (it.poster) m.poster = it.poster;
-      new IntersectionObserver(([e]) => (e.isIntersecting ? m.play().catch(() => {}) : m.pause()), { threshold: 0.4 }).observe(m);
+      if (reduced) m.controls = true;
+      else new IntersectionObserver(([e]) => (e.isIntersecting ? m.play().catch(() => {}) : m.pause()), { threshold: 0.4 }).observe(m);
     } else m.alt = it.title;
     m.setAttribute('aria-label', it.title);
     const meta = document.createElement('div');
@@ -142,5 +153,6 @@ async function gallery() {
 }
 
 downloads();
+hero();
 beforeAfter();
 gallery();

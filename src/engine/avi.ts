@@ -80,6 +80,10 @@ export function parseAvi(buf: Uint8Array): { info: AviInfo; chunks: AviChunk[] }
     const byOffset = new Map<number, number>();
     chunkOffsets.forEach((o, i) => byOffset.set(o, i));
     for (let i = 0; i + 16 <= ix.length; i += 16) {
+      // only the video stream's entries (another stream's relative offset could equal a video
+      // chunk's absolute one and lend it its keyframe flag)
+      const id = fourcc(ix, i);
+      if (!/^\d\d(dc|db)$/.test(id) || parseInt(id.slice(0, 2), 10) !== videoStream) continue;
       const flags = u32(ix, i + 4);
       const off = u32(ix, i + 8);
       const ci = byOffset.get(off + firstMovi) ?? byOffset.get(off);

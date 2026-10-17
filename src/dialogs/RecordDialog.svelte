@@ -22,12 +22,17 @@
   let facing = $state<'user' | 'environment'>('user');
   let cameras = $state(0);
   let saving = $state(false);
+  let destroyed = false;
+  // the latest start(): an older one that finishes later (or after the dialog closed) lets its stream go
+  let attempt = 0;
 
   async function start(kind: 'camera' | 'screen') {
     error = '';
     stop();
+    const my = ++attempt;
+    let s: MediaStream | null = null;
     try {
-      stream =
+      s =
         kind === 'camera'
           ? await navigator.mediaDevices.getUserMedia({
               // ideal (not exact) sizes: phones and some webcams reject hard constraints
@@ -35,13 +40,24 @@
               audio: withAudio ? { echoCancellation: false, noiseSuppression: false } : false,
             })
           : await navigator.mediaDevices.getDisplayMedia({ video: true, audio: withAudio });
+      if (destroyed || my !== attempt) return void s.getTracks().forEach((t) => t.stop());
+      stream = s;
       source = kind;
+      // the browser's own "Stop sharing" (or an unplugged camera) ends the recording like Stop does
+      s.getVideoTracks()[0]?.addEventListener('ended', () => {
+        if (stream !== s) return;
+        if (recording) finish();
+        else stop();
+      });
       video.srcObject = stream;
       await video.play();
       if (kind === 'camera') cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput').length;
     } catch (e) {
+      if (destroyed || my !== attempt) return;
       error = 'Could not access the ' + kind + ': ' + (e as Error).message;
       source = null;
+      // got the camera but couldn't show it: don't leave it running
+      if (s && stream === s) stop();
     }
   }
   function flip() {
@@ -56,10 +72,19 @@
   function rec() {
     if (!stream) return;
     chunks = [];
+    error = '';
     const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
-    recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+    try {
+      recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : {});
+    } catch (e) {
+      error = 'This browser cannot record this: ' + (e as Error).message;
+      return;
+    }
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     recorder.onstop = async () => {
+      // the recorder can also stop by itself (the source went away)
+      clearInterval(timer);
+      recording = false;
       if (discard) return;
       const type = recorder?.mimeType || 'video/webm';
       const dur = (performance.now() - started) / 1000;
@@ -67,16 +92,19 @@
       saving = true;
       try {
         const file = await finalizeRecording(new Blob(chunks, { type }), `recording-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`);
-        store.ui.dialog = null;
+        // closed while saving: still add it, but don't close whatever dialog is open now
+        if (!destroyed) store.ui.dialog = null;
         await addFiles([file], { track: 'v1', index: Infinity }, dur);
       } catch (e) {
-        error = 'Could not save the recording: ' + (e as Error).message;
+        if (destroyed) store.toast('Could not save the recording: ' + (e as Error).message, 'error', 6000);
+        else error = 'Could not save the recording: ' + (e as Error).message;
       } finally {
         saving = false;
       }
     };
     recorder.start(250);
     started = performance.now();
+    elapsed = 0;
     recording = true;
     timer = window.setInterval(() => (elapsed = (performance.now() - started) / 1000), 100);
   }
@@ -88,6 +116,7 @@
   onDestroy(() => {
     // closing the dialog mid-recording throws the recording away
     discard = true;
+    destroyed = true;
     clearInterval(timer);
     if (recorder?.state === 'recording') recorder.stop();
     stop();

@@ -543,8 +543,15 @@ export function insertFreeze(p: Project, id: string, t: number, dur = 2): Clip |
   const local = Math.max(0, Math.min(clipLen(c) - 0.01, t - start));
   const at = sourceTime(c, local);
   const right = splitClip(p, id, t);
+  // too close to an edge to split: at the start, the freeze goes before the clip
+  const before = !right && local < clipLen(c) / 2;
   const f: Clip = { ...c, id: uid(), freeze: true, in: at, out: at + dur, speed: 1, reverse: false, transition: undefined, fadeIn: 0, fadeOut: 0, vfadeIn: 0, vfadeOut: 0, muted: true, start: start + local };
-  if (c.track === VIDEO_TRACK) {
+  if (before) {
+    // the transition into the clip now leads into the freeze
+    if (c.track === VIDEO_TRACK) [f.transition, c.transition] = [c.transition, undefined];
+    else ((f.start = start), (c.start += dur));
+    p.clips.splice(p.clips.indexOf(c), 0, f);
+  } else if (c.track === VIDEO_TRACK) {
     p.clips.splice(p.clips.indexOf(c) + 1, 0, f);
   } else {
     // upper tracks: push the rest of the clip later to make room

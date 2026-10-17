@@ -57,11 +57,11 @@ export async function makeCompound(): Promise<boolean> {
     await takeSnapshot('Before making ' + media.source.name, true);
     store.set({ ...project, media: [...project.media, item] });
     store.ui.selectedClips = project.clips.filter((c) => c.mediaId === item.id).map((c) => c.id);
-    store.ui.dialog = null;
+    if (store.ui.dialog === 'compound') store.ui.dialog = null;
     store.toast(`${media.source.name} made. Double-click it to edit inside.`, 'ok', 4000);
     return true;
   } catch (e) {
-    if (e instanceof Cancelled) store.ui.dialog = null;
+    if (e instanceof Cancelled && store.ui.dialog === 'compound') store.ui.dialog = null;
     else compoundJob.error = (e as Error).message;
     return false;
   }
@@ -91,11 +91,11 @@ export async function closeCompound(): Promise<boolean> {
   try {
     store.ui.dialog = 'compound';
     const file = await renderSequence(parent, seq);
-    store.ui.dialog = null;
+    if (store.ui.dialog === 'compound') store.ui.dialog = null;
     store.leaveSequence(withSequence(parent, top.mediaId, seq, file));
     return true;
   } catch (e) {
-    if (e instanceof Cancelled) store.ui.dialog = null;
+    if (e instanceof Cancelled && store.ui.dialog === 'compound') store.ui.dialog = null;
     else compoundJob.error = (e as Error).message;
     return false;
   }
@@ -110,10 +110,10 @@ export async function setMoshInside(mediaId: string, on: boolean) {
   store.ui.dialog = 'compound';
   try {
     const file = await renderSequence(p, next);
-    store.ui.dialog = null;
+    if (store.ui.dialog === 'compound') store.ui.dialog = null;
     store.set(withSequence(p, mediaId, next, file));
   } catch (e) {
-    if (e instanceof Cancelled) store.ui.dialog = null;
+    if (e instanceof Cancelled && store.ui.dialog === 'compound') store.ui.dialog = null;
     else compoundJob.error = (e as Error).message;
   }
 }

@@ -24,20 +24,26 @@
     refreshProjects();
   });
 
+  // in the app's language (the browser has the words for it)
+  const rel = $derived(new Intl.RelativeTimeFormat(i18n.locale, { numeric: 'auto', style: 'short' }));
   const ago = (t: number) => {
     const s = (Date.now() - t) / 1000;
-    if (s < 60) return 'just now';
-    if (s < 3600) return `${Math.round(s / 60)} min ago`;
-    if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-    if (s < 86400 * 7) return `${Math.round(s / 86400)} d ago`;
-    return new Date(t).toLocaleDateString([], { month: 'short', day: 'numeric', year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+    if (s < 60) return rel.format(0, 'second');
+    if (s < 3600) return rel.format(-Math.floor(s / 60), 'minute');
+    if (s < 86400) return rel.format(-Math.floor(s / 3600), 'hour');
+    if (s < 86400 * 7) return rel.format(-Math.floor(s / 86400), 'day');
+    return new Date(t).toLocaleDateString(i18n.locale, { month: 'short', day: 'numeric', year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
   };
   const len = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${s.toFixed(s < 10 ? 1 : 0)} s`);
 
-  async function importMedia(files: FileList | null) {
+  function importMedia(files: FileList | null) {
     if (!files?.length) return;
-    await startProject();
-    await addFiles(files);
+    // a copy: the input is cleared right after this
+    const list = [...files];
+    run('import', async () => {
+      await startProject();
+      await addFiles(list);
+    });
   }
 
   async function run(id: string, fn: () => Promise<unknown>) {
@@ -55,11 +61,11 @@
   async function rename(id: string, name: string) {
     menuFor = null;
     const n = await askText('Rename project', name);
-    if (n !== null) renameProject(id, n);
+    if (n !== null) renameProject(id, n).catch((e) => store.toast('Could not rename: ' + ((e as Error)?.message ?? e), 'error'));
   }
   async function remove(id: string, name: string) {
     menuFor = null;
-    if (await ask(`Delete "${name}" and its snapshots? This can't be undone.`, 'Delete')) deleteProject(id);
+    if (await ask(`Delete "${name}" and its snapshots? This can't be undone.`, 'Delete')) run('delete', () => deleteProject(id));
   }
 </script>
 
@@ -80,7 +86,7 @@
       <h1>{t('Make something melt')}</h1>
       <p class="muted">{t('Cut your clips together, then break the video itself: melts, blooms, glitches. Everything stays on this device.')}</p>
       <div class="actions">
-        <button class="primary big" onclick={() => startProject()} data-tour="new"><Icon name="plus" />{t('New project')}</button>
+        <button class="primary big" onclick={() => run('new', () => startProject())} data-tour="new"><Icon name="plus" />{t('New project')}</button>
         <button class="big" onclick={() => importInput.click()}><Icon name="import" />{t('Import media')}</button>
         <button class="big ghost" onclick={() => projectInput.click()}><Icon name="folder" />{t('Open project file')}</button>
       </div>
@@ -112,7 +118,7 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div class="menu" role="menu" tabindex="-1" onclick={(e) => e.stopPropagation()}>
                   <button class="ghost" onclick={() => rename(p.id, p.name)}><Icon name="pen" />{t('Rename')}</button>
-                  <button class="ghost" onclick={() => ((menuFor = null), duplicateProject(p.id))}><Icon name="copy" />{t('Duplicate')}</button>
+                  <button class="ghost" onclick={() => ((menuFor = null), run('duplicate', () => duplicateProject(p.id)))}><Icon name="copy" />{t('Duplicate')}</button>
                   <button class="ghost danger" onclick={() => remove(p.id, p.name)}><Icon name="trash" />{t('Delete')}</button>
                 </div>
               {/if}

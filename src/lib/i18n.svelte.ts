@@ -13,9 +13,14 @@ export const i18n = $state({ locale: 'en' as Locale, catalog: {} as Record<strin
 /** The text in the chosen language. */
 export const t = (text: string, vars?: Record<string, string | number>): string => translate(i18n.catalog, text, vars);
 
+let picking = 0;
 export async function setLocale(id: Locale, remember = true) {
+  const my = ++picking;
   const load = catalogs[`../locales/${id}.json`];
-  i18n.catalog = id === 'en' || !load ? {} : (await load()).default;
+  const catalog = id === 'en' || !load ? {} : (await load()).default;
+  // another language was picked while this one loaded: that one wins
+  if (my !== picking) return;
+  i18n.catalog = catalog;
   i18n.locale = id;
   if (typeof document !== 'undefined') document.documentElement.lang = id;
   if (remember) localSet('locale', id);
@@ -25,5 +30,5 @@ export async function setLocale(id: Locale, remember = true) {
 export function startI18n() {
   const saved = localGet<Locale | ''>('locale', '');
   const id = saved || preferredLocale();
-  if (id !== 'en') void setLocale(id, !!saved);
+  if (id !== 'en') setLocale(id, !!saved).catch((e) => console.warn('could not load the translation', e));
 }

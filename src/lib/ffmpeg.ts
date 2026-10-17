@@ -144,7 +144,8 @@ class FFmpegService implements Engine {
   private load(): Promise<FFmpeg> {
     if (this.ff && this.ready) return Promise.resolve(this.ff);
     if (this.loading) return this.loading;
-    this.loading = (async () => {
+    const gen = this.loadGen;
+    const p = (this.loading = (async () => {
       this.onStatus('Loading video engine…');
       const ff = new FFmpeg();
       ff.on('log', ({ message }) => {
@@ -166,19 +167,23 @@ class FFmpegService implements Engine {
         }
       } catch (e) {
         this.onStatus('');
+        ff.terminate();
         throw new Error('Could not load the video engine (' + ((e as Error)?.message ?? e) + '). Check your connection and reload.');
+      }
+      // aborted (cancelled) while loading: this instance is not the engine any more
+      if (gen !== this.loadGen) {
+        ff.terminate();
+        throw new Cancelled();
       }
       this.ff = ff;
       this.ready = true;
       this.files.clear();
       this.onStatus('');
       return ff;
-    })();
-    const p = this.loading;
-    p.then(
-      () => (this.loading = null),
-      () => (this.loading = null),
-    );
+    })());
+    // (only this load: after an abort a newer one may be under way)
+    const done = () => void (this.loading === p && (this.loading = null));
+    p.then(done, done);
     return p;
   }
 
@@ -199,6 +204,8 @@ class FFmpegService implements Engine {
   }
 
   private cancelGen = 0;
+  /** bumped by abort(), so an engine still loading then is thrown away */
+  private loadGen = 0;
 
   /** User cancel: kill the running job without retrying it. */
   cancel() {
@@ -218,6 +225,7 @@ class FFmpegService implements Engine {
     this.ff = null;
     this.ready = false;
     this.loading = null;
+    this.loadGen++;
     this.execs = 0;
     this.files.clear();
   }
@@ -245,7 +253,13 @@ class FFmpegService implements Engine {
         console.warn('ffmpeg crashed, retrying on a fresh instance:', e.message);
         if (this.mt) threads.failed = true;
         this.abort();
-        return await this.runOnce(args, opts);
+        try {
+          return await this.runOnce(args, opts);
+        } catch (e2) {
+          // cancelled during the retry: say so, not "crashed"
+          if (gen !== this.cancelGen) throw new Cancelled();
+          throw e2;
+        }
       }
     });
   }
@@ -313,6 +327,8 @@ class FFmpegService implements Engine {
         }
       }
     } finally {
+      // outputs not read (the job failed part-way) would sit in the engine's memory until it is recycled
+      if (this.ff === ff) for (const name of opts.outputs ?? []) if (!(name in out)) await ff.deleteFile(name).catch(() => {});
       if (mounted && this.ff === ff) await ff.unmount(MOUNT).catch(() => {});
       for (const name of Object.keys(opts.inputs ?? {})) {
         if (opts.keep?.includes(name)) this.files.add(name);

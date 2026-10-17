@@ -4,6 +4,7 @@
   import { bakeToClip } from '../lib/bake.svelte';
   import { Cancelled } from '../lib/renderer';
   import { ffmpeg } from '../lib/ffmpeg';
+  import { onDestroy } from 'svelte';
 
   let running = $state(false);
   let stage = $state('');
@@ -14,16 +15,18 @@
   async function go(replace: boolean) {
     running = true;
     error = '';
-    signal = { cancelled: false };
+    const my = (signal = { cancelled: false });
     try {
-      const m = await bakeToClip(replace, (s, p) => ((stage = s), (progress = p)), signal);
+      const m = await bakeToClip(replace, (s, p) => my === signal && ((stage = s), (progress = p)), my);
       if (!m) throw new Error('Nothing came out of the render.');
-      store.ui.dialog = null;
+      // done just as it was cancelled: the clip is in, but whatever dialog is open now stays
+      if (!my.cancelled) store.ui.dialog = null;
       store.toast(replace ? 'Baked. The timeline is now one clip of the mosh: mosh it again.' : 'Baked clip added to the media library.', 'ok', 5000);
     } catch (e) {
-      if (!(e instanceof Cancelled)) error = (e as Error).message;
+      if (!(e instanceof Cancelled) && !my.cancelled) error = (e as Error).message;
     } finally {
-      running = false;
+      // a cancelled bake that ends late mustn't mark a newer one as finished
+      if (my === signal) running = false;
     }
   }
   function cancel() {
@@ -31,6 +34,8 @@
     ffmpeg.cancel();
     running = false;
   }
+  // closed mid-bake (also by the editor's Escape, which skips onclose): stop it
+  onDestroy(() => running && cancel());
 </script>
 
 <Modal title="Bake the mosh into a clip" onclose={() => (running ? cancel() : null, (store.ui.dialog = null))}>

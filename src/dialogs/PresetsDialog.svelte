@@ -12,12 +12,13 @@
   let mine = $state(userPresets.list());
   let mode = $state<'replace' | 'add'>('replace');
 
-  function use(p: Preset) {
+  async function use(p: Preset) {
     if (!store.project.clips.length) {
       store.toast('Add a clip first.', 'error');
       return;
     }
-    if (mode === 'replace' && store.project.effects.length) takeSnapshot('Before preset ' + p.name, true);
+    // awaited: the snapshot is read after a wait, so it would otherwise hold the preset already
+    if (mode === 'replace' && store.project.effects.length) await takeSnapshot('Before preset ' + p.name, true);
     store.set(applyPreset($state.snapshot(store.project) as Project, p, store.totalFrames, store.cuts, mode));
     store.ui.dialog = null;
   }

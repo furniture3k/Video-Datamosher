@@ -307,6 +307,11 @@ section.block p.sub {
 .ba .tag.r {
   right: 12px;
 }
+/* the slider itself is invisible: show its keyboard focus on the picture */
+.ba:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .ba input[type='range'] {
   position: absolute;
   inset: 0;
@@ -425,6 +430,9 @@ section.block p.sub {
 .dl a {
   font-size: 14px;
   color: var(--text-2);
+  /* stacked file links: tall enough to tap one without hitting the next */
+  padding: 3px 0;
+  overflow-wrap: anywhere;
 }
 .dl a:hover {
   color: var(--text);
@@ -487,7 +495,9 @@ details p {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 40px;
-  padding: 36px 0 64px;
+  /* keeps .wrap's side padding */
+  padding-top: 36px;
+  padding-bottom: 64px;
 }
 .docs nav.toc {
   position: sticky;
@@ -605,7 +615,8 @@ details p {
     grid-template-columns: 1fr;
   }
   .docs {
-    grid-template-columns: 1fr;
+    /* minmax(0, …): wide tables scroll inside the page instead of widening it */
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     padding-top: 20px;
   }

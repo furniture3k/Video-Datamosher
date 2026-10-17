@@ -331,6 +331,7 @@ export function parsePVop(chunk: Uint8Array, vol: Vol): ParsedVop {
   r.bits(3); // intra_dc_vlc_thr (moshpit's encoder: 0 = DC always VLC coded)
   r.bits(vol.quantPrecision);
   const fcode = r.bits(3);
+  if (fcode === 0) throw new Error('bad f_code');
   const mbw = Math.ceil(vol.width / 16);
   const mbh = Math.ceil(vol.height / 16);
   const field: MotionField = { mbw, mbh, fcode, mv: new Array(mbw * mbh).fill([0, 0]) };

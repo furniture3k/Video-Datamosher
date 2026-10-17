@@ -78,15 +78,16 @@ export function updateIndex(fn: (list: ProjectMeta[]) => ProjectMeta[] | void): 
   });
 }
 
-/** Save a project body and refresh its entry in the index. */
-export async function saveProject(id: string, p: Project) {
-  await kvSet(projectKey(id), p);
+/** Save a project body and refresh its entry in the index. Resolves false when it could not be saved. */
+export async function saveProject(id: string, p: Project): Promise<boolean> {
+  const ok = await kvSet(projectKey(id), p);
   await updateIndex((list) => {
     const i = list.findIndex((m) => m.id === id);
     const meta = metaOf(p, id, list[i]);
     if (i >= 0) list[i] = meta;
     else list.push(meta);
   });
+  return ok;
 }
 
 export const loadProject = (id: string) => kvGet<Project>(projectKey(id));

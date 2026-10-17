@@ -61,6 +61,8 @@ interface Action {
   when?: () => boolean;
   /** runs even while typing in a field or with a dialog open */
   global?: boolean;
+  /** with `global`: not in a text field, which has its own (the text's undo) */
+  notInText?: boolean;
 }
 
 const ACTIONS: Record<string, Action> = {
@@ -143,8 +145,8 @@ const ACTIONS: Record<string, Action> = {
   captions: { run: dialog('captions'), when: hasClips },
   live: { run: dialog('live') },
 
-  undo: { run: () => store.undo(), global: true },
-  redo: { run: () => store.redo(), global: true },
+  undo: { run: () => store.undo(), global: true, notInText: true },
+  redo: { run: () => store.redo(), global: true, notInText: true },
   history: { run: dialog('history') },
   save: { run: () => saveProjectFile(), global: true },
   'save-as': { run: () => saveProjectFile(true) },
@@ -204,6 +206,14 @@ export function runCommand(id: string): boolean {
   return true;
 }
 
+/** A field you type text into (sliders, colour pickers and menus have no text to undo). */
+function hasText(t: EventTarget | null): boolean {
+  const el = t as HTMLInputElement | null;
+  if (!el?.tagName) return false;
+  if (el.tagName === 'TEXTAREA' || el.isContentEditable) return true;
+  return el.tagName === 'INPUT' && !['range', 'color', 'checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'image'].includes(el.type);
+}
+
 /**
  * A key press in the editor: run the command it's bound to. Returns true when it ran (the caller
  * then stops the browser's own handling). `typing` is true in text fields; `blocked` when a dialog
@@ -215,6 +225,7 @@ export function runKey(e: KeyboardEvent, typing: boolean, blocked: boolean): boo
   const a = ACTIONS[id];
   if (!a) return false;
   if ((typing || blocked) && !a.global) return false;
+  if (typing && a.notInText && hasText(e.target)) return false;
   if (a.when && !a.when()) return false;
   a.run();
   return true;

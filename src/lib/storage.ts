@@ -8,25 +8,37 @@ let dbp: Promise<IDBDatabase> | null = null;
 
 function db(): Promise<IDBDatabase> {
   if (dbp) return dbp;
-  dbp = new Promise((res, rej) => {
+  const p: Promise<IDBDatabase> = (dbp = new Promise((res, rej) => {
     const r = indexedDB.open(DB, 1);
     r.onupgradeneeded = () => {
       r.result.createObjectStore('files');
       r.result.createObjectStore('kv');
     };
-    r.onsuccess = () => res(r.result);
+    r.onsuccess = () => {
+      // the browser can close the connection (storage cleared, another tab upgrading): open again next time
+      const forget = () => void (dbp === p && (dbp = null));
+      r.result.onclose = forget;
+      r.result.onversionchange = () => (r.result.close(), forget());
+      res(r.result);
+    };
     r.onerror = () => rej(r.error);
-  });
-  return dbp;
+  }));
+  // a failed open is tried again next time instead of failing forever
+  p.catch(() => void (dbp === p && (dbp = null)));
+  return p;
 }
 
+/**
+ * One request in its own transaction. Resolves once the transaction has committed: a write that
+ * doesn't fit (QuotaExceededError) succeeds as a request and only fails when the transaction aborts.
+ */
 async function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
   const d = await db();
   return new Promise((res, rej) => {
     const t = d.transaction(store, mode);
     const r = fn(t.objectStore(store));
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+    t.oncomplete = () => res(r.result);
+    t.onabort = t.onerror = () => rej(t.error ?? r.error ?? new Error('IndexedDB transaction failed'));
   });
 }
 
@@ -230,11 +242,14 @@ export async function kvGet<T>(key: string): Promise<T | undefined> {
   }
 }
 
-export async function kvSet(key: string, value: unknown) {
+/** Resolves false when it could not be saved (storage full, or no IndexedDB). */
+export async function kvSet(key: string, value: unknown): Promise<boolean> {
   try {
     await tx('kv', 'readwrite', (s) => s.put(value, key));
+    return true;
   } catch (e) {
     console.warn('kv save failed', e);
+    return false;
   }
 }
 
@@ -333,10 +348,12 @@ export async function shareFile(file: File, text?: string): Promise<boolean> {
 
 /** Desktop app: the webview can't download, so copy the file to disk in chunks and use the native Save dialog. */
 async function saveNative(blob: Blob, name: string) {
+  let path = '';
   try {
-    const path = await blobToDisk(blob, name);
+    path = await blobToDisk(blob, name);
     if (!(await saveFromDisk(path, name))) removeEngineFile(path); // cancelled
   } catch (e) {
+    if (path) removeEngineFile(path);
     tell('Could not save ' + name + ': ' + ((e as Error)?.message ?? e));
   }
 }

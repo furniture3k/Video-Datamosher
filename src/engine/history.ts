@@ -39,10 +39,10 @@ function clips(a: Project, b: Project): string | null {
   const B = byId(b.clips);
   const added = b.clips.filter((c) => !A.has(c.id));
   const removed = a.clips.filter((c) => !B.has(c.id));
-  // a split: one clip shortened and one new clip of the same media
+  // a split: one clip shortened (a reversed clip loses its in point) and one new clip of the same media
   if (added.length === 1 && !removed.length) {
     const n = added[0];
-    const cut = b.clips.find((c) => c.id !== n.id && c.mediaId === n.mediaId && A.has(c.id) && A.get(c.id)!.out !== c.out);
+    const cut = b.clips.find((c) => c.id !== n.id && c.mediaId === n.mediaId && A.has(c.id) && (A.get(c.id)!.out !== c.out || A.get(c.id)!.in !== c.in));
     if (cut) return `Split ${clipName(b, n)}`;
     return `Add ${clipName(b, n)}`;
   }
@@ -64,7 +64,8 @@ function clips(a: Project, b: Project): string | null {
     const t = MOSH_TRANSITIONS[c.transition.type]?.name ?? BLEND_TRANSITIONS[c.transition.type]?.name ?? 'transition';
     return o.transition?.type === c.transition.type ? `Change the ${t}` : `${t} on a cut`;
   }
-  if (o.in !== c.in || o.out !== c.out) return o.start !== c.start && o.out - o.in === c.out - c.in ? `Slip ${name}` : `Trim ${name}`;
+  // a slip moves both source edges by the same amount (the clip keeps its place and length)
+  if (o.in !== c.in || o.out !== c.out) return o.in !== c.in && o.start === c.start && Math.abs(o.out - o.in - (c.out - c.in)) < 1e-6 ? `Slip ${name}` : `Trim ${name}`;
   if (o.start !== c.start || o.track !== c.track) return `Move ${name}`;
   if (o.speed !== c.speed || !same(o.ramp, c.ramp)) return `Speed of ${name}`;
   if (o.reverse !== c.reverse) return `Reverse ${name}`;

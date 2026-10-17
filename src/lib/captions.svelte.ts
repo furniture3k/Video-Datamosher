@@ -36,7 +36,12 @@ const whisper: Transcriber = (audio, o) =>
       else if (m.type === 'done') resolve(m.words);
       else if (m.type === 'error') reject(new Error(m.message));
     };
-    worker.onerror = (e) => reject(new Error(e.message || 'The speech model could not start.'));
+    worker.onerror = (e) => {
+      // a worker that failed to start stays broken: the next try starts a new one
+      worker?.terminate();
+      worker = null;
+      reject(new Error(e.message || 'The speech model could not start.'));
+    };
     worker.postMessage({ audio, model: o.model, language: o.language });
   });
 

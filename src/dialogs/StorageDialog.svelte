@@ -53,30 +53,41 @@
     const app = (info?.usage ?? 0) - files;
     if (!isDesktop && app > 1e6) rows.push({ label: 'The app and its video engine', hint: 'Kept so moshpit opens and works offline.', bytes: app, count: 0 });
   }
-  refresh();
+  const failed = (e: unknown) => store.toast('Storage: ' + ((e as Error)?.message ?? e), 'error', 6000);
+  refresh().catch(failed);
 
   async function keep() {
     const ok = await askPersist();
     store.toast(ok ? 'Your files are protected from automatic clean-up.' : 'The browser said no. It usually allows this for installed apps or sites you use often.', ok ? 'ok' : 'info', 6000);
-    refresh();
+    refresh().catch(failed);
   }
 
   async function dropAutos() {
     if (!(await ask('Delete every automatic snapshot? Snapshots you named are kept.', 'Delete'))) return;
     busy = true;
-    const n = await deleteAutoSnapshots();
-    store.toast(`Deleted ${n} automatic snapshot${n === 1 ? '' : 's'}.`, 'ok');
-    await refresh();
-    busy = false;
+    try {
+      const n = await deleteAutoSnapshots();
+      store.toast(`Deleted ${n} automatic snapshot${n === 1 ? '' : 's'}.`, 'ok');
+      await refresh();
+    } catch (e) {
+      failed(e);
+    } finally {
+      busy = false;
+    }
   }
 
   async function cleanUp() {
     if (!(await ask(`Delete ${fmt(unusedBytes)} of media nothing uses? Undo won't be able to bring back clips that used it.`, 'Delete'))) return;
     busy = true;
-    await pruneFiles(await store.keepFiles());
-    store.toast('Cleaned up.', 'ok');
-    await refresh();
-    busy = false;
+    try {
+      await pruneFiles(await store.keepFiles());
+      store.toast('Cleaned up.', 'ok');
+      await refresh();
+    } catch (e) {
+      failed(e);
+    } finally {
+      busy = false;
+    }
   }
 </script>
 

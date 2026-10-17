@@ -546,7 +546,8 @@ export class EditAudio {
     if (muted) return;
     this.ctx ??= audioCtx();
     const ctx = this.ctx;
-    ctx.resume();
+    // refused without a user gesture (iOS): it's resumed on the next tap
+    ctx.resume().catch(() => {});
     const gen = ++this.gen;
     const srcs = audioSources(p).filter((s) => s.start + s.len > t);
     // decoded sound that is ready now (anything still decoding stays silent this time)

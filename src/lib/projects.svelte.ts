@@ -91,7 +91,8 @@ export async function renameProject(id: string, name: string) {
 /** Delete a project and its snapshots. Its media goes at the next start (or Storage → Clean up). */
 export async function deleteProject(id: string) {
   if (id === store.projectId) {
-    // don't let the open project save itself back into the list
+    // don't let the open project save itself back into the list (or Ctrl+S into its file)
+    forgetProjectFile();
     await store.openProject(null, newProject());
     store.projectId = null;
   }

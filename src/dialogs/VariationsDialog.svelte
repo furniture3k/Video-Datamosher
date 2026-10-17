@@ -87,7 +87,8 @@
   async function use(p: Project) {
     signal.cancelled = true;
     if (store.project.effects.length) await takeSnapshot('Before Variations', true);
-    store.set(p);
+    // a plain copy: the tile's project is this dialog's state
+    store.set($state.snapshot(p) as Project);
     store.ui.dialog = null;
   }
   function close() {
