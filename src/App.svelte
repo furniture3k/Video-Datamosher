@@ -99,9 +99,9 @@
     // a slider keeps focus after a drag: only the keys that move it go to it, the rest are shortcuts
     if (t.tagName === 'INPUT' && (t as HTMLInputElement).type === 'range') return ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key);
     if (t.tagName === 'INPUT' && (t as HTMLInputElement).type === 'color') return e.key === ' ' || e.key === 'Enter';
-    // a button reached with the keyboard (Tab) is pressed with Enter or Space, not Render / Play
-    // (after a mouse click it isn't :focus-visible, and Space still plays)
-    if (t.matches?.('button, a[href], summary, [role=button]') && (e.key === 'Enter' || e.key === ' ')) {
+    // a button reached with the keyboard (Tab) is pressed with Enter, not Render
+    // (after a mouse click it isn't :focus-visible; Space always plays, as in other editors)
+    if (t.matches?.('button, a[href], summary, [role=button]') && e.key === 'Enter') {
       try {
         return t.matches(':focus-visible');
       } catch {
