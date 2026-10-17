@@ -1,6 +1,6 @@
 // Timeline model: layout of the magnetic video track, audio tracks, segments for rendering,
 // pure edit operations and the mapping that keeps effects attached to footage across edits.
-import { CLIP_AUDIO, VIDEO_TRACK, clipOn, type Clip, type EffectInstance, type MediaItem, type Project, type Track, type Transition, type TransitionType } from './types';
+import { CLIP_AUDIO, VIDEO_TRACK, clipOn, type Clip, type EffectInstance, type MediaItem, type Project, type TextClip, type Track, type Transition, type TransitionType } from './types';
 import { EFFECTS, defaultParams } from './effects';
 import { hashSeed } from './rng';
 import { rampIntegral, rampInverse, rampLength, rampSpeedAt, splitRamp, type Ramp } from './keys';
@@ -411,6 +411,23 @@ export function splitClip(p: Project, id: string, t: number): Clip | null {
   c.fadeOut = 0;
   c.vfadeOut = 0;
   p.clips.splice(p.clips.indexOf(c) + 1, 0, b);
+  return b;
+}
+
+/** Cut a title in two at timeline time t. Returns the second half (null when t isn't inside it). */
+export function splitText(p: Project, id: string, t: number): TextClip | null {
+  const a = p.texts.find((x) => x.id === id);
+  if (!a) return null;
+  const local = t - a.start;
+  if (local < 0.05 || local > a.duration - 0.05) return null;
+  // the second half carries on where the first stops: no second fade or entrance
+  const b: TextClip = { ...JSON.parse(JSON.stringify(a)), id: uid(), start: t, duration: a.duration - local, anim: undefined, animIn: undefined };
+  if (a.words) {
+    b.words = a.words.filter((w) => w.t1 > local).map((w) => ({ ...w, t0: Math.max(0, w.t0 - local), t1: w.t1 - local }));
+    a.words = a.words.filter((w) => w.t0 < local);
+  }
+  a.duration = local;
+  p.texts.splice(p.texts.indexOf(a) + 1, 0, b);
   return b;
 }
 

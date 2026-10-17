@@ -6,6 +6,8 @@
   let { title, onclose, children, tall = false }: { title: string; onclose: () => void; children: Snippet; tall?: boolean } = $props();
   let dy = $state(0);
   function gripDown(e: PointerEvent) {
+    // the Done button: capturing the pointer would send its click to the header instead
+    if ((e.target as Element).closest('button')) return;
     const y0 = e.clientY;
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture(e.pointerId);

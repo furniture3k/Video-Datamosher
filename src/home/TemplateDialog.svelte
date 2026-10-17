@@ -10,8 +10,10 @@
   let picked = $state<File[]>([]);
   let working = $state(false);
 
-  const visual = $derived(picked.filter((f) => !f.type.startsWith('audio/')));
-  const songs = $derived(picked.filter((f) => f.type.startsWith('audio/')));
+  // (by the name too: some systems give sound files no type)
+  const isSound = (f: File) => f.type.startsWith('audio/') || (!f.type && /\.(mp3|wav|m4a|flac|ogg|opus|aac)$/i.test(f.name));
+  const visual = $derived(picked.filter((f) => !isSound(f)));
+  const songs = $derived(picked.filter(isSound));
   const tooFew = $derived(visual.length < t.clips[0]);
   const count = $derived(t.clips[0] === t.clips[1] ? `${t.clips[0]}` : `${t.clips[0]}–${t.clips[1]}`);
 
@@ -46,7 +48,7 @@
       <ul class="files small">
         {#each picked as f, i (i)}
           <li>
-            <Icon name={f.type.startsWith('audio/') ? 'music' : 'film'} size={13} /><span class="grow">{f.name}</span>
+            <Icon name={isSound(f) ? 'music' : 'film'} size={13} /><span class="grow">{f.name}</span>
             <button class="icon ghost" aria-label="Remove {f.name}" onclick={() => (picked = picked.filter((_, j) => j !== i))} disabled={working}><Icon name="x" size={12} /></button>
           </li>
         {/each}

@@ -31,6 +31,10 @@ describe('keys', () => {
     expect(keymap.comboOf(ev('Delete', { shiftKey: true }))).toBe('Shift+Delete');
     // Alt changes the character on a Mac: the physical key counts
     expect(keymap.comboOf(ev('≈', { altKey: true, code: 'KeyX' }))).toBe('Alt+X');
+    // non-Latin layouts: the letter's place on the keyboard (Latin layouts like AZERTY keep their letters)
+    expect(keymap.comboOf(ev('я', { ctrlKey: true, code: 'KeyZ' }))).toBe('Mod+Z');
+    expect(keymap.comboOf(ev('ы', { code: 'KeyS' }))).toBe('S');
+    expect(keymap.comboOf(ev('a', { code: 'KeyQ' }))).toBe('A');
     expect(keymap.normalize('ctrl+shift+z')).toBe('Mod+Shift+Z');
   });
 

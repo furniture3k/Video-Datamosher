@@ -17,6 +17,8 @@ export function comboOf(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'met
   let key = e.key;
   if (e.altKey && /^Key[A-Z]$/.test(e.code)) key = e.code.slice(3);
   else if (e.altKey && /^Digit\d$/.test(e.code)) key = e.code.slice(5);
+  // a letter from a non-Latin layout (Cyrillic, Greek, kana…): the shortcut is the key's place
+  else if (key.length === 1 && /^Key[A-Z]$/.test(e.code) && /[^\x20-\x7e]/.test(key)) key = e.code.slice(3);
   if (key === ' ') key = 'Space';
   if (key.length === 1) key = key.toUpperCase();
   const letterOrNamed = /^[A-Z0-9]$/.test(key) || key.length > 1;

@@ -369,6 +369,17 @@
       opacity: 1;
     }
   }
+  /* big enough to hit with a finger */
+  @media (pointer: coarse) {
+    .ctl {
+      flex-direction: row;
+      gap: 2px;
+    }
+    .ctl button {
+      height: 36px;
+      width: 36px;
+    }
+  }
   .item.picked {
     outline: 1px solid var(--accent);
     outline-offset: -1px;

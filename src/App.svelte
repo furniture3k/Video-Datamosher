@@ -150,7 +150,8 @@
   }
   function resizeDown(e: PointerEvent) {
     const y0 = e.clientY;
-    const h0 = store.ui.timelineHeight;
+    // from the height shown (the saved one can be taller than this window allows)
+    const h0 = Math.max(150, Math.min(store.ui.timelineHeight, window.innerHeight - 220));
     const move = (ev: PointerEvent) => (store.ui.timelineHeight = Math.max(150, Math.min(window.innerHeight - 220, h0 - (ev.clientY - y0))));
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -280,7 +281,8 @@
   }
   main {
     display: grid;
-    grid-template-columns: var(--left) 6px minmax(0, 1fr) 6px var(--right);
+    /* the panels give way before the player gets narrower than 360px */
+    grid-template-columns: minmax(0, var(--left)) 6px minmax(360px, 1fr) 6px minmax(0, var(--right));
     min-height: 0;
     gap: 0;
     border-top: 1px solid var(--line);
@@ -336,6 +338,11 @@
   main:has(aside[hidden]) .fold {
     opacity: 1;
   }
+  @media (hover: none) {
+    .fold {
+      opacity: 1;
+    }
+  }
   .resizer {
     height: 5px;
     cursor: ns-resize;
@@ -374,11 +381,12 @@
   }
   @media (max-width: 1100px) {
     main {
-      grid-template-columns: min(var(--left), 220px) 6px minmax(0, 1fr) 6px min(var(--right), 300px);
+      grid-template-columns: minmax(0, min(var(--left), 220px)) 6px minmax(360px, 1fr) 6px minmax(0, min(var(--right), 300px));
     }
   }
   footer {
-    height: var(--tlh);
+    /* a height dragged on a taller window still leaves the player room on a shorter one */
+    height: max(150px, min(var(--tlh), 100vh - 220px));
   }
   .app.phone {
     display: block;

@@ -253,6 +253,17 @@ describe('compound clips', () => {
     expect(done.clips.find((c) => c.mediaId === 'cmp')!.out).toBe(3);
   });
 
+  it('project-wide settings changed inside a compound reach the root project', () => {
+    const { seq, project } = buildCompound(base(), ['clip_b', 'clip_c'], cmp);
+    const parent: Project = { ...project, media: [...project.media, { ...cmp, source: { ...cmp.source, compound: seq } as MediaItem['source'] }] };
+    const inner = { ...innerProject(parent, seq), name: 'Renamed', encoder: { ...parent.encoder, quality: 9 } };
+    const root = rootWithInner([{ parent, mediaId: 'cmp' }], inner);
+    expect(root.name).toBe('Renamed');
+    expect(root.encoder.quality).toBe(9);
+    // the root keeps its own timeline
+    expect(root.clips.map((c) => c.id)).toEqual(parent.clips.map((c) => c.id));
+  });
+
   it('refuses an empty selection', () => {
     expect(() => buildCompound(base(), ['nope'], cmp)).toThrow();
   });

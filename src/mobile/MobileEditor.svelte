@@ -33,6 +33,7 @@
   let fileInput: HTMLInputElement;
   let audioInput: HTMLInputElement;
   let loadInput: HTMLInputElement;
+  let toolRow: HTMLDivElement;
 
   const clip = $derived(store.selectedClip);
   const text = $derived(store.ui.selectedClips.length === 1 ? store.project.texts.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
@@ -55,8 +56,9 @@
 
   async function pick(files: FileList | null) {
     if (!files?.length) return;
-    const added = await addFiles(files, 'none');
-    for (const m of added) addToTimeline(m);
+    // onto an empty timeline as on the desktop (with the first mosh, when that's switched on)
+    if (!store.project.clips.length) await addFiles(files, 'auto');
+    else for (const m of await addFiles(files, 'none')) addToTimeline(m);
     sheet = null;
   }
   function deselect() {
@@ -107,6 +109,12 @@
     // speed and volume are for clips only: picking a title instead closes them
     if (!clip && (sheet === 'speed' || sheet === 'volume')) sheet = null;
     if (!clip && !text && sheet === 'clip') sheet = null;
+  });
+
+  $effect(() => {
+    // a new set of tools starts at its first one, not where the last set was scrolled to
+    void mode;
+    if (toolRow) toolRow.scrollLeft = 0;
   });
 
   const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4];
@@ -235,7 +243,7 @@
     {#if mode !== 'root'}
       <button class="back" aria-label="Back" onclick={deselect}><Icon name="back" size={20} /></button>
     {/if}
-    <div class="scroll">
+    <div class="scroll" bind:this={toolRow}>
       {#if mode === 'root'}
         <button class="tool" onclick={() => (sheet = 'media')}><Icon name="add" size={22} /><span>Media</span></button>
         <button class="tool hot" disabled={!store.project.clips.length} onclick={() => (store.ui.dialog = 'addEffect')}><Icon name="melt" size={22} /><span>Mosh</span></button>

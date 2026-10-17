@@ -119,12 +119,12 @@
     <div class="range">
       <label class="small">
         <span class="faint">In</span>
-        <input type="number" min="0" max={total} value={effect.start} onchange={(e) => store.edit(() => (effect.start = Math.max(0, Math.min(effect.end - 1, +(e.target as HTMLInputElement).value))))} />
+        <input type="number" min="0" max={total} value={effect.start} onchange={(e) => store.edit(() => (effect.start = Math.max(0, Math.min(effect.end - 1, Math.round(+(e.target as HTMLInputElement).value)))))} />
       </label>
       <button class="tiny" title="Set in point to playhead" onclick={() => store.edit(() => (effect.start = Math.min(effect.end - 1, playSrc)))}>Mark in</button>
       <label class="small">
         <span class="faint">Out</span>
-        <input type="number" min="1" max={total} value={effect.end} onchange={(e) => store.edit(() => (effect.end = Math.max(effect.start + 1, Math.min(total, +(e.target as HTMLInputElement).value))))} />
+        <input type="number" min="1" max={total} value={effect.end} onchange={(e) => store.edit(() => (effect.end = Math.max(effect.start + 1, Math.min(total, Math.round(+(e.target as HTMLInputElement).value)))))} />
       </label>
       <button class="tiny" title="Set out point to playhead" onclick={() => store.edit(() => (effect.end = Math.max(effect.start + 1, playSrc + 1)))}>Mark out</button>
       <div class="fit">

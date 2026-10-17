@@ -99,11 +99,20 @@ export function rootWithInner(stack: { parent: Project; mediaId: string }[], cur
   for (let i = stack.length - 1; i >= 0; i--) {
     const { parent, mediaId } = stack[i];
     const old = compoundOf(parent.media.find((m) => m.id === mediaId));
-    // media imported inside joins the parent's library
-    const media = [...parent.media, ...inner.media.filter((m) => !parent.media.some((p) => p.id === m.id))];
-    inner = withSequence({ ...parent, media }, mediaId, sequenceOf(inner, old?.moshInside));
+    inner = withSequence(parentAfter(parent, inner), mediaId, sequenceOf(inner, old?.moshInside));
   }
   return inner;
+}
+
+/**
+ * The parent timeline as it is when leaving a compound: the project-wide settings changed inside
+ * (its name, the encoder, the audio…) are the project's, and media imported inside joins the
+ * parent's library. The parent keeps its own timeline, its MIDI / OSC mappings and its beat source
+ * (those point at its own effects and tracks).
+ */
+export function parentAfter(parent: Project, inner: Project): Project {
+  const media = [...parent.media, ...inner.media.filter((m) => !parent.media.some((p) => p.id === m.id))];
+  return { ...inner, clips: parent.clips, tracks: parent.tracks, texts: parent.texts, effects: parent.effects, markers: parent.markers, controls: parent.controls, beatSource: parent.beatSource, media };
 }
 
 export const staleCompounds = (p: Project) => p.media.filter((m) => m.source.kind === 'file' && m.source.compound && m.source.stale);

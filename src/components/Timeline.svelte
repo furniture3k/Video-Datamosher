@@ -7,7 +7,7 @@
   import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
-  import { layoutVideo, clipLen, nearestCut, mediaOf, transitionName, isBlend, isMoshTransition, remapToFootage, trimClip, moveVideo, rollEdit, slipClip, changeVideoTrack, isOverlayTrack, clipEnd, splitClip, type Placed } from '../engine/timeline';
+  import { layoutVideo, clipLen, nearestCut, mediaOf, transitionName, isBlend, isMoshTransition, remapToFootage, trimClip, moveVideo, rollEdit, slipClip, changeVideoTrack, isOverlayTrack, clipEnd, splitClip, splitText, type Placed } from '../engine/timeline';
   import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project, type TextClip, type TransitionType } from '../engine/types';
   import { tc } from '../lib/timecode';
   import { mediaState } from '../lib/mediastate.svelte';
@@ -218,11 +218,7 @@
     if (kind === 't') {
       const tx = store.project.texts.find((x) => x.id === id);
       if (!tx || t <= tx.start + 0.05 || t >= tx.start + tx.duration - 0.05) return;
-      store.edit((p) => {
-        const o = p.texts.find((x) => x.id === id)!;
-        p.texts.push({ ...clone($state.snapshot(o)) as TextClip, id: Math.random().toString(36).slice(2, 10), start: t, duration: o.start + o.duration - t });
-        o.duration = t - o.start;
-      });
+      store.edit((p) => void splitText(p, id, t));
       return;
     }
     store.editTimeline((p) => void splitClip(p, id, t));
@@ -688,16 +684,16 @@
 
   function outDown(e: PointerEvent) {
     if (!nOut) return;
+    const el = e.currentTarget as HTMLElement;
     const pick = (ev: PointerEvent) => {
-      const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+      const r = el.getBoundingClientRect();
       store.seekFrame(Math.floor(((ev.clientX - r.left) / outW) * nOut));
     };
     store.ui.playing = false;
     store.ui.view = 'mosh';
     pick(e);
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    const el = e.currentTarget as HTMLElement;
-    const mv = (ev: PointerEvent) => pick(Object.assign(ev, { currentTarget: el }) as PointerEvent);
+    el.setPointerCapture(e.pointerId);
+    const mv = (ev: PointerEvent) => pick(ev);
     el.addEventListener('pointermove', mv);
     // (lost capture: after pointerup and after a cancelled touch)
     el.addEventListener('lostpointercapture', () => el.removeEventListener('pointermove', mv), { once: true });
@@ -815,8 +811,8 @@
               <!-- svelte-ignore a11y_autofocus -->
               <input class="medit" style="left:{x(m.t) + 6}px" autofocus value={m.name} placeholder="Marker name" aria-label="Marker name"
                 onpointerdown={(e) => e.stopPropagation()}
-                onkeydown={(e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur(); }}
-                onblur={(e) => { const v = (e.target as HTMLInputElement).value; editingMarker = null; store.edit(() => (m.name = v)); }} />
+                onkeydown={(e) => { e.stopPropagation(); const el = e.target as HTMLInputElement; if (e.key === 'Escape') el.value = m.name; if (e.key === 'Enter' || e.key === 'Escape') el.blur(); }}
+                onblur={(e) => { const v = (e.target as HTMLInputElement).value; editingMarker = null; if (v !== m.name) store.edit(() => (m.name = v)); }} />
             {/if}
           {/each}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1721,6 +1717,12 @@
   .v-lane:hover .cutmark,
   .cutmark.sel {
     opacity: 1;
+  }
+  /* touch screens (tablets get this timeline) have no hover to reveal them */
+  @media (hover: none) {
+    .cutmark {
+      opacity: 1;
+    }
   }
   .cutmark.sel {
     border-color: var(--accent);

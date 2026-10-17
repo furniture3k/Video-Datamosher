@@ -48,4 +48,10 @@
   .toast.ok {
     border-left-color: var(--ok);
   }
+  /* phones: above the editor's row of tools (and the home indicator) */
+  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
+    .toasts {
+      bottom: calc(76px + env(safe-area-inset-bottom));
+    }
+  }
 </style>

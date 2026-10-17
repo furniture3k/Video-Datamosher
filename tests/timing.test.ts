@@ -109,6 +109,7 @@ describe('timecode', () => {
     expect(tc(3723.5, 24)).toBe('01:02:03:12');
     expect(parseTimecode('01:02:03:12', 24)).toBeCloseTo(3723.5);
     expect(parseTimecode('1:30', 24)).toBe(90);
+    expect(parseTimecode('1:30.5', 24)).toBe(90.5);
     expect(parseTimecode('12.5', 24)).toBe(12.5);
     expect(parseTimecode('48f', 24)).toBe(2);
     expect(parseTimecode('+2', 24, 10)).toBe(12);

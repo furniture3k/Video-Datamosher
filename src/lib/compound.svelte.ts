@@ -4,7 +4,7 @@ import { exportVideo, Cancelled } from './renderer';
 import { putFile } from './storage';
 import { readEngineFile, removeEngineFile } from './ffmpeg-native';
 import { takeSnapshot } from './snapshots.svelte';
-import { buildCompound, compoundOf, innerProject, renderProject, sequenceOf, staleCompounds, withSequence } from '../engine/compound';
+import { buildCompound, compoundOf, innerProject, parentAfter, renderProject, sequenceOf, staleCompounds, withSequence } from '../engine/compound';
 import { defaultExport, outputSize } from '../engine/args';
 import { audioSources, timelineDuration } from '../engine/timeline';
 import { uid } from '../engine/presets';
@@ -82,8 +82,7 @@ export async function closeCompound(): Promise<boolean> {
   const inner = $state.snapshot(store.project) as Project;
   const old = compoundOf(top.parent.media.find((m) => m.id === top.mediaId));
   const seq = sequenceOf(inner, old?.moshInside);
-  // media imported inside joins the parent's library
-  const parent: Project = { ...top.parent, media: [...top.parent.media, ...inner.media.filter((m) => !top.parent.media.some((p) => p.id === m.id))] };
+  const parent = parentAfter(top.parent, inner);
   if (old && JSON.stringify(sequenceOf(old, old.moshInside)) === JSON.stringify(seq)) {
     store.leaveSequence(parent);
     return true;
