@@ -18,7 +18,7 @@
     const q = new URLSearchParams({ category: 'show-and-tell', title: `My mosh: ${store.project.name || 'Untitled'}`, recipe: await shareCode() });
     window.open(`${REPO}/discussions/new?${q}`, '_blank', 'noopener');
   }
-  import { isDesktop } from '../lib/platform';
+  import { isDesktop, isAndroidApp } from '../lib/platform';
   import { blobToDisk, saveFromDisk, revealFile } from '../lib/ffmpeg-native';
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
@@ -319,7 +319,7 @@
           {:else}
             {#if shareable && canShareFile(shareable)}<button class="link" onclick={() => shareFile(shareable!, 'Made with moshpit')}>Share…</button>{/if}
             {#if hasSavePicker() && result.blob}<button class="link" onclick={() => saveAs(result!.blob!, result!.name)}>Save as…</button>{/if}
-            <a href={result.url} download={result.name}>Download again</a>
+            {#if isAndroidApp}<button class="link" onclick={() => download(result!.blob!, result!.name)}>Save again</button>{:else}<a href={result.url} download={result.name}>Download again</a>{/if}
           {/if}
         </div>
         <p class="small faint">Proud of it? <button class="link" onclick={submitToGallery}>Share it in the gallery</button>: it goes up with its recipe, so others can use it on their footage.</p>

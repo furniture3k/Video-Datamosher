@@ -2,6 +2,9 @@ import { mount } from 'svelte';
 import './app.css';
 import App from './App.svelte';
 import { isDesktop } from './lib/platform';
+import { startI18n } from './lib/i18n.svelte';
+
+startI18n();
 
 // Behave like an app, not a web page: no browser right-click menu (the timeline and media
 // panel have their own), no pinch-zooming the interface, no dropping a file to navigate away.
@@ -92,3 +95,5 @@ Object.assign((window as unknown as { __moshpit: object }).__moshpit, { controls
 controlsMod.startControls().catch((e) => console.warn('controls', e));
 import * as scriptsMod from './lib/scripts.svelte';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { scripts: scriptsMod });
+import * as layoutMod from './lib/layout.svelte';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { layout: layoutMod });

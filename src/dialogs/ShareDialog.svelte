@@ -25,11 +25,11 @@
     <p class="small muted">
       A code holds the effect stack, automation, seeds and encoder settings, not the footage. Paste it into another project to reuse the recipe.
     </p>
-    <textarea readonly rows="4" value={code} onfocus={(e) => (e.target as HTMLTextAreaElement).select()}></textarea>
+    <textarea readonly rows="4" aria-label="Share code" value={code} onfocus={(e) => (e.target as HTMLTextAreaElement).select()}></textarea>
     <button onclick={copy} disabled={!code}>Copy</button>
     <hr />
     <span class="label">Paste a code</span>
-    <textarea rows="4" bind:value={paste} placeholder="MOSH:…"></textarea>
+    <textarea rows="4" aria-label="Paste a share code" bind:value={paste} placeholder="MOSH:…"></textarea>
     <button class="primary" disabled={!paste.trim()} onclick={apply}>Apply to this project</button>
   </div>
 </Modal>

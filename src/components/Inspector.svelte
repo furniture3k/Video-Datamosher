@@ -14,12 +14,14 @@
 </script>
 
 <div class="insp">
-  <div class="tabs" role="tablist">
+  <div class="tabs">
+    <div class="tablist" role="tablist" aria-label="Inspector">
     {#each tabs as [id, label]}
       <button role="tab" aria-selected={store.ui.tab === id} class:active={store.ui.tab === id} onclick={() => (store.ui.tab = id)}>
         {label}{#if id === 'effects' && store.project.effects.length}<span class="count mono">{store.project.effects.length}</span>{/if}
       </button>
     {/each}
+    </div>
     <button class="tipbtn" class:on={store.ui.tips} title={store.ui.tips ? 'Hide the description under each setting' : 'Show a description under each setting'} aria-label="Show descriptions" aria-pressed={store.ui.tips} onclick={() => store.setPref('tips', !store.ui.tips)}>?</button>
   </div>
   <div class="body">
@@ -39,6 +41,9 @@
 </div>
 
 <style>
+  .tablist {
+    display: contents;
+  }
   .insp {
     height: 100%;
     display: flex;

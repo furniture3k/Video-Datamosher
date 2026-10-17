@@ -33,7 +33,7 @@
 </script>
 
 <div class="bin">
-  <div class="tabs" role="tablist">
+  <div class="tabs" role="tablist" aria-label="Library">
     <button role="tab" class:active={tab === 'media'} aria-selected={tab === 'media'} onclick={() => (tab = 'media')}>Media<span class="count mono">{store.project.media.length || ''}</span></button>
     <button role="tab" class:active={tab === 'transitions'} aria-selected={tab === 'transitions'} onclick={() => (tab = 'transitions')}>Transitions</button>
   </div>
@@ -62,7 +62,7 @@
       <div class="status small muted">{store.status.engine}</div>
     {/if}
 
-    <div class="list">
+    <div class="list" role="list" aria-label="Media">
       {#each store.project.media as m (m.id)}
         {@const st = mediaState[m.id]}
         {@const k = kind(m)}

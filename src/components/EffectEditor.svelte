@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { t as tr } from '../lib/i18n.svelte';
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
   import { randomizeEffect } from '../engine/presets';
@@ -77,10 +78,10 @@
     <span class="code">{def.icon}</span>
     <input
       class="name"
-      value={effect.name || def.name}
+      value={effect.name || tr(def.name)}
       aria-label="Effect name"
       spellcheck="false"
-      onchange={(e) => store.edit(() => (effect.name = (e.target as HTMLInputElement).value === def.name ? undefined : (e.target as HTMLInputElement).value))}
+      onchange={(e) => store.edit(() => (effect.name = [def.name, tr(def.name)].includes((e.target as HTMLInputElement).value) ? undefined : (e.target as HTMLInputElement).value))}
     />
     <button class="icon ghost" class:on={info} title="What does this do?" aria-label="About this effect" onclick={() => (store.ui.tips ? store.setPref('tips', false) : (showInfo = !showInfo))}><Icon name="help" size={14} /></button>
     <button class="icon ghost" title="Randomize unlocked settings" aria-label="Randomize settings" onclick={randomize}><Icon name="dice" size={14} /></button>

@@ -66,6 +66,8 @@ Installed, it also works with the rest of the system:
 
 The builds aren't code-signed yet. On macOS, right-click the app and choose **Open** the first time; on Windows, choose **More info → Run anyway** if SmartScreen asks. See [DESKTOP.md](DESKTOP.md) for building it yourself.
 
+**Android app (experimental).** Each release also has `moshpit-android-arm64.apk`: the editor as an Android app, with the browser's video engine, saving exports to Downloads. It hasn't been tried on many phones yet, so the installable web app (above) is still the safer choice on Android.
+
 ## Effects
 
 Bitstream effects change the compressed video itself. The decoder then reconstructs the picture from the damaged instructions, which is where the melting comes from.

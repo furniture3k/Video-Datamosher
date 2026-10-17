@@ -86,13 +86,25 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
           if-no-files-found: error
 
+  android:
+    # the Android APK (experimental), attached to the release too
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
   publish:
     # once every installer built, publish the draft release (a failed build leaves it as a draft)
-    needs: build
+    needs: [build, android]
     if: startsWith(github.ref, 'refs/tags/') || inputs.release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: moshpit-android
+      - run: gh release upload "${TAG:-v$(node -p "require('./package.json').version")}" moshpit-android-arm64.apk --repo "$GITHUB_REPOSITORY" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
       - run: gh release edit "${TAG:-v$(node -p "require('./package.json').version")}" --repo "$GITHUB_REPOSITORY" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

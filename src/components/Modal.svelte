@@ -4,12 +4,47 @@
   import Icon from './Icon.svelte';
   let { title, wide = false, onclose, children, footer }: { title: string; wide?: boolean; onclose?: () => void; children: Snippet; footer?: Snippet } = $props();
   const close = () => (onclose ? onclose() : (store.ui.dialog = null));
+
+  // keyboard: focus moves into the dialog, Tab stays inside it, and goes back where it was on close
+  let box: HTMLDivElement;
+  const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const focusables = () => [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.offsetParent !== null || el === document.activeElement);
+  $effect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    // a box to type in (a search), else the dialog itself: never a slider or a list that the
+    // arrow keys or Enter would change by accident
+    const text = focusables().find((el) => el.matches('input:not([type]), input[type=text], input[type=search], textarea:not([readonly])'));
+    if (!box.contains(document.activeElement)) (text ?? box).focus({ preventScroll: true });
+    return () => {
+      if (before && document.contains(before)) before.focus({ preventScroll: true });
+    };
+  });
+  function trap(e: KeyboardEvent) {
+    // Escape closes the dialog wherever the focus is in it (even in a box that takes typing)
+    if (e.key === 'Escape' && !e.defaultPrevented) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const all = focusables();
+    if (!all.length) return;
+    const i = all.indexOf(document.activeElement as HTMLElement);
+    if (e.shiftKey && i <= 0) {
+      e.preventDefault();
+      all[all.length - 1].focus();
+    } else if (!e.shiftKey && i === all.length - 1) {
+      e.preventDefault();
+      all[0].focus();
+    }
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" onclick={(e) => e.target === e.currentTarget && close()}>
-  <div class="modal" class:wide role="dialog" aria-modal="true" aria-label={title}>
+  <div class="modal" class:wide role="dialog" aria-modal="true" aria-label={title} tabindex="-1" bind:this={box} onkeydown={trap}>
     <div class="head">
       <h3>{title}</h3>
       <button class="icon ghost" onclick={close} aria-label="Close" title="Close  Esc"><Icon name="x" /></button>

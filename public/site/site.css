@@ -7,7 +7,7 @@
   --line-2: #323238;
   --text: #ededee;
   --text-2: #a4a4ac;
-  --text-3: #6d6d76;
+  --text-3: #8b8b94;
   --accent: #c8f031;
   --accent-ink: #0b0d02;
   --glitch: #e46ad0;
@@ -26,8 +26,8 @@
     --line-2: #c8c8ce;
     --text: #17171a;
     --text-2: #4d4d55;
-    --text-3: #7c7c85;
-    --accent: #4f7400;
+    --text-3: #5f5f67;
+    --accent: #466600;
     --accent-ink: #ffffff;
     color-scheme: light;
   }
@@ -628,4 +628,10 @@ details p {
   .cta .btn {
     flex: 1 1 100%;
   }
+}
+
+/* links inside running text are underlined, not only coloured (readable without colour) */
+:where(p, li, span, small) > a:not([class]) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

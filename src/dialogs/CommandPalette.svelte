@@ -179,6 +179,12 @@
   .row.on {
     background: var(--accent-soft);
   }
+  /* the dim text stays readable on the highlight */
+  .row.on .faint,
+  .row.on .kbd {
+    color: var(--text-2);
+    opacity: 1;
+  }
   .t {
     flex: 1;
     overflow: hidden;
