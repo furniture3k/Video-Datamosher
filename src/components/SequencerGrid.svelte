@@ -22,11 +22,19 @@
   let paint: SeqStep | null = null;
   function down(e: PointerEvent, i: number, op: SeqStep) {
     e.preventDefault();
+    // touch captures the pointer to the first cell: let go so the cells dragged over get pointerenter
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     paint = steps[i] === op ? 'keep' : op;
     const next = [...steps];
     next[i] = paint;
     setSteps(next, 'seq' + effect.id);
-    window.addEventListener('pointerup', () => (paint = null), { once: true });
+    const stop = () => {
+      paint = null;
+      window.removeEventListener('pointerup', stop);
+      window.removeEventListener('pointercancel', stop);
+    };
+    window.addEventListener('pointerup', stop);
+    window.addEventListener('pointercancel', stop);
   }
   function enter(i: number, op: SeqStep) {
     if (!paint) return;
@@ -41,11 +49,13 @@
     setSteps(Array.from({ length: n }, (_, i) => steps[i % steps.length] ?? 'keep'));
   }
   const shift = (d: number) => setSteps(steps.map((_, i) => steps[(i - d + steps.length) % steps.length]));
+  // state, not derived: reading storage tracks nothing, so Paste would stay disabled after Copy
+  let clip = $state(localGet<SeqStep[] | null>('seqClipboard', null));
   function copy() {
     localSet('seqClipboard', steps);
+    clip = [...steps];
     store.toast('Pattern copied.', 'ok', 1500);
   }
-  const clip = $derived(localGet<SeqStep[] | null>('seqClipboard', null));
 </script>
 
 <div class="seq">
@@ -56,8 +66,8 @@
       </select>
     </label>
     <span class="grow"></span>
-    <button class="mini" title="Shift the pattern left" onclick={() => shift(-1)}>◀</button>
-    <button class="mini" title="Shift the pattern right" onclick={() => shift(1)}>▶</button>
+    <button class="mini" title="Shift the pattern left" aria-label="Shift the pattern left" onclick={() => shift(-1)}>◀</button>
+    <button class="mini" title="Shift the pattern right" aria-label="Shift the pattern right" onclick={() => shift(1)}>▶</button>
     <button class="mini" title="Random pattern" onclick={() => setSteps(randomSteps(makeRng(randomSeed()), steps.length))}>Random</button>
     <button class="mini" title="Clear every step" onclick={() => setSteps(steps.map(() => 'keep'))}>Clear</button>
     <button class="mini" title="Copy this pattern" onclick={copy}>Copy</button>

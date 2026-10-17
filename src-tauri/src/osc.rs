@@ -3,8 +3,10 @@
 // webview as an "osc" event with its address.
 
 use serde::Serialize;
+use std::io::ErrorKind;
 use std::net::UdpSocket;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
@@ -87,17 +89,38 @@ fn parse_into(b: &[u8], out: &mut Vec<OscMessage>, depth: u32) {
 
 /// Which listener is the current one: a new port (or 0) makes the old thread stop.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
+/// The port the current listener has (0: none).
+static PORT: Mutex<u16> = Mutex::new(0);
 
 /// Listen for OSC on `port` (all network interfaces, so a phone on the same network can send);
-/// 0 stops listening.
+/// 0 stops listening. Async, so binding (which may wait for the old listener) never holds up the
+/// window.
 #[tauri::command]
-pub fn osc_listen(app: AppHandle, port: u16) -> Result<(), String> {
+pub async fn osc_listen(app: AppHandle, port: u16) -> Result<(), String> {
+    let mut current = PORT.lock().unwrap_or_else(|e| e.into_inner());
+    // already listening there (the page was reloaded): keep it, a second socket can't bind the port
+    if port != 0 && *current == port {
+        return Ok(());
+    }
     let me = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    *current = 0;
     if port == 0 {
         return Ok(());
     }
-    let socket = UdpSocket::bind(("0.0.0.0", port)).map_err(|e| e.to_string())?;
+    // a listener that was just stopped keeps the port until its read times out
+    let mut tries = 0;
+    let socket = loop {
+        match UdpSocket::bind(("0.0.0.0", port)) {
+            Ok(s) => break s,
+            Err(e) if e.kind() == ErrorKind::AddrInUse && tries < 5 => {
+                tries += 1;
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    };
     socket.set_read_timeout(Some(Duration::from_millis(250))).map_err(|e| e.to_string())?;
+    *current = port;
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         while GENERATION.load(Ordering::SeqCst) == me {

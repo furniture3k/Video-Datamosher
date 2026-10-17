@@ -76,7 +76,9 @@
     localSet('recentCommands', [it.id, ...recent.filter((x) => x !== it.id)].slice(0, 6));
     store.ui.dialog = null;
     // after the palette closes, so commands that open a dialog can
-    tick().then(it.run);
+    tick()
+      .then(it.run)
+      .catch((e) => store.toast(`${it.title}: ${(e as Error)?.message ?? e}`, 'error', 6000));
   }
 
   async function onKey(e: KeyboardEvent) {

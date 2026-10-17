@@ -44,8 +44,11 @@ export async function listenForIncoming() {
   // installed web app: "Open with moshpit" and double-clicked files (file_handlers in the manifest)
   (window as unknown as LaunchWindow).launchQueue?.setConsumer(async (p) => {
     if (!p.files?.length) return;
-    const files = await Promise.all(p.files.map((h) => h.getFile()));
-    openFiles(files);
+    try {
+      await openFiles(await Promise.all(p.files.map((h) => h.getFile())));
+    } catch (e) {
+      store.toast('Could not open the file: ' + ((e as Error)?.message ?? e), 'error', 6000);
+    }
   });
 
   // shared from another app (share_target): the service worker stashed the files

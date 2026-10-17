@@ -79,7 +79,10 @@ fn remove_stale(tmp: &Path) {
     for e in entries.flatten() {
         let name = e.file_name();
         let path = e.path();
-        if !name.to_string_lossy().starts_with("moshpit-") || !path.is_dir() {
+        // only work folders (moshpit-<process id>), never anything else that happens to start with "moshpit-"
+        let name = name.to_string_lossy();
+        let ours = name.strip_prefix("moshpit-").is_some_and(|id| !id.is_empty() && id.bytes().all(|c| c.is_ascii_digit()));
+        if !ours || !path.is_dir() {
             continue;
         }
         let free = match fs::OpenOptions::new().write(true).open(path.join(".lock")) {
@@ -408,7 +411,8 @@ pub async fn engine_assemble(state: State<'_, Engine>, request: Request<'_>) -> 
         for p in &a.pieces {
             match p.as_slice() {
                 [0, off, len] => {
-                    let r = inline.get(*off as usize..(*off + *len) as usize).ok_or("inline range out of bounds")?;
+                    let end = off.checked_add(*len).ok_or("inline range out of bounds")?;
+                    let r = inline.get(*off as usize..end as usize).ok_or("inline range out of bounds")?;
                     out.write_all(r).map_err(io)?;
                 }
                 [1, file, off, len] => {
@@ -503,19 +507,22 @@ mod tests {
     fn stale_folders_are_removed_but_live_ones_kept() {
         let tmp = std::env::temp_dir().join(format!("moshpit-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
-        let live = tmp.join("moshpit-live");
-        let dead = tmp.join("moshpit-dead");
+        let live = tmp.join("moshpit-1");
+        let dead = tmp.join("moshpit-2");
         let other = tmp.join("unrelated");
-        for d in [&live, &dead, &other] {
+        let lookalike = tmp.join("moshpit-exports");
+        for d in [&live, &dead, &other, &lookalike] {
             fs::create_dir_all(d).unwrap();
         }
         let held = fs::File::create(live.join(".lock")).unwrap();
         held.try_lock().unwrap();
         fs::File::create(dead.join(".lock")).unwrap();
+        fs::File::create(lookalike.join(".lock")).unwrap();
         remove_stale(&tmp);
         assert!(live.exists());
         assert!(!dead.exists());
         assert!(other.exists());
+        assert!(lookalike.exists());
         drop(held);
         let _ = fs::remove_dir_all(&tmp);
     }

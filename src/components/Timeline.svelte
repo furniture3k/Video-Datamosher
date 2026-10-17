@@ -22,6 +22,8 @@
   let rulerLane = $state<HTMLDivElement>();
   let viewW = $state(800);
   const narrow = $derived(viewW < 600);
+  /** laptop widths: the toolbar's buttons lose their words so the time and zoom stay on one line */
+  const compactBar = $derived(viewW < 1120);
   /** gutter (track header) width */
   const G = $derived(narrow ? 92 : 172);
   let keyCanvas = $state<HTMLCanvasElement>();
@@ -697,7 +699,8 @@
     const el = e.currentTarget as HTMLElement;
     const mv = (ev: PointerEvent) => pick(Object.assign(ev, { currentTarget: el }) as PointerEvent);
     el.addEventListener('pointermove', mv);
-    el.addEventListener('pointerup', () => el.removeEventListener('pointermove', mv), { once: true });
+    // (lost capture: after pointerup and after a cancelled touch)
+    el.addEventListener('lostpointercapture', () => el.removeEventListener('pointermove', mv), { once: true });
   }
 
   function onWheel(e: WheelEvent) {
@@ -739,7 +742,7 @@
 {/if}
 
 <div class="wrap">
-  <div class="toolbar" class:narrow>
+  <div class="toolbar" class:narrow class:compact={compactBar}>
     <button class="ghost" title="Split at playhead  S" onclick={edit.splitAtPlayhead} disabled={!store.project.clips.length}><Icon name="blade" /><span class="tlbl">Split</span></button>
     <button class="ghost" title="Delete selected  Del" onclick={() => edit.deleteSelected()} disabled={!store.ui.selectedClips.length && !store.ui.selectedTransition}><Icon name="trash" /><span class="tlbl">Delete</span></button>
     <button class="ghost" title="Duplicate selected  D" onclick={edit.duplicateSelected} disabled={!store.ui.selectedClips.length}><Icon name="copy" /><span class="tlbl">Duplicate</span></button>
@@ -1069,12 +1072,12 @@
       {#if t.kind === 'video'}
         <button class="tb" class:on={t.muted} title={t.muted ? 'Hidden: click to show this track' : 'Hide this track (it is left out of the picture)'} aria-label="Show / hide track" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.muted = !t.muted))}><Icon name={t.muted ? 'eyeoff' : 'eye'} size={11} /></button>
       {:else}
-        <button class="tb" class:on={t.muted} title="Mute" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.muted = !t.muted))}>M</button>
-        <button class="tb" class:on={t.solo} title="Solo" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.solo = !t.solo))}>S</button>
-        <button class="tb mosh" class:on={t.mosh} title={t.mosh ? 'Sound follows the mosh (stutters with the picture). Click to keep it clean.' : 'Sound stays clean. Click to make it follow the mosh.'} onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.mosh = !t.mosh))}>~</button>
+        <button class="tb" class:on={t.muted} title="Mute" aria-label="Mute {t.name}" aria-pressed={!!t.muted} onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.muted = !t.muted))}>M</button>
+        <button class="tb" class:on={t.solo} title="Solo" aria-label="Solo {t.name}" aria-pressed={!!t.solo} onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.solo = !t.solo))}>S</button>
+        <button class="tb mosh" class:on={t.mosh} aria-label="Sound follows the mosh" aria-pressed={!!t.mosh} title={t.mosh ? 'Sound follows the mosh (stutters with the picture). Click to keep it clean.' : 'Sound stays clean. Click to make it follow the mosh.'} onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.mosh = !t.mosh))}>~</button>
       {/if}
       <button class="tb" class:on={t.locked} title={t.locked ? 'Locked: click to unlock' : 'Lock the track so its clips can\'t be changed by accident'} aria-label="Lock track" onpointerdown={(e) => e.stopPropagation()} onclick={() => store.edit(() => (t.locked = !t.locked || undefined))}><Icon name={t.locked ? 'lock' : 'unlock'} size={10} /></button>
-      {#if id !== CLIP_AUDIO && id !== VIDEO_TRACK}<button class="tb rm" title="Remove track" onclick={() => edit.removeTrack(id)}>×</button>{/if}
+      {#if id !== CLIP_AUDIO && id !== VIDEO_TRACK}<button class="tb rm" title="Remove track" aria-label="Remove {t.name}" onclick={() => edit.removeTrack(id)}>×</button>{/if}
     </span>
   {/if}
 {/snippet}
@@ -1200,7 +1203,8 @@
     scrollbar-width: none;
   }
   .toolbar.narrow .tlbl,
-  .toolbar.narrow .dur {
+  .toolbar.narrow .dur,
+  .toolbar.compact .tlbl {
     display: none;
   }
   .toolbar.narrow button {
@@ -1218,6 +1222,7 @@
   }
   .dur {
     margin-right: 8px;
+    white-space: nowrap;
   }
   .zt {
     font: 15px var(--mono);
@@ -1813,6 +1818,8 @@
     flex-direction: column;
     padding: 4px;
     min-width: 210px;
+    max-height: calc(100vh - 8px);
+    overflow-y: auto;
     background: var(--surface-2);
     border: 1px solid var(--line-2);
     border-radius: var(--r);

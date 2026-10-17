@@ -15,9 +15,14 @@
 
   /** A gallery post on GitHub with this mosh's recipe filled in (the video is attached there). */
   async function submitToGallery() {
-    const q = new URLSearchParams({ category: 'show-and-tell', title: `My mosh: ${store.project.name || 'Untitled'}`, recipe: await shareCode() });
-    window.open(`${REPO}/discussions/new?${q}`, '_blank', 'noopener');
+    try {
+      const q = new URLSearchParams({ category: 'show-and-tell', title: `My mosh: ${store.project.name || 'Untitled'}`, recipe: await shareCode() });
+      window.open(`${REPO}/discussions/new?${q}`, '_blank', 'noopener');
+    } catch (e) {
+      store.toast('Could not make the recipe: ' + (e as Error).message, 'error');
+    }
   }
+  import { onDestroy } from 'svelte';
   import { isDesktop, isAndroidApp } from '../lib/platform';
   import { blobToDisk, saveFromDisk, revealFile } from '../lib/ffmpeg-native';
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
@@ -81,7 +86,13 @@
     const f = o.format;
     const { w, h } = encodedSize({ srcW: mosh.w, srcH: mosh.h, width: o.width });
     if (!webCodecs || (f !== 'mp4' && f !== 'webm')) return void (hwCodec = null);
-    hardwareCodec(f, w, h).then((c) => (hwCodec = c));
+    // a slower answer for an older format or size mustn't overwrite the current one
+    let stale = false;
+    hardwareCodec(f, w, h).then(
+      (c) => !stale && (hwCodec = c),
+      () => !stale && (hwCodec = null),
+    );
+    return () => (stale = true);
   });
   const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 
@@ -97,11 +108,14 @@
     localSet('exportOpts', $state.snapshot(o));
     running = true;
     error = '';
+    if (result?.url) URL.revokeObjectURL(result.url);
     result = null;
-    signal = { cancelled: false };
+    const my = (signal = { cancelled: false });
     const done = busy('export');
     try {
-      const r = await exportVideo($state.snapshot(store.project) as Project, { ...($state.snapshot(o) as ExportOptions), range: onlyRange ? marked : null }, (s, p) => ((stage = s), (progress = p)), signal);
+      const r = await exportVideo($state.snapshot(store.project) as Project, { ...($state.snapshot(o) as ExportOptions), range: onlyRange ? marked : null }, (s, p) => my === signal && ((stage = s), (progress = p)), my);
+      // cancelled (or the dialog closed) just as it finished: don't save it anyway
+      if (my.cancelled) return;
       if (isDesktop) {
         result = { file: r.file ?? (await blobToDisk(r.blob!, r.name)), name: r.name, size: r.size, type: r.type };
         running = false;
@@ -111,10 +125,11 @@
         download(r.blob!, r.name);
       }
     } catch (e) {
-      if (!(e instanceof Cancelled)) error = (e as Error).message;
+      if (!(e instanceof Cancelled) && !my.cancelled) error = (e as Error).message;
     } finally {
       done();
-      running = false;
+      // a cancelled export that ends late mustn't mark a newer one as finished
+      if (my === signal) running = false;
     }
   }
   /** Export in the background (on the second engine) and close: editing carries on meanwhile. */
@@ -140,6 +155,11 @@
     running = false;
     stage = '';
   }
+  onDestroy(() => {
+    // closed mid-export (also by the editor's Escape, which skips onclose): stop it
+    if (running) cancel();
+    if (result?.url) URL.revokeObjectURL(result.url);
+  });
   const mb = (n: number) => (n / 1048576).toFixed(n > 1e7 ? 0 : 1) + ' MB';
 </script>
 

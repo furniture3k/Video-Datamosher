@@ -10,14 +10,16 @@
     const el = e.currentTarget as HTMLElement;
     el.setPointerCapture(e.pointerId);
     const move = (ev: PointerEvent) => (dy = Math.max(0, ev.clientY - y0));
-    const up = () => {
+    const up = (ev: PointerEvent) => {
       el.removeEventListener('pointermove', move);
-      if (dy > 70) onclose();
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', up);
+      if (ev.type === 'pointerup' && dy > 70) onclose();
       dy = 0;
     };
     el.addEventListener('pointermove', move);
-    el.addEventListener('pointerup', up, { once: true });
-    el.addEventListener('pointercancel', up, { once: true });
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
   }
 </script>
 
@@ -46,7 +48,6 @@
     border-radius: 16px 16px 0 0;
     box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
     animation: up 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
-    padding-bottom: env(safe-area-inset-bottom);
   }
   .head {
     position: relative;

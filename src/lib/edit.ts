@@ -381,7 +381,6 @@ export async function removeMedia(id: string) {
     p.media = p.media.filter((m) => m.id !== id);
   });
   forgetMedia(id);
-  store.ui.selectedClips = store.ui.selectedClips.filter((x) => store.project.clips.some((c) => c.id === x));
 }
 
 export function zoom(f: number) {

@@ -18,10 +18,13 @@
   let error = $state('');
   let working = $state(false);
 
-  refreshBeats().then((x) => {
-    f = x;
-    if (!x || !x.beats.length) error = 'No music with a beat found. Put a song on an audio track (or pick the beat source in the Audio tab) first.';
-  });
+  refreshBeats().then(
+    (x) => {
+      f = x;
+      if (!x || !x.beats.length) error = 'No music with a beat found. Put a song on an audio track (or pick the beat source in the Audio tab) first.';
+    },
+    (e) => (error = 'Could not listen to the music: ' + (e as Error).message),
+  );
 
   const cuts = $derived(f ? Math.max(1, Math.ceil((o.onBars ? f.downbeats : f.beats).length / Math.max(1, o.every))) : 0);
   const drops = $derived(f && o.blooms ? findDrops(f).length : 0);

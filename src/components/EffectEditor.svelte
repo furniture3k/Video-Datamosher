@@ -127,13 +127,15 @@
         <input type="number" min="1" max={total} value={effect.end} onchange={(e) => store.edit(() => (effect.end = Math.max(effect.start + 1, Math.min(total, +(e.target as HTMLInputElement).value))))} />
       </label>
       <button class="tiny" title="Set out point to playhead" onclick={() => store.edit(() => (effect.end = Math.max(effect.start + 1, playSrc + 1)))}>Mark out</button>
-      <button class="tiny ghost" title="Cover the whole timeline" onclick={() => store.edit(() => ((effect.start = 0), (effect.end = total)))}>All</button>
-      {#if marked}
-        <button class="tiny ghost" title="Cover the In–Out range marked with I and O" onclick={() => fitTo(marked[0], marked[1])}>In–Out</button>
-      {/if}
-      {#if clipUnder}
-        <button class="tiny ghost" title="Cover the clip under the playhead" onclick={() => fitTo(clipUnder.start, clipUnder.end)}>Clip</button>
-      {/if}
+      <div class="fit">
+        <button class="tiny ghost" title="Cover the whole timeline" onclick={() => store.edit(() => ((effect.start = 0), (effect.end = total)))}>All</button>
+        {#if marked}
+          <button class="tiny ghost" title="Cover the In–Out range marked with I and O" onclick={() => fitTo(marked[0], marked[1])}>In–Out</button>
+        {/if}
+        {#if clipUnder}
+          <button class="tiny ghost" title="Cover the clip under the playhead" onclick={() => fitTo(clipUnder.start, clipUnder.end)}>Clip</button>
+        {/if}
+      </div>
     </div>
     <div class="small faint">{((effect.end - effect.start) / store.fps).toFixed(2)} s long. Drag the bar's ends on the timeline to change it.</div>
   </section>
@@ -268,7 +270,8 @@
 </div>
 
 <style>
-  .code {
+  /* (textarea only: the effect's code badge in the title is a .code too) */
+  textarea.code {
     width: 100%;
     min-height: 180px;
     resize: vertical;
@@ -354,10 +357,16 @@
   .range input {
     width: 70px;
   }
-  .range .ghost {
+  /* All / In–Out / Clip share the right-hand column (one button per cell would overlap) */
+  .range .fit {
     grid-column: 3;
-    grid-row: 1;
+    grid-row: 1 / span 2;
     justify-self: end;
+    align-self: start;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px;
   }
   .tiny {
     height: 22px;

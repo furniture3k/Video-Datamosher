@@ -15,6 +15,8 @@
   const hi = $derived(def.type === 'number' || def.type === 'int' ? def.max : 1);
   const key = $derived('auto' + fx.id + def.key);
   let canvas = $state<HTMLCanvasElement>();
+  /** drawn width: redrawn when the inspector is resized */
+  let cw = $state(0);
   const H = 70;
 
   function setAuto(fn: (a: Automation) => void, k: string | null = key) {
@@ -44,13 +46,17 @@
     const p = $state.snapshot(store.project) as Project;
     const [s, e] = [fx.start, fx.end];
     envNote = 'listening…';
+    // a slower, older read must not overwrite a newer one
+    let live = true;
     audioFeatures(p, audioKey(p, au.track)).then(
       (f) => {
+        if (!live) return;
         env = f ? audioEnvelope(f, au, s, e) : null;
         envNote = f ? '' : 'No sound on that track yet: drop music on the timeline.';
       },
-      () => (envNote = 'Could not read the sound.'),
+      () => live && (envNote = 'Could not read the sound.'),
     );
+    return () => (live = false);
   });
   const audioTracks = $derived(store.project.tracks.filter((t) => t.kind === 'audio'));
   const BANDS: [string, string][] = [
@@ -81,7 +87,7 @@
     void JSON.stringify(au);
     void store.ui.theme;
     if (!canvas || !au) return;
-    const w = canvas.clientWidth || 300;
+    const w = cw || 300;
     const dpr = window.devicePixelRatio || 1;
     canvas.width = w * dpr;
     canvas.height = H * dpr;
@@ -161,7 +167,9 @@
     setAuto((x) => {
       if (x.kind !== 'curve') return;
       const isEnd = dragIdx === 0 || dragIdx === x.points.length - 1;
-      x.points[dragIdx] = [isEnd ? x.points[dragIdx][0] : p[0], p[1]];
+      // a point can't pass its neighbours (the curve's points stay in time order)
+      const t = isEnd ? x.points[dragIdx][0] : Math.max(x.points[dragIdx - 1][0], Math.min(x.points[dragIdx + 1][0], p[0]));
+      x.points[dragIdx] = [t, p[1]];
     });
   }
   function ctxmenu(e: MouseEvent) {
@@ -180,13 +188,13 @@
         <button class:on={a.kind === 'audio'} onclick={() => switchKind('audio')} title="Follow the music: bass, loudness, hits or beats">Audio</button>
       </div>
       {#if a.kind === 'curve'}
-        <select value={a.interp} onchange={(e) => setAuto((x) => x.kind === 'curve' && (x.interp = (e.target as HTMLSelectElement).value as never), null)}>
+        <select value={a.interp} aria-label="Curve shape" onchange={(e) => setAuto((x) => x.kind === 'curve' && (x.interp = (e.target as HTMLSelectElement).value as never), null)}>
           <option value="smooth">Smooth</option>
           <option value="linear">Linear</option>
           <option value="step">Steps</option>
         </select>
       {:else if a.kind === 'lfo'}
-        <select value={a.shape} onchange={(e) => setAuto((x) => x.kind === 'lfo' && (x.shape = (e.target as HTMLSelectElement).value as never), null)}>
+        <select value={a.shape} aria-label="LFO wave" onchange={(e) => setAuto((x) => x.kind === 'lfo' && (x.shape = (e.target as HTMLSelectElement).value as never), null)}>
           {#each ['sine', 'triangle', 'square', 'saw', 'random', 'noise'] as s}<option value={s}>{s}</option>{/each}
         </select>
       {:else if a.kind === 'audio'}
@@ -195,12 +203,12 @@
         </select>
       {/if}
     </div>
-    <canvas bind:this={canvas} style="height:{H}px" class:audio={a.kind === 'audio'} onpointerdown={down} onpointermove={move} onpointerup={() => (dragIdx = -1)} oncontextmenu={ctxmenu}></canvas>
+    <canvas bind:this={canvas} bind:clientWidth={cw} style="height:{H}px" class:audio={a.kind === 'audio'} onpointerdown={down} onpointermove={move} onpointerup={() => (dragIdx = -1)} onlostpointercapture={() => (dragIdx = -1)} oncontextmenu={ctxmenu}></canvas>
     {#if a.kind === 'curve'}
       <div class="row shapes small">
         <span class="faint grow">click adds a point, right-click removes</span>
         {#each [['up', '⟋'], ['down', '⟍'], ['peak', '⋀'], ['dip', '⋁'], ['steps', '⌐']] as [n, g]}
-          <button class="mini" title={n} onclick={() => shape(n)}>{g}</button>
+          <button class="mini" title={n} aria-label="Curve: {n}" onclick={() => shape(n)}>{g}</button>
         {/each}
       </div>
     {:else if a.kind === 'lfo'}

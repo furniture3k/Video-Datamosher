@@ -4,10 +4,17 @@
   import { shareCode, applyShareCode } from '../lib/projectio.svelte';
   let code = $state('');
   let paste = $state('');
-  shareCode().then((c) => (code = c));
+  shareCode().then(
+    (c) => (code = c),
+    (e) => store.toast('Could not make the code: ' + (e as Error).message, 'error'),
+  );
   async function copy() {
-    await navigator.clipboard.writeText(code);
-    store.toast('Copied.', 'ok');
+    try {
+      await navigator.clipboard.writeText(code);
+      store.toast('Copied.', 'ok');
+    } catch {
+      store.toast('Copying was blocked. Select the code and copy it yourself.', 'error');
+    }
   }
   async function apply() {
     try {

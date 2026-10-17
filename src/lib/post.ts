@@ -394,32 +394,36 @@ export class PostRunner {
     for (let i = 0; i < jpegs.length; i++) {
       if (signal?.cancelled) throw new Cancelled();
       const bmp = await createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
-      const k = offset + i;
-      const fr = frames[Math.min(k, frames.length - 1)] ?? { src: k };
-      let src: CanvasImageSource = bmp;
       let extras: FrameExtras = {};
-      if (this.effects.length) {
-        this.pp ??= new PostProcessor(bmp.width, bmp.height, this.fps);
-        extras = await this.extrasFor(fr, bmp.width, bmp.height);
-        this.pp.processFrame(bmp, fr, k, this.effects, extras);
-        src = this.pp.canvas;
-      }
-      extras.clean?.close();
-      if (this.texts.length) {
-        const t = (fr.at ?? fr.src) / this.fps;
-        if (this.texts.some((x) => textAlpha(x, t) > 0)) {
-          this.c2d ??= document.createElement('canvas');
-          this.c2d.width = bmp.width;
-          this.c2d.height = bmp.height;
-          const ctx = this.c2d.getContext('2d')!;
-          ctx.drawImage(src, 0, 0);
-          drawTexts(ctx, this.texts, t, bmp.width, bmp.height, 'clean');
-          src = this.c2d;
+      // bitmaps hold decoded pixels (often GPU memory) until closed: also when a frame fails
+      try {
+        const k = offset + i;
+        const fr = frames[Math.min(k, frames.length - 1)] ?? { src: k };
+        let src: CanvasImageSource = bmp;
+        if (this.effects.length) {
+          this.pp ??= new PostProcessor(bmp.width, bmp.height, this.fps);
+          extras = await this.extrasFor(fr, bmp.width, bmp.height);
+          this.pp.processFrame(bmp, fr, k, this.effects, extras);
+          src = this.pp.canvas;
         }
+        if (this.texts.length) {
+          const t = (fr.at ?? fr.src) / this.fps;
+          if (this.texts.some((x) => textAlpha(x, t) > 0)) {
+            this.c2d ??= document.createElement('canvas');
+            this.c2d.width = bmp.width;
+            this.c2d.height = bmp.height;
+            const ctx = this.c2d.getContext('2d')!;
+            ctx.drawImage(src, 0, 0);
+            drawTexts(ctx, this.texts, t, bmp.width, bmp.height, 'clean');
+            src = this.c2d;
+          }
+        }
+        if (src === bmp) out.push(jpegs[i]);
+        else out.push(await canvasJpeg(src as HTMLCanvasElement, this.quality));
+      } finally {
+        extras.clean?.close();
+        bmp.close();
       }
-      if (src === bmp) out.push(jpegs[i]);
-      else out.push(await canvasJpeg(src as HTMLCanvasElement, this.quality));
-      bmp.close();
       if (i % 4 === 0) onProgress?.(i / jpegs.length);
     }
     return out;
@@ -434,6 +438,15 @@ export class PostRunner {
     if (!jpeg) return {};
     const blob = new Blob([jpeg as BlobPart], { type: 'image/jpeg' });
     const clean = await createImageBitmap(blob, { resizeWidth: w, resizeHeight: h });
+    try {
+      return await this.guardExtras(pos, guards, clean, w, h);
+    } catch (e) {
+      clean.close();
+      throw e;
+    }
+  }
+
+  private async guardExtras(pos: number, guards: EffectInstance[], clean: ImageBitmap, w: number, h: number): Promise<FrameExtras> {
     let person: HTMLCanvasElement | null = null;
     if (guards.some((e) => e.params.source === 'person')) {
       person = this.personCache.get(pos) ?? null;

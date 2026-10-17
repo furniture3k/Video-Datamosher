@@ -65,7 +65,8 @@ export function migrate(raw: unknown): Project {
   const audio = { ...base.audio, ...(v2.audio ?? {}) } as Project['audio'] & Record<string, unknown>;
   delete audio.source;
   delete audio.clipId;
-  const tracks = v2.tracks?.length ? v2.tracks : base.tracks;
+  // a copy: the tracks missing from old projects are added without touching the saved data
+  const tracks = v2.tracks?.length ? [...v2.tracks] : base.tracks;
   if (!tracks.some((t) => t.id === VIDEO_TRACK)) tracks.unshift(base.tracks[0]);
   if (!tracks.some((t) => t.id === CLIP_AUDIO)) tracks.splice(1, 0, base.tracks[1]);
   return {

@@ -8,7 +8,8 @@
   async function add(id: string) {
     busy = true;
     try {
-      await addGenerator(id, seconds);
+      // the box can be left empty or out of range
+      await addGenerator(id, Math.min(30, Math.max(1, Number(seconds) || 4)));
       store.ui.dialog = null;
     } catch (e) {
       store.toast('Could not generate: ' + (e as Error).message, 'error');

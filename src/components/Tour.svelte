@@ -71,6 +71,8 @@
 </script>
 
 <svelte:window onkeydown={(e) => {
+  const el = e.target as HTMLElement | null;
+  if (el?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
   if (e.key === 'Enter' || e.key === 'ArrowRight') (e.preventDefault(), e.stopPropagation(), next());
   else if (e.key === 'ArrowLeft' && i > 0) (e.preventDefault(), i--);
 }} />

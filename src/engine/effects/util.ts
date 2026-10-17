@@ -36,5 +36,5 @@ export function rangeRuns(frames: Frame[], e: EffectInstance): [number, number][
  */
 export function defuseStartCodes(d: Uint8Array, orig: Uint8Array, from: number) {
   for (let q = from; q + 2 < d.length; q++)
-    if (d[q] === 0 && d[q + 1] === 0 && d[q + 2] <= 1 && !(orig[q] === 0 && orig[q + 1] === 0 && orig[q + 2] === 1)) d[q + 2] = 2;
+    if (d[q] === 0 && d[q + 1] === 0 && d[q + 2] <= 1 && !(orig[q] === 0 && orig[q + 1] === 0 && orig[q + 2] === d[q + 2])) d[q + 2] = 2;
 }

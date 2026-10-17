@@ -19,8 +19,11 @@ const blobToDataUrl = (url: string) =>
         .then((b) => new Promise<string>((res) => {
           const fr = new FileReader();
           fr.onload = () => res(String(fr.result));
+          // the thumbnail is optional: never hang the import on it
+          fr.onerror = () => res('');
           fr.readAsDataURL(b);
         }))
+        .catch(() => '')
         .finally(() => URL.revokeObjectURL(url))
     : Promise.resolve('');
 
@@ -225,12 +228,14 @@ export async function prepareMedia(m: MediaItem) {
     return;
   }
   r.playable = await canPlay(blob, !m.hasVideo);
-  if (m.hasVideo && r.proxy !== 'ready') {
+  // (already queued or being made: prepareMedia runs again when a project is opened or restored)
+  if (m.hasVideo && r.proxy !== 'ready' && r.proxy !== 'pending' && r.proxy !== 'working') {
     if (await getFile(proxyKey(m.id))) r.proxy = 'ready';
     else if (!r.playable || m.width > 960) {
       r.proxy = 'pending';
       queue(async () => {
-        if (!store.project.media.some((x) => x.id === m.id)) return;
+        // another project is open now: made when this one is opened again
+        if (!store.project.media.some((x) => x.id === m.id)) return void (r.proxy = 'none');
         r.proxy = 'working';
         try {
           const px = await makeProxy(m, blob, (p) => (r.progress = p), !canH264());

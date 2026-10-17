@@ -104,7 +104,9 @@
   $effect(() => {
     // the effect settings sheet follows the selection
     if (!fx && sheet === 'fx') sheet = null;
-    if (!clip && !text && (sheet === 'speed' || sheet === 'volume' || sheet === 'clip')) sheet = null;
+    // speed and volume are for clips only: picking a title instead closes them
+    if (!clip && (sheet === 'speed' || sheet === 'volume')) sheet = null;
+    if (!clip && !text && sheet === 'clip') sheet = null;
   });
 
   const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4];
@@ -306,8 +308,8 @@
     padding: 0 10px 0 6px;
   }
   .hb {
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
   }
   .name {
     flex: 1;
@@ -359,8 +361,8 @@
   .tools {
     display: flex;
     align-items: stretch;
-    height: calc(68px + env(safe-area-inset-bottom));
-    padding-bottom: env(safe-area-inset-bottom);
+    /* #app already keeps clear of the home indicator (safe-area padding in app.css) */
+    height: 68px;
     background: var(--surface);
     border-top: 1px solid var(--line);
   }

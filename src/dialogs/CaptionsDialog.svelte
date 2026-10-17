@@ -16,6 +16,8 @@
   let style = $state<CaptionStyle>(localGet('captionStyle', 'clean'));
   let replace = $state(true);
   let words = $state.raw<Word[] | null>(null);
+  // an old run's message (from the last time this was open) isn't news
+  if (!captionJob.running) captionJob.error = '';
   const existing = $derived(store.project.texts.filter((t) => t.caption).length);
   const LANGS = [['', 'Detect'], ['english', 'English'], ['spanish', 'Spanish'], ['french', 'French'], ['german', 'German'], ['italian', 'Italian'], ['portuguese', 'Portuguese'], ['dutch', 'Dutch'], ['japanese', 'Japanese'], ['korean', 'Korean'], ['chinese', 'Chinese'], ['russian', 'Russian'], ['arabic', 'Arabic'], ['hindi', 'Hindi']];
 

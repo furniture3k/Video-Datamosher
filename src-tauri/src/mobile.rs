@@ -23,9 +23,9 @@ pub fn free_name(dir: &std::path::Path, name: &str) -> PathBuf {
 }
 
 /// Save the request's body (raw bytes) to Downloads under the name in the `name` header.
-/// Returns where it went.
+/// Returns where it went. Async, so writing a large export doesn't freeze the window.
 #[tauri::command]
-pub fn save_download(app: AppHandle, request: Request<'_>) -> Result<String, String> {
+pub async fn save_download(app: AppHandle, request: Request<'_>) -> Result<String, String> {
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else { return Err("expected the file's bytes".into()) };
     let name = request.headers().get("name").and_then(|v| v.to_str().ok()).unwrap_or("mosh");
     let name = percent_encoding::percent_decode_str(name).decode_utf8_lossy().to_string();

@@ -129,7 +129,7 @@ export function fitRange(input: Frame[], out: Frame[], e: Pick<EffectInstance, '
 
 function finishFrames(frames: Frame[], prep: Prepared, codec?: MoshCodec): Frame[] {
   // The decoder needs a real keyframe (with headers) first.
-  if (frames.length === 0 || frames[0].type !== 'I') frames.unshift(prep.frames[0]);
+  if ((frames.length === 0 || frames[0].type !== 'I') && prep.frames.length) frames.unshift(prep.frames[0]);
   if (frames.length > limits.maxOutputFrames) frames.length = limits.maxOutputFrames;
   return codec === 'h264' ? renumberH264(frames) : frames;
 }

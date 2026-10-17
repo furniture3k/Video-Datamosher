@@ -502,6 +502,8 @@ export function decodeToMjpegArgs(d: DecoderSettings, input: string, out: string
 
 function tempo(speed: number): string[] {
   const f: string[] = [];
+  // a speed of 0 (or less, or NaN) would never reach the 0.5..2 range atempo takes
+  if (!(speed > 0) || !isFinite(speed)) return f;
   let s = speed;
   while (s > 2) (f.push('atempo=2'), (s /= 2));
   while (s < 0.5) (f.push('atempo=0.5'), (s /= 0.5));

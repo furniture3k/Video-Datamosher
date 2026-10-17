@@ -193,12 +193,13 @@ function tempo(env: Float32Array): { period: number; confidence: number } {
     const score = ac[lag] * prior;
     if (score > bestScore) ((bestScore = score), (best = lag));
   }
-  // parabolic refinement of the peak
+  // parabolic refinement of the peak (at most half a lag: the prior can pick a lag that isn't
+  // a peak of the autocorrelation itself, where the parabola's vertex lies far away)
   const a = ac[best - 1];
   const b = ac[best];
   const c = ac[best + 1];
   const den = a - 2 * b + c;
-  const period = den < 0 ? best + (0.5 * (a - c)) / den : best;
+  const period = den < 0 ? best + Math.max(-0.5, Math.min(0.5, (0.5 * (a - c)) / den)) : best;
   return { period, confidence: Math.max(0, Math.min(1, b / (zero / n || 1))) };
 }
 

@@ -154,6 +154,13 @@
       height: 52px;
     }
   }
+  /* a finger-sized close button */
+  @media (pointer: coarse) {
+    .head .icon {
+      width: 44px;
+      height: 44px;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .backdrop,
     .modal {

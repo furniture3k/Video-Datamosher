@@ -37,6 +37,10 @@
   let recorder: MediaRecorder | null = null;
   let chunks: Blob[] = [];
   let fps = $state(0);
+  let destroyed = false;
+  // the latest useStream(): an older one that finishes later (or after Live closed) lets its stream go
+  let attempt = 0;
+  let fileUrl = '';
   // video frames are scaled to the engine size through this 2D canvas
   const scaler = document.createElement('canvas');
   const sctx = scaler.getContext('2d')!;
@@ -63,20 +67,29 @@
   async function useStream(kind: 'camera' | 'screen') {
     error = '';
     stopSource();
+    const my = ++attempt;
     try {
-      stream = kind === 'camera' ? await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } }) : await navigator.mediaDevices.getDisplayMedia({ video: true });
+      // ideal (not exact) sizes: phones and some webcams reject hard constraints
+      const s = kind === 'camera' ? await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } } }) : await navigator.mediaDevices.getDisplayMedia({ video: true });
+      if (destroyed || my !== attempt) return void s.getTracks().forEach((t) => t.stop());
+      stream = s;
+      video.removeAttribute('src');
       video.srcObject = stream;
       video.loop = false;
       await video.play();
       source = kind;
     } catch (e) {
+      if (destroyed || my !== attempt) return;
       error = (e as Error).message;
     }
   }
   async function useFile(f: Blob) {
     stopSource();
+    attempt++;
+    error = '';
     video.srcObject = null;
-    video.src = URL.createObjectURL(f);
+    fileUrl = URL.createObjectURL(f);
+    video.src = fileUrl;
     video.loop = true;
     video.muted = true;
     try {
@@ -89,12 +102,26 @@
   async function useClip(id: string) {
     const c = store.project.media.find((x) => x.id === id);
     if (c?.source.kind !== 'file') return;
-    const b = await getFile(c.source.fileId);
+    const b = await getFile(c.source.fileId).catch(() => null);
+    if (destroyed) return;
     if (b) useFile(b);
+    else error = 'That clip could not be read.';
   }
   function stopSource() {
     stream?.getTracks().forEach((t) => t.stop());
     stream = null;
+    if (fileUrl) URL.revokeObjectURL(fileUrl);
+    fileUrl = '';
+  }
+  async function useImage(f: Blob) {
+    try {
+      const b = await createImageBitmap(f);
+      if (destroyed) return b.close();
+      pendingImage?.close();
+      pendingImage = b;
+    } catch {
+      store.toast('That image could not be read.', 'error');
+    }
   }
 
   function loop() {
@@ -165,10 +192,15 @@
     recorder.onstop = async () => {
       const blob = new Blob(chunks, { type: recorder?.mimeType || 'video/webm' });
       const name = `live-mosh-${Date.now() % 100000}`;
-      const file = await finalizeRecording(blob, name);
-      if (await ask('Add the recording to your project as a clip? (Cancel = just download it)')) {
-        await addFiles([file], { track: 'v1', index: Infinity }, (performance.now() - t0) / 1000);
-      } else download(file, file.name);
+      const dur = (performance.now() - t0) / 1000;
+      try {
+        const file = await finalizeRecording(blob, name);
+        if (await ask('Add the recording to your project as a clip? (Cancel = just download it)')) {
+          await addFiles([file], { track: 'v1', index: Infinity }, dur);
+        } else download(file, file.name);
+      } catch (e) {
+        store.toast('Could not save the recording: ' + (e as Error).message, 'error', 6000);
+      }
     };
     recorder.start(250);
     recording = true;
@@ -193,6 +225,7 @@
 
   function close() {
     if (recording) recorder?.stop();
+    recording = false;
     store.ui.dialog = null;
   }
 
@@ -203,9 +236,14 @@
     fpsTimer = window.setInterval(() => ((fps = frameCount - lastCount), (lastCount = frameCount)), 1000);
   });
   onDestroy(() => {
+    destroyed = true;
+    // left some other way than close(): the recording so far is still offered
+    if (recorder?.state === 'recording') recorder.stop();
     cancelAnimationFrame(raf);
     clearInterval(fpsTimer);
     stopSource();
+    pendingImage?.close();
+    pendingImage = null;
     engine?.dispose();
     gl?.gl.getExtension('WEBGL_lose_context')?.loseContext();
   });
@@ -221,7 +259,7 @@
     e.preventDefault();
     const f = e.dataTransfer?.files[0];
     if (!f) return;
-    if (f.type.startsWith('image/')) pendingImage = await createImageBitmap(f);
+    if (f.type.startsWith('image/')) useImage(f);
     else useFile(f);
   }}>
     <canvas bind:this={canvas} class:hidden={source === 'none'}></canvas>
@@ -296,10 +334,12 @@
   <input bind:this={fileInput} type="file" accept="video/*" hidden onchange={(e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) useFile(f);
+    (e.target as HTMLInputElement).value = '';
   }} />
   <input bind:this={imgInput} type="file" accept="image/*" hidden onchange={async (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
-    if (f) pendingImage = await createImageBitmap(f);
+    if (f) useImage(f);
+    (e.target as HTMLInputElement).value = '';
   }} />
 </div>
 

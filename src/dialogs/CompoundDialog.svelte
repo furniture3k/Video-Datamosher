@@ -3,12 +3,21 @@
   import { store } from '../lib/store.svelte';
   import { compoundJob, cancelCompound } from '../lib/compound.svelte';
   import { ffmpeg } from '../lib/ffmpeg';
+  import { onDestroy } from 'svelte';
 
   function cancel() {
     cancelCompound();
     ffmpeg.cancel();
     store.ui.dialog = null;
   }
+  onDestroy(() => {
+    // closed by the editor's Escape (which skips onclose): a running render stops like Cancel
+    if (compoundJob.running) {
+      cancelCompound();
+      ffmpeg.cancel();
+    }
+    compoundJob.error = '';
+  });
 </script>
 
 <Modal title="Compound clip" onclose={() => (compoundJob.running ? cancel() : (store.ui.dialog = null))}>

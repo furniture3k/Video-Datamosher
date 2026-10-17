@@ -55,15 +55,22 @@
     for (let t = 0; t <= duration + 1e-6; t += step) out.push(t);
     return { step, out };
   });
-  const fmt = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : `${Math.round(s * 10) / 10}s`.replace('.0s', 's'));
+  const mmss = (s: number) => ((r) => `${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')}`)(Math.round(s));
+  const fmt = (s: number) => (s >= 60 ? mmss(s) : `${Math.round(s * 10) / 10}s`.replace('.0s', 's'));
 
   // ---- pinch to zoom (time under the playhead stays put)
   let pinch: { d0: number; p0: number } | null = null;
   const dist = (e: TouchEvent) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
   function touchStart(e: TouchEvent) {
-    if (e.touches.length === 2) pinch = { d0: dist(e), p0: pps };
+    if (e.touches.length !== 2) return;
+    pinch = { d0: dist(e), p0: pps };
+    // a second finger is a pinch, not a press and hold
+    if (press) clearTimeout(press.timer), (press = null);
   }
   function touchMove(e: TouchEvent) {
+    // while a clip is picked up, the finger moves it rather than scrolling the timeline (a scroll
+    // would cancel the pointer and drop the clip)
+    if (drag && e.cancelable) return e.preventDefault();
     if (!pinch || e.touches.length !== 2) return;
     e.preventDefault();
     pps = Math.max(8, Math.min(600, pinch.p0 * (dist(e) / pinch.d0)));
@@ -103,6 +110,18 @@
     window.removeEventListener('pointerup', onUp);
     window.removeEventListener('pointercancel', onUp);
   }
+  /** Run `fn` if this press ends as a tap (lifted near where it went down, not cancelled by a scroll). */
+  function onTap(e: PointerEvent, fn: () => void) {
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const end = (ev: PointerEvent) => {
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      if (ev.type === 'pointerup' && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) fn();
+    };
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+  }
 
   /** A main-track clip: tap selects, press and hold picks it up to move it. */
   function clipDown(e: PointerEvent, id: string) {
@@ -122,16 +141,20 @@
     };
     const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', cancel);
-      if (press === p && ev.type === 'pointerup') {
-        clearTimeout(p.timer);
-        press = null;
-        if (store.ui.selectedClips.length === 1 && sel.has(id)) store.selectClip(null);
-        else store.selectClip(id);
-      }
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      // moved away, or held and picked up: not a tap
+      if (press !== p) return;
+      // a cancelled press (the browser took it for a scroll or pinch) mustn't pick the clip up later
+      clearTimeout(p.timer);
+      press = null;
+      if (ev.type !== 'pointerup') return;
+      if (store.ui.selectedClips.length === 1 && sel.has(id)) store.selectClip(null);
+      else store.selectClip(id);
     };
     window.addEventListener('pointermove', cancel);
-    window.addEventListener('pointerup', up, { once: true });
-    window.addEventListener('pointercancel', up, { once: true });
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
     listen();
   }
 
@@ -147,15 +170,7 @@
   /** Audio clips and titles: tap selects; once selected, drag to move. */
   function itemDown(e: PointerEvent, id: string, ck: 'a' | 't') {
     if (e.button !== 0) return;
-    if (!sel.has(id)) {
-      const x0 = e.clientX;
-      const y0 = e.clientY;
-      const up = (ev: PointerEvent) => {
-        if (ev.type === 'pointerup' && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) store.selectClip(id);
-      };
-      window.addEventListener('pointerup', up, { once: true });
-      return;
-    }
+    if (!sel.has(id)) return onTap(e, () => store.selectClip(id));
     e.stopPropagation();
     const s0 = ck === 't' ? store.project.texts.find((t) => t.id === id)!.start : store.project.clips.find((c) => c.id === id)!.start;
     drag = { k: 'move', id, ck, x0: e.clientX, s0, before: clone($state.snapshot(store.project)) as Project, moved: false };
@@ -164,15 +179,7 @@
 
   function fxDown(e: PointerEvent, id: string, mode: 'move' | 'l' | 'r') {
     if (e.button !== 0) return;
-    if (mode === 'move' && store.ui.selectedEffect !== id) {
-      const x0 = e.clientX;
-      const y0 = e.clientY;
-      const up = (ev: PointerEvent) => {
-        if (ev.type === 'pointerup' && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 8) store.selectEffect(id);
-      };
-      window.addEventListener('pointerup', up, { once: true });
-      return;
-    }
+    if (mode === 'move' && store.ui.selectedEffect !== id) return onTap(e, () => store.selectEffect(id));
     e.stopPropagation();
     const fx = store.project.effects.find((f) => f.id === id)!;
     drag = { k: 'fx', id, mode, x0: e.clientX, s0: fx.start, e0: fx.end, moved: false };
@@ -237,7 +244,7 @@
     }
   }
 
-  function onUp() {
+  function onUp(e: PointerEvent) {
     unlisten();
     const d = drag;
     drag = null;
@@ -249,7 +256,7 @@
       remapToFootage(d.before, store.project);
       store.commit('mmove' + Math.random());
     } else if (d.k === 'fx' && d.moved) store.commit('mfx' + Math.random());
-    else if (d.k === 'reorder') {
+    else if (d.k === 'reorder' && e.type === 'pointerup') {
       const from = placed.findIndex((q) => q.clip.id === d.id);
       if (d.insert !== from && d.insert !== from + 1) store.editTimeline((p) => moveVideo(p, d.id, d.insert));
     }
@@ -261,20 +268,16 @@
     return i >= placed.length ? x(placed.at(-1)?.end ?? 0) : x(placed[i].start);
   });
   const tapEmpty = (e: PointerEvent) => {
-    if (e.target === e.currentTarget) {
-      const x0 = e.clientX;
-      const up = (ev: PointerEvent) => {
-        if (ev.type === 'pointerup' && Math.abs(ev.clientX - x0) < 8) {
-          store.selectClip(null);
-          store.selectEffect(null);
-          store.ui.selectedTransition = null;
-        }
-      };
-      window.addEventListener('pointerup', up, { once: true });
-    }
+    // the gaps in the lanes and the ruler are empty space too, not only the margins
+    if ((e.target as Element).closest('.clip, .item, .fxbar, button')) return;
+    onTap(e, () => {
+      store.selectClip(null);
+      store.selectEffect(null);
+      store.ui.selectedTransition = null;
+    });
   };
   const peaks = (id: string) => mediaState[id]?.peaks;
-  const fmtLen = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(0).padStart(2, '0')}` : `${s.toFixed(1)}s`);
+  const fmtLen = (s: number) => (s >= 59.95 ? mmss(s) : `${s.toFixed(1)}s`);
 </script>
 
 <div class="mtl" bind:clientWidth={viewW}>

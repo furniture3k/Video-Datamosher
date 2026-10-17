@@ -31,9 +31,12 @@ export class Eta {
 /** 12 → "12 s", 95 → "1 min 35 s", 4000 → "1 h 7 min". */
 export function formatSeconds(s: number): string {
   if (s < 1) return 'a moment';
-  if (s < 60) return `${Math.ceil(s)} s`;
-  if (s < 3600) return `${Math.floor(s / 60)} min${s % 60 >= 5 ? ` ${Math.round(s % 60)} s` : ''}`;
-  return `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min`;
+  // whole seconds (and minutes) first, so rounding never shows "60 s" or "60 min"
+  const t = Math.ceil(s);
+  if (t < 60) return `${t} s`;
+  if (t < 3600) return `${Math.floor(t / 60)} min${t % 60 >= 5 ? ` ${t % 60} s` : ''}`;
+  const m = Math.round(t / 60);
+  return `${Math.floor(m / 60)} h ${m % 60} min`;
 }
 
 /**

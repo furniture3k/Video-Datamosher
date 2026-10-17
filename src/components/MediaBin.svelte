@@ -266,6 +266,8 @@
   .sub {
     color: var(--text-3);
     font-size: 11px;
+    /* (buttons don't wrap): in a narrow panel the size and "proxy" go on a second line, not off the edge */
+    white-space: normal;
   }
   .prep {
     display: flex;
@@ -291,7 +293,8 @@
     padding-right: 4px;
     opacity: 0;
   }
-  .item:hover .ctl {
+  .item:hover .ctl,
+  .item:focus-within .ctl {
     opacity: 1;
   }
   .ctl button {

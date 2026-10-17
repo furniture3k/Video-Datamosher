@@ -460,6 +460,8 @@ class Store {
         this.status.overall = Math.max(this.status.overall, overallProgress(stage, p));
         this.status.eta = this.eta.update('render', this.status.overall);
       }, signal);
+      // a newer project was opened (or the render went stale) while it finished: don't show it
+      if (signal.cancelled) return;
       this.render = r;
       this.renderKey = key;
       if (r.frames.length >= limits.maxOutputFrames)
@@ -486,6 +488,8 @@ class Store {
 
   // ---------- persistence ----------
   private saveTimer = 0;
+  /** saving failed (storage full): said once, until a save works again */
+  private saveFailed = false;
   autosave() {
     clearTimeout(this.saveTimer);
     this.saveTimer = window.setTimeout(() => this.flush(), 1000);
@@ -507,7 +511,9 @@ class Store {
       this.projectId = newProjectId();
       setCurrentProjectId(this.projectId);
     }
-    await saveProject(this.projectId, p);
+    const ok = await saveProject(this.projectId, p);
+    if (!ok && !this.saveFailed) this.toast("Could not save the project: the browser's storage is full or unavailable. Free some space in Storage, or save a project file.", 'error', 10000, { label: 'Storage', run: () => (this.ui.dialog = 'storage') });
+    this.saveFailed = !ok;
   }
 
   /** Show another project in the editor (null id: a new one). The open one is saved first. */
@@ -559,12 +565,14 @@ class Store {
 
   /** Stored files still needed: this project's media, preview copies and LUTs, and what snapshots use. */
   async keepFiles(): Promise<string[]> {
-    const { snapshotFileIds } = await import('./snapshots.svelte');
+    const { snapshotFileIds, snapshots } = await import('./snapshots.svelte');
     const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
+    // preview copies are kept under the media item's id, not its file's
+    const snapProxies = snapshots.list.flatMap((s) => s.project.media.filter((m) => m.source.kind === 'file').map((m) => proxyKey(m.id)));
     const lutFiles = (this.project.luts ?? []).map((l) => 'lut:' + l.id);
     // every saved project's media too, not just the open one's
     const others = (await loadIndex().catch(() => [])).flatMap((m) => m.files);
-    return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapFiles.map(proxyKey)];
+    return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapProxies];
   }
 
   setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics' | 'startHome' | 'autoMosh'>(k: K, v: (typeof this.ui)[K]) {
