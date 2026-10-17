@@ -10,7 +10,8 @@ let saved: Awaited<ReturnType<typeof saveAs>> = null;
 export const forgetProjectFile = () => (saved = null);
 
 export async function saveProjectFile(as = false) {
-  const p = $state.snapshot(store.project) as Project;
+  // the whole project, also while a compound clip is open
+  const p = store.rootProject();
   const data = { ...p, media: p.media.map((m) => ({ ...m, thumb: undefined })) };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const again = !!saved && !as;
