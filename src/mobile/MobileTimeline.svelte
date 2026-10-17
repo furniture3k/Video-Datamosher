@@ -421,7 +421,10 @@
     </div>
   </div>
   <div class="playline" style="left:{half}px"></div>
-  <button class="addclip" aria-label="Add media" onclick={onadd}><Icon name="plus" size={20} stroke={2} /></button>
+  <!-- hidden while something is selected: it would sit over the selection's trim handle -->
+  {#if !store.ui.selectedClips.length && !store.ui.selectedEffect}
+    <button class="addclip" aria-label="Add media" onclick={onadd}><Icon name="plus" size={20} stroke={2} /></button>
+  {/if}
   {#if !placed.length && !store.project.texts.length}
     <div class="emptyhint">
       <button class="primary big" onclick={onadd}><Icon name="plus" size={18} stroke={2} />Add videos or photos</button>

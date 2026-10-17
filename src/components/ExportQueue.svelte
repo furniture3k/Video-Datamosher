@@ -129,4 +129,10 @@
     padding: 6px 10px 8px;
     border-top: 1px solid var(--line);
   }
+  /* phones: above the editor's row of tools */
+  @media (max-width: 860px), (max-height: 500px) and (pointer: coarse) {
+    .queue {
+      bottom: calc(76px + env(safe-area-inset-bottom));
+    }
+  }
 </style>

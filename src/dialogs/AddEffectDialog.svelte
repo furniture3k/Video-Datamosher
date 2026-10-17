@@ -28,7 +28,9 @@
   const clip = $derived(store.selectedClip);
   // live previews on your own footage (each one is a real render, so only for shorter timelines)
   const PREVIEW_MAX_S = 30;
-  const canPreview = $derived(store.project.clips.length > 0 && store.duration <= PREVIEW_MAX_S);
+  // (they start when the pointer rests on an effect: touch screens have no resting pointer, a tap adds it)
+  const canHover = typeof matchMedia === 'undefined' || matchMedia('(hover: hover)').matches;
+  const canPreview = $derived(canHover && store.project.clips.length > 0 && store.duration <= PREVIEW_MAX_S);
   let previewOn = $state(localGet('fxLivePreview', true));
   let hovered = $state<string | null>(null);
   let previewType = $state<string | null>(null);
