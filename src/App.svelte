@@ -150,7 +150,8 @@
   }
   function resizeDown(e: PointerEvent) {
     const y0 = e.clientY;
-    const h0 = store.ui.timelineHeight;
+    // from the height shown (the saved one can be taller than this window allows)
+    const h0 = Math.max(150, Math.min(store.ui.timelineHeight, window.innerHeight - 220));
     const move = (ev: PointerEvent) => (store.ui.timelineHeight = Math.max(150, Math.min(window.innerHeight - 220, h0 - (ev.clientY - y0))));
     const up = () => {
       window.removeEventListener('pointermove', move);
@@ -336,6 +337,11 @@
   main:has(aside[hidden]) .fold {
     opacity: 1;
   }
+  @media (hover: none) {
+    .fold {
+      opacity: 1;
+    }
+  }
   .resizer {
     height: 5px;
     cursor: ns-resize;
@@ -378,7 +384,8 @@
     }
   }
   footer {
-    height: var(--tlh);
+    /* a height dragged on a taller window still leaves the player room on a shorter one */
+    height: max(150px, min(var(--tlh), 100vh - 220px));
   }
   .app.phone {
     display: block;

@@ -30,6 +30,8 @@
   let muted = $state(false);
   let originals = $state.raw<Uint8Array[] | null>(null);
   let origKey = '';
+  /** bumped when new originals arrive, so their decoded frames don't mix with the last ones' */
+  let origGen = 0;
   let loadingOrig = $state(false);
 
   const mosh = $derived(store.showingMosh);
@@ -53,7 +55,7 @@
       const limit = r ? Math.max(24, Math.min(240, Math.floor(160e6 / (r.w * r.h * 4 * (store.ui.compare !== 'off' ? 2 : 1))))) : 120;
       if (cache.size > limit) {
         const first = cache.keys().next().value!;
-        cache.get(first)!.then((b) => b.close());
+        cache.get(first)!.then((b) => b.close(), () => {});
         cache.delete(first);
       }
     }
@@ -80,7 +82,7 @@
     const mode = store.ui.compare;
     const fr = r.frames[i];
     const src = fr ? (fr.at ?? fr.src) : i;
-    const orig = mode !== 'off' && originals ? bitmap(originals, Math.min(src, originals.length - 1), 'o') : null;
+    const orig = mode !== 'off' && originals ? bitmap(originals, Math.min(src, originals.length - 1), 'o' + origGen + ':') : null;
     let a: ImageBitmap, b: ImageBitmap | null;
     try {
       [a, b] = await Promise.all([main, orig]);
@@ -216,9 +218,14 @@
     origKey = key;
     loadingOrig = true;
     (snap ? snapshotFrames(snap.project, r.w) : originalFrames(p, r.w))
-      .then((o) => (originals = o))
-      .catch((e) => store.toast('Compare failed: ' + e.message, 'error'))
-      .finally(() => (loadingOrig = false));
+      .then((o) => {
+        // a later request (another snapshot, an edit) wins over this one
+        if (origKey !== key) return;
+        origGen++;
+        originals = o;
+      })
+      .catch((e) => origKey === key && store.toast('Compare failed: ' + e.message, 'error'))
+      .finally(() => origKey === key && (loadingOrig = false));
   });
 
   // ---- mosh audio ----
@@ -1169,14 +1176,15 @@
   .mitem .kbd {
     margin-left: auto;
   }
-  @media (max-width: 1280px) {
+  /* by the player's own width (the side panels decide it, not the window), so the time never runs under the buttons */
+  @container (max-width: 800px) {
     .frameinfo {
       display: none;
     }
   }
-  @media (max-width: 1180px) and (min-width: 861px) {
+  @container (max-width: 760px) {
     .hide-s,
-    .total {
+    .transport:not(.compact) .total {
       display: none;
     }
   }
