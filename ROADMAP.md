@@ -48,13 +48,13 @@ unlocks, where it goes in the code, and when it counts as done.
 
 ## Phase 0: Foundations (everything else stands on these)
 
-- [ ] **F1. Unified graphics layer renderer.** One canvas renderer that draws all overlay
+- [x] **F1. Unified graphics layer renderer.** *(M1: one Canvas 2D renderer, `src/lib/layers.ts`; moving layers that melt are drawn per frame. The WebGL compositor comes with mattes and perspective.)* One canvas renderer that draws all overlay
   graphics (titles, shapes, annotations, stickers, flipbooks) for time *t*. It's used by the edit
   preview, the clean post pass and, rendered to an RGBA frame sequence, as an FFmpeg input before
   the mosh. Today: `drawTexts` in `src/lib/text.ts`, called from `src/lib/preview.ts` and
   `src/lib/post.ts`; melted titles are static PNGs in `src/engine/args.ts`.
   *Done when* an animated, tracked title can melt and looks the same in the preview and the export.
-- [ ] **F2. Generic Layer model.** Generalise `TextClip` into `Layer` with kinds: `text`, `shape`,
+- [x] **F2. Generic Layer model.** *(M1: `src/engine/layers.ts`, project format 3, text layers on graphics rows; the other kinds join in their milestones.)* Generalise `TextClip` into `Layer` with kinds: `text`, `shape`,
   `annotation`, `sticker`, `flipbook`, `mockup`, `group`. Shared fields: start/duration, transform
   + keys, opacity, blend, depth (F5), pin/follow (F4), style ref, `moshed`, enter/exit animation,
   beat timing. Migrate old projects (`src/engine/migrate.ts`).

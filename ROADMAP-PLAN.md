@@ -131,6 +131,14 @@ and a phone viewport), README/CHANGELOG/`src/engine/changelog.ts` (What's new) e
 strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 
 ### M1: Layers and the unified renderer (F1, F2). Unlocks: animated or tracked titles that melt
+
+> **Done (PR for `feat/m1-layers`).** Changes from this plan:
+> - The renderer is Canvas 2D (`src/lib/layers.ts`). The WebGL compositor moves to M8/M10, the
+>   first milestones that need mattes or perspective.
+> - Moving layers that melt are one file of back-to-back PNGs read with `image2pipe`, not a
+>   numbered sequence, because the desktop engine maps mounted files by exact name.
+> - New rows come from dragging a title above the top lane; no separate drop strip, because a
+>   strip that appears mid-drag shifts the lanes under the pointer.
 - `layers.ts` types and `evalLayer`; v3 migration; move all `texts` consumers to `layers`.
 - `src/lib/layers/{raster,compositor,renderer}.ts`; text raster ported from `src/lib/text.ts` with
   identical output.
