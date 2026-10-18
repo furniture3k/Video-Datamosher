@@ -10,7 +10,7 @@
   import { hasKeys, keyedValue, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { motionJob, stabilizeClip, titleFollows, clipFollows } from '../lib/motion.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
@@ -368,12 +368,13 @@
         <div class="row sect"><span class="label grow">Motion</span>{#if motionJob.running}<span class="small faint">{motionJob.stage}…</span>{/if}</div>
         <Field label="Stabilize strength" min={4} max={60} step={1} value={stabStrength} help="How smooth the camera should end up: bigger values iron out slower wobbles too (and zoom in more)." onchange={(v: number) => (stabStrength = v)} />
         <div class="row btns">
-          <button class="small" disabled={motionJob.running} onclick={() => stabilizeClip(c.id, stabStrength)} title="Measure the camera shake and smooth it out">{c.stab ? 'Stabilize again' : 'Stabilize'}</button>
+          <button class="small" disabled={motionJob.running} onclick={() => stabilizeClip(c.id, stabStrength).catch((e) => store.toast('Stabilize failed: ' + (e as Error).message, 'error'))} title="Measure the camera shake and smooth it out">{c.stab ? 'Stabilize again' : 'Stabilize'}</button>
           {#if c.stab}<button class="small ghost" onclick={() => editKeys((x) => (x.stab = undefined))}>Remove ({Math.round((c.stab.zoom - 1) * 100)}% zoom)</button>{/if}
         </div>
         <div class="row btns">
-          <button class="small" class:on={store.ui.trackPick === c.id} disabled={motionJob.running} onclick={() => (store.ui.trackPick = store.ui.trackPick === c.id ? null : c.id)} title="Then drag a box on the player around what to follow">Track an object</button>
+          <button class="small" class:on={store.ui.trackPick === c.id} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id)} title="Then drag a box on the player around what to follow">{store.ui.trackPick === c.id ? 'Cancel tracking' : 'Track an object'}</button>
         </div>
+        {#if store.ui.trackPick === c.id}<p class="small faint">Drag a box on the player around something with clear detail. It is followed forwards and backwards from this frame.</p>{/if}
         {#each c.paths ?? [] as path (path.id)}
           <div class="pathrow">
             <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>

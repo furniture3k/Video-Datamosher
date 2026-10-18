@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.13.0
+
+- **Tracking that holds on**: Track an object follows things through zooms, moves, turns and
+  stabilization, keeps going when the object is hidden for a moment, jitters less, and is several
+  times faster. The tracked box shows on the player, and it never freezes the editor while it works.
+- **Subject Guard on a tracked object**: the clean oval fits the box you tracked (Oval size makes it
+  bigger or smaller), the guard always runs after the other effects, and it picks up your newest
+  track by itself. Its settings can start a track straight away.
+- **Track and Stabilize on phones**: both are in the bottom tools when a video clip is selected.
+- **A smoother preview**: colour correction, green screen and LUTs are worked out on the graphics
+  card, playback does less work every frame, and Stabilize and Pixel Sort are faster.
+
 ## 1.12.0
 
 - **Your own layout**: drag the edge between a side panel and the player to make it wider or

@@ -97,5 +97,7 @@ function upgradeEffect(e: EffectInstance): EffectInstance {
     if (!(Number(p.every) > 0)) p.every = 24;
   }
   if (e.type === 'splice' && p.length === undefined) p.length = 48;
+  // Subject Guard's oval is now sized against the tracked box (old tracks keep their Oval size: see PostRunner)
+  if (e.type === 'mask' && p.scale === undefined) p.scale = 1.4;
   return { ...e, params: p };
 }

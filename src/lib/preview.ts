@@ -10,6 +10,7 @@ import { keyedValue } from '../engine/keys';
 import { linearAt } from '../engine/track';
 import { lutApplier } from '../engine/lut';
 import { lutNow } from './luts.svelte';
+import { GradeGL } from './gradegl';
 import { gradeCurve, gradeMatrix } from '../engine/args';
 import { outputSize } from '../engine/args';
 import { SAMPLE_RATE } from '../engine/audio';
@@ -100,6 +101,8 @@ export class EditPreview {
   noKey = false;
   private scratch = document.createElement('canvas');
   private graded = document.createElement('canvas');
+  /** undefined: not tried yet */
+  private gl: GradeGL | null | undefined;
 
   constructor(private canvas: HTMLCanvasElement) {}
 
@@ -306,9 +309,18 @@ export class EditPreview {
     }
   }
 
+  private dims(img: CanvasImageSource, w: number, h: number): [number, number] {
+    return [(img as HTMLVideoElement).videoWidth || (img as HTMLImageElement).naturalWidth || w, (img as HTMLVideoElement).videoHeight || (img as HTMLImageElement).naturalHeight || h];
+  }
+
+  /** The GPU grader (made on first use); null where WebGL2 isn't available or was lost. */
+  private gpu(): GradeGL | null {
+    if (this.gl === undefined || this.gl?.lost) this.gl = GradeGL.create();
+    return this.gl;
+  }
+
   private rect(img: CanvasImageSource, fit: string, w: number, h: number): [number, number, number, number] {
-    const iw = (img as HTMLVideoElement).videoWidth || (img as HTMLImageElement).naturalWidth || w;
-    const ih = (img as HTMLVideoElement).videoHeight || (img as HTMLImageElement).naturalHeight || h;
+    const [iw, ih] = this.dims(img, w, h);
     if (fit === 'stretch') return [0, 0, w, h];
     const s = fit === 'fill' ? Math.max(w / iw, h / ih) : Math.min(w / iw, h / ih);
     const dw = iw * s;
@@ -327,7 +339,21 @@ export class EditPreview {
     const T = { ...T0, x: keyedValue(c.keys, 'x', local, T0.x), y: keyedValue(c.keys, 'y', local, T0.y), zoom: keyedValue(c.keys, 'zoom', local, T0.zoom), rotate: keyedValue(c.keys, 'rotate', local, T0.rotate) };
     const G = gradeOf(c);
     const keyed = !!c.key && c.track !== 'v1' && !this.noKey;
-    const graded = !isIdentityGrade(G) || keyed;
+    const [x, y, dw, dh] = this.rect(img, c.fit, w, h);
+    // colour correction and keying on the GPU when it can (then the picture draws like any other)
+    let pic = img;
+    let graded = !isIdentityGrade(G) || keyed;
+    if (graded) {
+      const gpu = this.gpu();
+      const [iw, ih] = this.dims(img, w, h);
+      // no sharper than it can show up on screen (zoomed in, at most twice the frame)
+      const s = Math.min(1, ((2 * Math.max(w, h)) / Math.max(iw, ih)) * Math.max(1, T.zoom));
+      const lut = G.lut && (G.lutAmount ?? 1) > 0 ? lutNow(G.lut) : null;
+      if (gpu?.apply(img as TexImageSource, Math.max(1, Math.round(iw * s)), Math.max(1, Math.round(ih * s)), G, keyed ? c.key! : null, lut, G.lutAmount ?? 1)) {
+        pic = gpu.canvas;
+        graded = false;
+      }
+    }
     let target = ctx;
     if (graded) {
       if (this.graded.width !== w || this.graded.height !== h) {
@@ -341,7 +367,6 @@ export class EditPreview {
       ctx.globalAlpha = alpha;
       ctx.globalCompositeOperation = op;
     }
-    const [x, y, dw, dh] = this.rect(img, c.fit, w, h);
     target.save();
     if (dx) target.translate(dx, 0);
     if (!isIdentityTransform(T)) {
@@ -368,7 +393,7 @@ export class EditPreview {
       target.translate(-(x + dw / 2), -(y + dh / 2));
     }
     try {
-      target.drawImage(img, x, y, dw, dh);
+      target.drawImage(pic, x, y, dw, dh);
     } catch {
       /* not ready */
     }
@@ -395,6 +420,15 @@ export class EditPreview {
   private adjust(ctx: CanvasRenderingContext2D, c: Clip, w: number, h: number, alpha: number) {
     const G = gradeOf(c);
     if (alpha <= 0 || isIdentityGrade(G)) return;
+    const gpu = this.gpu();
+    const lut = G.lut && (G.lutAmount ?? 1) > 0 ? lutNow(G.lut) : null;
+    if (gpu?.apply(ctx.canvas, w, h, G, null, lut, G.lutAmount ?? 1)) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(gpu.canvas, 0, 0, w, h);
+      ctx.restore();
+      return;
+    }
     let px: ImageData;
     try {
       px = ctx.getImageData(0, 0, w, h);
@@ -514,6 +548,9 @@ export class EditPreview {
     for (const p of this.urls.values()) p.then((s) => s && URL.revokeObjectURL(s.url));
     this.urls.clear();
     this.resolved.clear();
+    // browsers allow only a few WebGL contexts at once: give this one back
+    this.gl?.dispose();
+    this.gl = undefined;
   }
 }
 

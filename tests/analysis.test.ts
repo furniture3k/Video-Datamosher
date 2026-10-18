@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { apply, invert, pictureMatrix } from '../src/engine/placement';
 import { trackBox, stabilize, frameMotion, simplify, linearAt, linearExpr, type Gray } from '../src/engine/track';
 import { groupWords, captionTexts, toSrt, toVtt, toMono16k, type Word } from '../src/engine/captions';
 import { reframePath, reframeFilter, aspectRatio } from '../src/engine/reframe';
@@ -57,6 +58,16 @@ describe('tracking', () => {
     // the object vanishes after frame 20: the track ends there
     const gone = { ...g, frames: g.frames.map((f, k) => (k > 20 ? scene(200, 120, 1, () => [-100, -100]).frames[0] : f)) };
     expect(trackBox(gone, 0, 40, 50, 20, 20, 1).length).toBeLessThanOrEqual(22);
+  });
+  it('picks the object up again after it is hidden for a few frames', () => {
+    const hidden = scene(200, 120, 40, (k) => (k >= 15 && k <= 18 ? [-100, -100] : path(k)));
+    const t = trackBox(hidden, 0, 40, 50, 20, 20, 1);
+    expect(t.at(-1)![0]).toBe(39);
+    expect(t.some(([k]) => k >= 15 && k <= 18)).toBe(false);
+    for (const [k, x, y] of t) {
+      const [ex, ey] = path(k);
+      expect(Math.hypot(x - ex, y - ey)).toBeLessThanOrEqual(1.5);
+    }
   });
 });
 
@@ -190,5 +201,31 @@ d('native ffmpeg: reframe and loops', () => {
     fs.writeFileSync(path.join(dir, 'loop.avi'), writeMoshed(pr, lf));
     ff(dir, decodeToMjpegArgs(newProject().decoder, 'loop.avi', 'loop.mjpeg', 5));
     expect(splitJpegs(new Uint8Array(fs.readFileSync(path.join(dir, 'loop.mjpeg'))))).toBe(lf.length);
+  });
+});
+
+describe('clip placement (where tracks land in the frame)', () => {
+  const base = { id: 'c', mediaId: 'm', track: 'v1', start: 0, in: 0, out: 4, speed: 1, reverse: false, fit: 'fit' as const, volume: 1, muted: false, fadeIn: 0, fadeOut: 0 };
+  it('a plain clip that fills the frame maps straight through', () => {
+    const m = pictureMatrix(base, 0, 1920, 1080, 1280, 720);
+    const [x, y] = apply(m, 0.25, 0.75);
+    expect(x).toBeCloseTo(0.25, 6);
+    expect(y).toBeCloseTo(0.75, 6);
+  });
+  it('letterboxing, zoom, offset and rotation are undone by the inverse', () => {
+    const c = { ...base, transform: { zoom: 1.6, x: 0.1, y: -0.05, rotate: 20 } };
+    const m = pictureMatrix(c, 0, 1080, 1920, 1280, 720);
+    // a portrait clip in a landscape frame sits in the middle, zoomed about the centre
+    const [cx, cy] = apply(m, 0.5, 0.5);
+    expect(cx).toBeCloseTo(0.6, 6);
+    expect(cy).toBeCloseTo(0.45, 6);
+    const [u, v] = apply(invert(m), ...apply(m, 0.3, 0.8));
+    expect(u).toBeCloseTo(0.3, 6);
+    expect(v).toBeCloseTo(0.8, 6);
+  });
+  it('follows stabilization shifts', () => {
+    const c = { ...base, stab: { x: [[0, 0.1]] as [number, number][], y: [[0, 0]] as [number, number][], r: [[0, 0]] as [number, number][], zoom: 1.2 } };
+    const [x] = apply(pictureMatrix(c, 0, 1280, 720, 1280, 720), 0.5, 0.5);
+    expect(x).toBeCloseTo(0.5 + 0.1 * 1.2, 6);
   });
 });

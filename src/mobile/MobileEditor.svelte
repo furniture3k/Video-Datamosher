@@ -13,6 +13,8 @@
   import { BLEND_TRANSITIONS, MOSH_TRANSITIONS, clipLen, layoutVideo, isMoshTransition } from '../engine/timeline';
   import { EFFECTS } from '../engine/effects';
   import { closeCompound } from '../lib/compound.svelte';
+  import { motionJob, stabilizeClip, toggleTrackPick } from '../lib/motion.svelte';
+  import { mediaOf } from '../engine/timeline';
   import Player from '../components/Player.svelte';
   import MediaBin from '../components/MediaBin.svelte';
   import ClipEditor from '../components/ClipEditor.svelte';
@@ -118,6 +120,17 @@
   });
 
   const SPEEDS = [0.25, 0.5, 1, 1.5, 2, 4];
+
+  /** the selected clip can be tracked and stabilized (video from a file, not a freeze frame) */
+  const canAnalyse = $derived.by(() => {
+    const m = clip && mediaOf(store.project, clip.mediaId);
+    return !!clip && !!m && m.source.kind === 'file' && !m.source.isImage && !!m.hasVideo && !clip.freeze;
+  });
+  function track() {
+    // the box is drawn on the preview: nothing else should be open meanwhile
+    sheet = null;
+    toggleTrackPick(clip!.id);
+  }
 </script>
 
 <div class="m">
@@ -264,6 +277,10 @@
         {#if mode === 'video'}
           <button class="tool hot" onclick={moshThis}><Icon name="melt" size={22} /><span>Mosh it</span></button>
           <button class="tool" onclick={() => edit.freezeAtPlayhead()}><Icon name="freeze" size={22} /><span>Freeze</span></button>
+          {#if canAnalyse}
+            <button class="tool" class:hot={store.ui.trackPick === clip?.id} disabled={motionJob.running} onclick={track}><Icon name="target" size={22} /><span>{motionJob.running && motionJob.stage === 'Tracking' ? 'Tracking…' : store.ui.trackPick === clip?.id ? 'Cancel' : 'Track'}</span></button>
+            <button class="tool" disabled={motionJob.running} onclick={() => stabilizeClip(clip!.id).catch((e) => store.toast('Stabilize failed: ' + (e as Error).message, 'error'))}><Icon name="steady" size={22} /><span>{motionJob.running && motionJob.stage !== 'Tracking' ? 'Steadying…' : clip?.stab ? 'Re-stabilize' : 'Stabilize'}</span></button>
+          {/if}
         {/if}
         <button class="tool" onclick={toggleReverse}><Icon name="reverse" size={22} /><span>{clip?.reverse ? 'Forward' : 'Reverse'}</span></button>
         <button class="tool" onclick={() => (sheet = 'clip')}><Icon name="sliders" size={22} /><span>Adjust</span></button>

@@ -2,13 +2,13 @@
 import { GL, COPY, type Target } from './gl';
 import { FlowEngine, CHROMA, defaultFlow, type FlowParams } from './flow';
 import { rasterizeField, encodeField, FIELD_MAX, type Stroke } from '../engine/flowfield';
-import { linearAt } from '../engine/track';
 import { personMask } from './segment';
 import { paintedMask, mediaMap, depthMap, type MaskStroke } from './maps';
 import { VHS, CRT, GRAIN, POSTERIZE } from './retro';
 
 const RETRO: Record<string, string> = { vhs: VHS, crt: CRT, grain: GRAIN, posterize: POSTERIZE };
-import { pathOnTimeline } from './motion.svelte';
+import { pathOnTimeline, pathSize, pathAt, guardPath } from './motion.svelte';
+import { outputSize } from '../engine/args';
 import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
 import { paramAt } from '../engine/automation';
@@ -20,10 +20,12 @@ import type { EffectInstance, Frame, Project, TextClip } from '../engine/types';
 import { drawTexts, textAlpha } from './text';
 import { Cancelled } from './ffmpeg';
 
+/** Pixel effects in the order they run: Subject Guards last, so what they keep clean stays clean. */
 export function pixelEffectsOf(project: Project, audio?: MoshAudio): EffectInstance[] {
-  return activeEffects(allEffects(project))
+  const fx = activeEffects(allEffects(project))
     .filter((e) => EFFECTS[e.type].kind === 'pixel')
     .map((e) => bakeAudio(withChaos(e, project.chaos), audio, project));
+  return [...fx.filter((e) => e.type !== 'mask'), ...fx.filter((e) => e.type === 'mask')];
 }
 
 const tOf = (src: number, e: EffectInstance) => (src - e.start) / Math.max(1, e.end - e.start - 1);
@@ -51,32 +53,38 @@ export function flowParamsAt(e: EffectInstance, t: number): FlowParams {
 export function pixelSort(px: Uint8Array, w: number, h: number, low: number, high: number, vertical: boolean, reverse: boolean) {
   const len = vertical ? h : w;
   const lines = vertical ? w : h;
-  const idx = (line: number, k: number) => (vertical ? (k * w + line) * 4 : (line * w + k) * 4);
-  const lum = (i: number) => (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) / 255;
-  const buf: [number, number, number, number, number][] = [];
+  const n = w * h;
+  // whole pixels as one number each (copied when the bytes don't start on a 4-byte boundary)
+  const aligned = px.byteOffset % 4 === 0;
+  const u32 = aligned ? new Uint32Array(px.buffer, px.byteOffset, n) : new Uint32Array(px.slice(0, n * 4).buffer);
+  const lum = new Float64Array(n);
+  for (let i = 0; i < n; i++) lum[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+  const ord = new Uint32Array(len);
+  const key = new Float64Array(len);
+  const pix = new Uint32Array(len);
+  // stable: equal brightness keeps its order
+  const cmp = reverse ? (a: number, b: number) => key[b] - key[a] || a - b : (a: number, b: number) => key[a] - key[b] || a - b;
   for (let line = 0; line < lines; line++) {
+    const base = vertical ? line : line * w;
+    const stride = vertical ? w : 1;
     let k = 0;
     while (k < len) {
-      while (k < len && !(lum(idx(line, k)) >= low && lum(idx(line, k)) <= high)) k++;
+      while (k < len && !(lum[base + k * stride] >= low && lum[base + k * stride] <= high)) k++;
       const s = k;
-      buf.length = 0;
-      while (k < len && lum(idx(line, k)) >= low && lum(idx(line, k)) <= high) {
-        const i = idx(line, k);
-        buf.push([lum(i), px[i], px[i + 1], px[i + 2], px[i + 3]]);
-        k++;
+      while (k < len && lum[base + k * stride] >= low && lum[base + k * stride] <= high) k++;
+      const m = k - s;
+      if (m < 2) continue;
+      for (let j = 0; j < m; j++) {
+        const q = base + (s + j) * stride;
+        ord[j] = j;
+        key[j] = lum[q];
+        pix[j] = u32[q];
       }
-      if (buf.length > 1) {
-        buf.sort((a, b) => (reverse ? b[0] - a[0] : a[0] - b[0]));
-        buf.forEach((p, j) => {
-          const i = idx(line, s + j);
-          px[i] = p[1];
-          px[i + 1] = p[2];
-          px[i + 2] = p[3];
-          px[i + 3] = p[4];
-        });
-      }
+      const o = ord.subarray(0, m).sort(cmp);
+      for (let j = 0; j < m; j++) u32[base + (s + j) * stride] = pix[o[j]];
     }
   }
+  if (!aligned) px.set(new Uint8Array(u32.buffer));
 }
 
 /** Raw Bend: the RGB values of an RGBA image as one long signal through an audio effect (in place). */
@@ -146,8 +154,8 @@ export interface FrameExtras {
   clean?: ImageBitmap | null;
   /** people mask of the clean frame (grayscale, white = person) */
   person?: CanvasImageSource | null;
-  /** effect id → tracked point [x, y] (shares of the frame) */
-  track?: Map<string, [number, number] | null>;
+  /** effect id → tracked box [centre x, centre y, width, height] (shares of the frame) */
+  track?: Map<string, [number, number, number, number] | null>;
   /** effect id → its map (painted, from media, depth) */
   maps?: Map<string, CanvasImageSource | null>;
 }
@@ -224,13 +232,14 @@ export class PostProcessor {
       gl.upload(this.personT, pc);
     }
     const ang = (Number(paramAt(e, 'angle', t)) * Math.PI) / 180;
-    const size = Number(paramAt(e, 'size', t));
+    // the oval's half-axes: the tracked box, scaled
+    const scale = Number(paramAt(e, 'scale', t) ?? 1.4) || 1.4;
     const col = hexRgb(String(e.data?.color ?? '#00ff00'));
     gl.pass(MASKGEN, this.maskA, { clean: this.cleanT.tex, person: (this.personT ?? this.cleanT).tex }, {
       mode: source === 'gradient' && e.params.shape === 'radial' ? 6 : (MASK_MODES[source] ?? 2),
       thr: Number(paramAt(e, 'threshold', t)),
       center: pt ? [pt[0], 1 - pt[1]] : source === 'gradient' ? [Number(paramAt(e, 'gx', t)), 1 - Number(paramAt(e, 'gy', t))] : [0.5, 0.5],
-      radius: [size, (size * this.w) / this.h],
+      radius: pt ? [Math.max(0.005, (pt[2] / 2) * scale), Math.max(0.005, (pt[3] / 2) * scale)] : [0.2, 0.2],
       key: col,
       dir: [Math.cos(ang), -Math.sin(ang)],
       spread: Math.max(0.01, Number(paramAt(e, 'spread', t))),
@@ -360,7 +369,8 @@ export class PostRunner {
   private texts: TextClip[];
   private fps: number;
   private c2d: HTMLCanvasElement | null = null;
-  private paths = new Map<string, [number, number, number][]>();
+  /** Subject Guards on a tracked object: its path on the timeline and the box's size */
+  private paths = new Map<string, { pts: [number, number, number][]; size: [number, number] }>();
   private personCache = new Map<number, HTMLCanvasElement>();
   private depthCache = new Map<number, HTMLCanvasElement>();
   private project: Project;
@@ -377,8 +387,16 @@ export class PostRunner {
     // tracked objects for Subject Guard, as timeline paths
     for (const e of this.effects) {
       if (e.type !== 'mask' || e.params.source !== 'track') continue;
-      const c = project.clips.find((x) => x.id === e.data?.clipId);
-      if (c) this.paths.set(e.id, pathOnTimeline(project, c, String(e.data?.pathId)));
+      const gp = guardPath(project, e.data);
+      const c = gp && project.clips.find((x) => x.id === gp.clipId);
+      if (!c) continue;
+      const pts = pathOnTimeline(project, c, gp.pathId);
+      const { w, h } = outputSize(project, project.encoder.previewWidth);
+      // tracks from before boxes were kept: the oval the guard's old Oval size gave (its radius
+      // was a share of the frame width), at the default scale
+      const old = Number(e.params.size) > 0 ? Number(e.params.size) : 0.18;
+      const legacy: [number, number] = [(2 * old) / 1.4, (2 * old * w) / h / 1.4];
+      if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, gp.pathId) ?? legacy });
     }
     this.texts = withTexts ? (project.texts ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
     this.fps = project.encoder.fps;
@@ -471,11 +489,13 @@ export class PostRunner {
         maps.set(e.id, d);
       }
     }
-    const track = new Map<string, [number, number] | null>();
+    const track = new Map<string, [number, number, number, number] | null>();
     const t = pos / this.fps;
-    for (const [id, path] of this.paths) {
-      const inside = path.length && t >= path[0][0] - 1e-6 && t <= path[path.length - 1][0] + 1e-6;
-      track.set(id, inside ? [linearAt(path.map(([a, x]) => [a, x]), t), linearAt(path.map(([a, , y]) => [a, y]), t)] : null);
+    // a few frames' grace at the ends, so a track that stops a frame short doesn't flash the mosh over the subject
+    const grace = 3 / this.fps;
+    for (const [id, { pts, size }] of this.paths) {
+      const inside = t >= pts[0][0] - grace && t <= pts[pts.length - 1][0] + grace;
+      track.set(id, inside ? [...pathAt(pts, t), size[0], size[1]] : null);
     }
     return { clean, person, track, maps };
   }
