@@ -3,7 +3,7 @@ import { store } from './store.svelte';
 import { clipFrames } from './analysis';
 import { trackBox, stabilize, simplify, type Gray, type Stabilized, type TrackPoint } from '../engine/track';
 import { clipLen, layoutVideo, localTime, sourceTime, mediaOf } from '../engine/timeline';
-import { apply, invert, pictureMatrix } from '../engine/placement';
+import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
 import { uid } from '../engine/presets';
 import { VIDEO_TRACK, type Clip, type Project, type TextClip } from '../engine/types';
@@ -12,6 +12,14 @@ import type { TrackJob } from './track.worker';
 export const motionJob = $state({ running: false, stage: '' });
 
 const ANALYSIS_W = 256;
+
+/** Where a clip's source picture sits in the output frame (pixels), for its fit mode (no transform). */
+export function pictureRect(c: Clip, p: Project): { x: number; y: number; w: number; h: number; W: number; H: number } {
+  const { w: W, h: H } = outputSize(p, p.encoder.previewWidth);
+  const m = mediaOf(p, c.mediaId);
+  const [x, y, w, h] = fitRect(c.fit, m?.width || W, m?.height || H, W, H);
+  return { x, y, w, h, W, H };
+}
 
 /** Map from a clip's source picture (0..1) to the output frame (0..1) at `local` seconds into it. */
 function placement(p: Project, c: Clip, local: number) {
@@ -207,6 +215,16 @@ export function pathAt(pts: [number, number, number][], t: number): [number, num
   const b = pts[hi];
   const k = (t - a[0]) / Math.max(1e-9, b[0] - a[0]);
   return [a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
+}
+
+/**
+ * The tracked object a Subject Guard follows: the one picked for it, or, while none is picked,
+ * the newest track in the project (so a guard added before or after tracking just works).
+ */
+export function guardPath(p: Pick<Project, 'clips'>, data: Record<string, unknown> | undefined): { clipId: string; pathId: string } | null {
+  const all = p.clips.flatMap((c) => (c.paths ?? []).map((x) => ({ clipId: c.id, pathId: x.id })));
+  if (data?.pathId) return all.find((x) => x.pathId === data.pathId) ?? null;
+  return all.at(-1) ?? null;
 }
 
 /** Add a title that follows a tracked path. */

@@ -7,7 +7,7 @@ import { paintedMask, mediaMap, depthMap, type MaskStroke } from './maps';
 import { VHS, CRT, GRAIN, POSTERIZE } from './retro';
 
 const RETRO: Record<string, string> = { vhs: VHS, crt: CRT, grain: GRAIN, posterize: POSTERIZE };
-import { pathOnTimeline, pathSize, pathAt } from './motion.svelte';
+import { pathOnTimeline, pathSize, pathAt, guardPath } from './motion.svelte';
 import { outputSize } from '../engine/args';
 import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
@@ -381,12 +381,13 @@ export class PostRunner {
     // tracked objects for Subject Guard, as timeline paths
     for (const e of this.effects) {
       if (e.type !== 'mask' || e.params.source !== 'track') continue;
-      const c = project.clips.find((x) => x.id === e.data?.clipId);
+      const gp = guardPath(project, e.data);
+      const c = gp && project.clips.find((x) => x.id === gp.clipId);
       if (!c) continue;
-      const pts = pathOnTimeline(project, c, String(e.data?.pathId));
+      const pts = pathOnTimeline(project, c, gp.pathId);
       const { w, h } = outputSize(project, project.encoder.previewWidth);
       // tracks from before boxes were kept: the old default oval
-      if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, String(e.data?.pathId)) ?? [0.26, (0.26 * w) / h] });
+      if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, gp.pathId) ?? [0.26, (0.26 * w) / h] });
     }
     this.texts = withTexts ? (project.texts ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
     this.fps = project.encoder.fps;

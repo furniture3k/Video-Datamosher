@@ -120,6 +120,11 @@ class Store {
   private renderSignal: { cancelled: boolean } | null = null;
   private renderQueued = false;
   private renderKey = '';
+  // worked out once per change of the project (not on every read: some are read every frame)
+  private keyNow = $derived(renderKey(this.project));
+  private durationNow = $derived(timelineDuration(this.project));
+  private framesNow = $derived(timelineFrames(this.project, this.project.encoder.fps));
+  private cutsNow = $derived(cutFrames(this.project, this.project.encoder.fps));
 
   get fps() {
     return this.project.encoder.fps;
@@ -132,7 +137,7 @@ class Store {
   get previewWidth() {
     const enc = this.project.encoder;
     let w = enc.width * PREVIEW_RES[this.ui.previewRes];
-    const frames = timelineFrames(this.project, enc.fps);
+    const frames = this.framesNow;
     const { w: ow, h: oh } = outputSize(this.project, enc.width);
     // a JPEG at the preview's quality is roughly 0.15 bytes a pixel
     const fit = Math.sqrt(PREVIEW_BUDGET / Math.max(1, frames * 0.15 * (oh / ow)));
@@ -140,21 +145,21 @@ class Store {
     return Math.max(240, Math.round(w / 16) * 16);
   }
   get totalFrames() {
-    return this.render && this.renderFresh ? this.render.prep.frames.length : timelineFrames(this.project, this.project.encoder.fps);
+    return this.render && this.renderFresh ? this.render.prep.frames.length : this.framesNow;
   }
   /** timeline frame under the playhead (works in both the edit and mosh views) */
   get playFrame() {
     return Math.round(this.ui.time * this.project.encoder.fps);
   }
   get duration() {
-    return timelineDuration(this.project);
+    return this.durationNow;
   }
   get cuts() {
-    return cutFrames(this.project, this.project.encoder.fps);
+    return this.cutsNow;
   }
   /** the rendered mosh matches the current project */
   get renderFresh() {
-    return !!this.render && this.render.key === renderKey(this.project);
+    return !!this.render && this.render.key === this.keyNow;
   }
   /** the player is showing the rendered mosh (otherwise the live edit preview) */
   get showingMosh() {

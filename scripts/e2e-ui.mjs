@@ -592,23 +592,65 @@ await step('analysis: track an object, title follows, stabilize', async () => {
   await S((id) => ((window.__moshpit.store.ui.selectedClips = [id]), window.__moshpit.store.seek(0.02)), id);
   await page.locator('.tabs button', { hasText: 'Clip' }).click();
   // the button arms the player; the box itself is given in picture coordinates
+  // zoomed in and moved: the box drawn on the player has to be mapped back into the clip's own picture
+  await S((id) => window.__moshpit.store.edit((p) => (p.clips.find((c) => c.id === id).transform = { zoom: 1.25, x: 0.05, y: -0.04 })), id);
   await page.getByRole('button', { name: 'Track an object' }).click();
   await page.locator('.picknote').waitFor();
-  await page.keyboard.press('Escape');
-  const box = await S((id) => {
-    const p = window.__moshpit.store.project;
+  // a box drawn with the mouse around the pattern (40..100 × 90..150 of the 320×240 source at t=0)
+  const scr = await S((id) => {
+    const { store, motion } = window.__moshpit;
+    const p = store.project;
     const c = p.clips.find((x) => x.id === id);
-    const r = window.__moshpit.motion.pictureRect(c, p);
-    const uv = (x, y) => [(r.x + (x / 320) * r.w) / r.W, (r.y + (y / 240) * r.h) / r.H];
-    return [...uv(40, 90), ...uv(100, 150)];
+    const r = motion.pictureRect(c, p);
+    const T = { zoom: 1.25, x: 0.05, y: -0.04 };
+    // fit, then zoom about the centre and move (as the preview draws it)
+    const uv = (x, y) => {
+      const fx = r.x + (x / 320) * r.w;
+      const fy = r.y + (y / 240) * r.h;
+      return [(r.W / 2 + T.x * r.W + (fx - r.W / 2) * T.zoom) / r.W, (r.H / 2 + T.y * r.H + (fy - r.H / 2) * T.zoom) / r.H];
+    };
+    const shown = [...document.querySelectorAll('.stage canvas')].find((cv) => !cv.classList.contains('hidden'));
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    const ox = rc.left + (rc.width - shown.width * k) / 2;
+    const oy = rc.top + (rc.height - shown.height * k) / 2;
+    const px = ([u, v]) => [ox + u * shown.width * k, oy + v * shown.height * k];
+    return [...px(uv(40, 90)), ...px(uv(100, 150))];
   }, id);
-  await S(({ id, box }) => window.__moshpit.motion.trackClip(id, box), { id, box });
-  const pts = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).paths?.[0]?.pts, id);
+  await page.mouse.move(scr[0], scr[1]);
+  await page.mouse.down();
+  await page.mouse.move((scr[0] + scr[2]) / 2, (scr[1] + scr[3]) / 2, { steps: 4 });
+  await page.mouse.move(scr[2], scr[3], { steps: 4 });
+  await page.mouse.up();
+  await page.waitForFunction((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).paths?.length, id, { timeout: 60000 });
+  await idle();
+  const tr = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).paths[0], id);
+  const pts = tr.pts;
   if (!pts || pts.length < 60) throw new Error('track too short: ' + (pts?.length ?? 0));
-  // the pattern slides 60 px/s of 320: centre x goes from ~70/320 to ~240/320
+  // in the clip's own picture the pattern slides 60 px/s of 320: centre x goes from ~70/320 to ~240/320
   const first = pts[0][1];
   const last = pts.at(-1)[1];
-  if (!(first < 0.3 && last > 0.65)) throw new Error(`track went ${first} → ${last}`);
+  if (Math.abs(first - 70 / 320) > 0.03 || Math.abs(last - 245 / 320) > 0.04) throw new Error(`track went ${first} → ${last}`);
+  for (const [, , y] of pts) if (Math.abs(y - 120 / 240) > 0.03) throw new Error('track wandered to y ' + y);
+  if (!tr.size || Math.abs(tr.size[0] - 60 / 320) > 0.02) throw new Error('box size not kept: ' + JSON.stringify(tr.size));
+  // the tracked box shows on the player while the clip is selected
+  await page.locator('.tracklayer .tbox').waitFor({ timeout: 5000 });
+  // Subject Guard on the tracked object renders
+  await S(({ id, pathId }) => {
+    const { store } = window.__moshpit;
+    store.edit((p) => {
+      const total = Math.round(p.encoder.fps * 3);
+      p.effects = [
+        { id: 'gk', type: 'kill', enabled: true, solo: false, start: 0, end: total, seed: 1, params: { mode: 'all', keepFirst: true }, auto: {}, locks: [] },
+        { id: 'gv', type: 'mask', enabled: true, solo: false, start: 0, end: total, seed: 2, params: { source: 'track', keep: 'subject', scale: 1.4, feather: 0.03, expand: 0.05, mix: 1 }, auto: {}, locks: [], data: { clipId: id, pathId } },
+        { id: 'gw', type: 'vectorWarp', enabled: true, solo: false, start: 0, end: total, seed: 3, params: { amplify: 2, rotate: 0, swap: false, drift: 0, driftY: 0, turbulence: 0, quantize: 0, threshold: 0, block: 16, search: 8, smooth: true, residual: 0.05, refresh: 0, mix: 1 }, auto: {}, locks: [] },
+      ];
+    });
+  }, { id, pathId: tr.id });
+  await settle();
+  if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error('no frames with a guard on the track');
+  await S(() => window.__moshpit.store.edit((p) => (p.effects = [])));
+  await settle();
   await page.locator('.pathrow').getByRole('button', { name: 'Title follows' }).click();
   const tx = await S(() => window.__moshpit.store.project.texts.at(-1));
   if (!tx.follow?.length) throw new Error('title does not follow');

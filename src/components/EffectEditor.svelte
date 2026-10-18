@@ -18,6 +18,7 @@
   import { ask, askText } from '../lib/ask';
   import { SCRIPT_EXAMPLES } from '../engine/effects/script';
   import { scripts, approve } from '../lib/scripts.svelte';
+  import { guardPath, motionJob, toggleTrackPick } from '../lib/motion.svelte';
 
   let { effect }: { effect: EffectInstance } = $props();
   const def = $derived(EFFECTS[effect.type]);
@@ -49,6 +50,8 @@
   }
   const info = $derived(showInfo || store.ui.tips);
   const hasSound = $derived(audioSources(store.project).length > 0);
+  /** the clip under the playhead, if it can be tracked (for Subject Guard's shortcut) */
+  const trackableUnder = $derived(clipUnder && clipUnder.media.source.kind === 'file' && !clipUnder.media.source.isImage && clipUnder.media.hasVideo && !clipUnder.clip.freeze ? clipUnder : undefined);
   /** tracked objects in the project, for Subject Guard */
   const trackedPaths = $derived(store.project.clips.flatMap((c) => (c.paths ?? []).map((p) => ({ clipId: c.id, pathId: p.id, name: `${mediaOf(store.project, c.mediaId)?.source.name ?? 'clip'} · ${p.name}` }))));
   const strokeCount = $derived(((effect.data?.strokes as unknown[]) ?? []).length);
@@ -144,14 +147,20 @@
     <section>
       <div class="sh"><span class="label">Subject</span></div>
       {#if effect.params.source === 'track'}
+        {@const chosen = guardPath(store.project, effect.data)}
         {#if trackedPaths.length}
-          <select class="full" value={effect.data?.pathId ?? ''} aria-label="Tracked object" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; const tp = trackedPaths.find((x) => x.pathId === v); store.edit(() => (effect.data = { ...(effect.data ?? {}), clipId: tp?.clipId, pathId: tp?.pathId })); }}>
-            <option value="">Pick a tracked object…</option>
+          <select class="full" value={chosen?.pathId ?? ''} aria-label="Tracked object" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; const tp = trackedPaths.find((x) => x.pathId === v); store.edit(() => (effect.data = { ...(effect.data ?? {}), clipId: tp?.clipId, pathId: tp?.pathId })); }}>
+            <option value="" disabled>Pick a tracked object…</option>
             {#each trackedPaths as tp}<option value={tp.pathId}>{tp.name}</option>{/each}
           </select>
+          {#if !chosen}<p class="small warn">The tracked object it followed was deleted: pick another.</p>{/if}
         {:else}
-          <p class="small warn">No tracked objects yet: select a clip, open the Clip tab and use Track an object.</p>
+          <p class="small warn">Nothing tracked yet. Track the object first; this guard follows the newest track until you pick one.</p>
         {/if}
+        {#if trackableUnder}
+          <button class="small" class:on={store.ui.trackPick === trackableUnder.clip.id} disabled={motionJob.running} onclick={() => toggleTrackPick(trackableUnder.clip.id)} title="Then drag a box on the player around what to keep clean">{motionJob.running ? motionJob.stage + '…' : store.ui.trackPick === trackableUnder.clip.id ? 'Drag a box on the player…' : trackedPaths.length ? 'Track another object' : 'Track an object in this clip'}</button>
+        {/if}
+        <p class="small faint">Shows in the Mosh view. Oval size is relative to the box you tracked.</p>
       {:else if effect.params.source === 'chroma'}
         <label class="row small">Colour <input type="color" value={String(effect.data?.color ?? '#00ff00')} oninput={(e) => store.edit(() => (effect.data = { ...(effect.data ?? {}), color: (e.target as HTMLInputElement).value }), 'guardcol' + effect.id)} /></label>
       {:else if effect.params.source === 'person'}

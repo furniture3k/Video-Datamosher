@@ -10,7 +10,7 @@
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
-  import { trackClip, pathOnTimeline, pathSize, pathAt } from '../lib/motion.svelte';
+  import { trackClip, pathOnTimeline, pathSize, pathAt, guardPath } from '../lib/motion.svelte';
   import { rasterizeField, type Stroke } from '../engine/flowfield';
   import { drawMask, type MaskStroke } from '../lib/maps';
   import { SAMPLE_RATE } from '../engine/audio';
@@ -124,7 +124,7 @@
     void store.ui.compare;
     void store.ui.split;
     void originals;
-    void JSON.stringify(store.project.texts);
+    void textsSig;
     if (mosh) draw();
   });
 
@@ -146,11 +146,15 @@
     };
     preview.draw(store.project, store.ui.time, store.ui.playing && !mosh, store.ui.speed);
   }
+  // deep signatures of the timeline: worked out again only when it changes, not on every frame
+  const clipsSig = $derived(JSON.stringify(store.project.clips));
+  const textsSig = $derived(JSON.stringify(store.project.texts));
+  const soundSig = $derived(JSON.stringify(store.project.tracks) + clipsSig);
   $effect(() => {
     // redraw when the time or anything on the timeline changes (while paused)
     void store.ui.time;
-    void JSON.stringify(store.project.clips);
-    void JSON.stringify(store.project.texts);
+    void clipsSig;
+    void textsSig;
     void store.project.media.length;
     void store.project.encoder.aspect;
     void lutState.loaded;
@@ -377,7 +381,7 @@
     const startAudio = () => editAudio.start($state.snapshot(store.project) as Project, store.ui.time, mute || speed !== 1);
     startAudio();
     let expected = t0;
-    let audioKey = JSON.stringify([store.project.clips, store.project.tracks]);
+    let audioKey = soundSig;
     const tick = (now: number) => {
       if (Math.abs(store.ui.time - expected) > 1e-6) {
         // seeked while playing
@@ -385,7 +389,7 @@
         n0 = now;
         startAudio();
       }
-      const k = JSON.stringify([store.project.clips, store.project.tracks]);
+      const k = soundSig;
       if (k !== audioKey) {
         audioKey = k;
         t0 = store.ui.time;
@@ -552,10 +556,19 @@
   let stageSize = $state(0);
   /** the selected clip's tracked objects, on the timeline */
   const tracks = $derived.by(() => {
-    const c = store.selectedClip;
-    if (!c?.paths?.length) return [];
     const p = store.project;
-    return c.paths.map((path) => ({ id: path.id, name: path.name, pts: pathOnTimeline(p, c, path.id), size: pathSize(p, c, path.id) ?? [0.06, 0.06] })).filter((x) => x.pts.length);
+    let c = store.selectedClip;
+    let paths = c?.paths ?? [];
+    // a Subject Guard on a tracked object: the object it follows
+    const fx = store.ui.selectedEffect ? p.effects.find((e) => e.id === store.ui.selectedEffect) : undefined;
+    if (!c && fx?.type === 'mask' && fx.params.source === 'track') {
+      const gp = guardPath(p, fx.data);
+      c = gp ? p.clips.find((x) => x.id === gp.clipId) : undefined;
+      paths = (c?.paths ?? []).filter((x) => x.id === gp?.pathId);
+    }
+    if (!c || !paths.length) return [];
+    const clip = c;
+    return paths.map((path) => ({ id: path.id, name: path.name, pts: pathOnTimeline(p, clip, path.id), size: pathSize(p, clip, path.id) ?? [0.06, 0.06] })).filter((x) => x.pts.length);
   });
   /** where those boxes are at the playhead, and the picture they're drawn over (stage pixels) */
   const trackView = $derived.by(() => {
