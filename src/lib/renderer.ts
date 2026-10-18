@@ -217,7 +217,7 @@ export function cutsOf(project: Project): number[] {
 /** Identity of everything that changes the moshed picture. */
 export const renderKey = (p: Project) => JSON.stringify({
   // effects that follow the music change when the sound does
-  au: audioKeysNeeded(p).length ? { tr: p.tracks.filter((t) => t.kind === 'audio').map((t) => [t.id, t.muted, t.solo, t.volume]), bs: p.beatSource } : 0, c: p.clips.map(({ label: _l, ...c }) => c), v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
+  au: audioKeysNeeded(p).length ? { tr: p.tracks.filter((t) => t.kind === 'audio').map((t) => [t.id, t.muted, t.solo, t.volume]), bs: p.beatSource } : 0, c: p.clips.map(({ label: _l, paths: _p, ...c }) => c), tp: p.effects.some((e) => e.type === 'mask' && e.params.source === 'track') ? p.clips.map((c) => c.paths ?? 0) : 0, v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
@@ -344,15 +344,21 @@ export class CleanFrames {
     private prep: Prepared,
     private span = 96,
     private eng: Engine = ffmpeg,
+    /** how far past the asked-for frame one decode may run (to the next keyframe), in frames */
+    private reach = 900,
   ) {
     const key = JSON.stringify(project.decoder ?? null);
     if (key !== sharedClean.key) sharedClean = { key, pics: new Map() };
   }
   private async load(pos: number) {
     const fr = this.prep.frames;
-    const to = Math.min(fr.length, pos + this.span);
     let kf = pos;
     while (kf > 0 && fr[kf].type !== 'I') kf--;
+    // on to the next keyframe (within reason): the next stretch then starts there instead of
+    // decoding this keyframe's frames all over again
+    let next = pos + 1;
+    while (next < fr.length && fr[next].type !== 'I') next++;
+    const to = Math.min(fr.length, Math.max(pos + this.span, Math.min(next, kf + this.reach)));
     // the stream's first keyframe carries the headers; it's decoded first and dropped
     let list = [fr[0], ...fr.slice(kf, to)];
     if (list.some((f) => f.size !== undefined)) {
@@ -360,7 +366,7 @@ export class CleanFrames {
       list = list.map((f) => loaded.get(f) ?? f);
     }
     const js = await decode(this.project, writeMoshedBlob(this.prep, list), 4, list.length, 'Clean frames', undefined, {}, this.eng);
-    if (this.cache.size > this.span * 3) this.cache.clear();
+    if (this.cache.size > this.reach * 2) this.cache.clear();
     js.slice(1).forEach((j, i) => {
       this.cache.set(kf + i, j);
       // the same stretch of a cached segment decodes to the same pictures next render
@@ -403,7 +409,8 @@ let sharedClean: { key: string; pics: Map<Uint8Array, Uint8Array> } = { key: '',
 const needsClean = (p: Project) => p.effects.some((e) => e.enabled && e.type === 'mask');
 
 export async function originalFrames(project: Project, width: number): Promise<Uint8Array[]> {
-  const key = JSON.stringify({ c: project.clips, e: project.encoder, width });
+  // (tracked paths and labels don't change the picture)
+  const key = JSON.stringify({ c: project.clips.map(({ label: _l, paths: _p, ...c }) => c), e: project.encoder, width });
   const hit = origCache.get(key);
   if (hit) return hit;
   const prep = await prepare(project, width);
@@ -739,7 +746,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     }
 
     const type = { mp4: 'video/mp4', webm: 'video/webm', gif: 'image/gif' }[o.format as 'mp4'];
-    const clean = needsClean(project) ? new CleanFrames(project, clean0, 96, eng) : undefined;
+    const clean = needsClean(project) ? new CleanFrames(project, clean0, 96, eng, 240) : undefined;
     const runner = new PostRunner(project, 0.95, true, audioFx, clean);
     const post = runner.active;
     const n = hi - lo;

@@ -53,32 +53,38 @@ export function flowParamsAt(e: EffectInstance, t: number): FlowParams {
 export function pixelSort(px: Uint8Array, w: number, h: number, low: number, high: number, vertical: boolean, reverse: boolean) {
   const len = vertical ? h : w;
   const lines = vertical ? w : h;
-  const idx = (line: number, k: number) => (vertical ? (k * w + line) * 4 : (line * w + k) * 4);
-  const lum = (i: number) => (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) / 255;
-  const buf: [number, number, number, number, number][] = [];
+  const n = w * h;
+  // whole pixels as one number each (copied when the bytes don't start on a 4-byte boundary)
+  const aligned = px.byteOffset % 4 === 0;
+  const u32 = aligned ? new Uint32Array(px.buffer, px.byteOffset, n) : new Uint32Array(px.slice(0, n * 4).buffer);
+  const lum = new Float64Array(n);
+  for (let i = 0; i < n; i++) lum[i] = (px[i * 4] * 0.299 + px[i * 4 + 1] * 0.587 + px[i * 4 + 2] * 0.114) / 255;
+  const ord = new Uint32Array(len);
+  const key = new Float64Array(len);
+  const pix = new Uint32Array(len);
+  // stable: equal brightness keeps its order
+  const cmp = reverse ? (a: number, b: number) => key[b] - key[a] || a - b : (a: number, b: number) => key[a] - key[b] || a - b;
   for (let line = 0; line < lines; line++) {
+    const base = vertical ? line : line * w;
+    const stride = vertical ? w : 1;
     let k = 0;
     while (k < len) {
-      while (k < len && !(lum(idx(line, k)) >= low && lum(idx(line, k)) <= high)) k++;
+      while (k < len && !(lum[base + k * stride] >= low && lum[base + k * stride] <= high)) k++;
       const s = k;
-      buf.length = 0;
-      while (k < len && lum(idx(line, k)) >= low && lum(idx(line, k)) <= high) {
-        const i = idx(line, k);
-        buf.push([lum(i), px[i], px[i + 1], px[i + 2], px[i + 3]]);
-        k++;
+      while (k < len && lum[base + k * stride] >= low && lum[base + k * stride] <= high) k++;
+      const m = k - s;
+      if (m < 2) continue;
+      for (let j = 0; j < m; j++) {
+        const q = base + (s + j) * stride;
+        ord[j] = j;
+        key[j] = lum[q];
+        pix[j] = u32[q];
       }
-      if (buf.length > 1) {
-        buf.sort((a, b) => (reverse ? b[0] - a[0] : a[0] - b[0]));
-        buf.forEach((p, j) => {
-          const i = idx(line, s + j);
-          px[i] = p[1];
-          px[i + 1] = p[2];
-          px[i + 2] = p[3];
-          px[i + 3] = p[4];
-        });
-      }
+      const o = ord.subarray(0, m).sort(cmp);
+      for (let j = 0; j < m; j++) u32[base + (s + j) * stride] = pix[o[j]];
     }
   }
+  if (!aligned) px.set(new Uint8Array(u32.buffer));
 }
 
 /** Raw Bend: the RGB values of an RGBA image as one long signal through an audio effect (in place). */

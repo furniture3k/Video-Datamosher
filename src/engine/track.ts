@@ -240,11 +240,30 @@ export function trackBox(g: Gray, start: number, cx: number, cy: number, bw: num
 
 // ---------- stabilization ----------
 
-/** Frame-to-frame camera motion: translation (px) and rotation (radians) from block matching. */
-export function frameMotion(a: Uint8Array, b: Uint8Array, w: number, h: number, block = 16, range = 8): { dx: number; dy: number; da: number } {
+/** Sum of absolute differences of a block of `a` at (x, y) and `b` shifted by (dx, dy); stops past `limit`. */
+function sad(a: Uint8Array, b: Uint8Array, w: number, x: number, y: number, dx: number, dy: number, size: number, limit: number): number {
+  let s = 0;
+  for (let j = 0; j < size && s <= limit; j++) {
+    const ra = (y + j) * w + x;
+    const rb = (y + j + dy) * w + x + dx;
+    for (let i = 0; i < size; i++) s += Math.abs(a[ra + i] - b[rb + i]);
+  }
+  return s;
+}
+
+/**
+ * Frame-to-frame camera motion: translation (px) and rotation (radians) from block matching,
+ * searched on half-size frames first and then refined at full size.
+ */
+export function frameMotion(a: Uint8Array, b: Uint8Array, w: number, h: number, block = 16, range = 8, halves?: [Uint8Array, Uint8Array]): { dx: number; dy: number; da: number } {
   const vecs: { x: number; y: number; dx: number; dy: number }[] = [];
   const cols = Math.max(2, Math.floor((w - 2 * range) / (block * 1.5)));
   const rows = Math.max(2, Math.floor((h - 2 * range) / (block * 1.5)));
+  const hw = w >> 1;
+  const hh = h >> 1;
+  const [a2, b2] = halves ?? [half(a, w, h), half(b, w, h)];
+  const hb = block >> 1;
+  const hr = Math.ceil(range / 2);
   for (let r = 0; r < rows; r++)
     for (let c = 0; c < cols; c++) {
       const x0 = Math.round(range + (c + 0.5) * ((w - 2 * range) / cols) - block / 2);
@@ -258,16 +277,37 @@ export function frameMotion(a: Uint8Array, b: Uint8Array, w: number, h: number, 
         if (v > mx) mx = v;
       }
       if (mx - mn < 12) continue;
+      // stop early only once a candidate can't win or tie (a partial sum must never pass as a tie)
+      const better = (s: number, best: number, dx: number, dy: number, bdx: number, bdy: number) => s < best || (s === best && dx * dx + dy * dy < bdx * bdx + bdy * bdy);
+      // half size: the whole range, keeping the best few (repeating patterns can fool one)
+      const hx = x0 >> 1;
+      const hy = y0 >> 1;
+      const top: [number, number, number][] = [];
+      for (let dy = -hr; dy <= hr; dy++)
+        for (let dx = -hr; dx <= hr; dx++) {
+          if (hx + dx < 0 || hy + dy < 0 || hx + dx + hb > hw || hy + dy + hb > hh) continue;
+          const worst = top.length < 3 ? Infinity : top[2][0];
+          const s = sad(a2, b2, hw, hx, hy, dx, dy, hb, worst);
+          if (s > worst) continue;
+          top.push([s, dx, dy]);
+          top.sort((p, q) => p[0] - q[0] || p[1] * p[1] + p[2] * p[2] - q[1] * q[1] - q[2] * q[2]);
+          if (top.length > 3) top.pop();
+        }
+      // full size: around each of them
       let best = Infinity;
       let bdx = 0;
       let bdy = 0;
-      for (let dy = -range; dy <= range; dy++)
-        for (let dx = -range; dx <= range; dx++) {
-          // stop early only once this candidate can't win or tie (a partial sum must never pass as a tie)
-          let sad = 0;
-          for (let j = 0; j < block && sad <= best; j++) for (let i = 0; i < block; i++) sad += Math.abs(a[(y0 + j) * w + x0 + i] - b[(y0 + j + dy) * w + x0 + i + dx]);
-          if (sad < best || (sad === best && dx * dx + dy * dy < bdx * bdx + bdy * bdy)) ((best = sad), (bdx = dx), (bdy = dy));
-        }
+      const seen = new Set<number>();
+      for (const [, cdx, cdy] of top)
+        for (let dy = cdy * 2 - 2; dy <= cdy * 2 + 2; dy++)
+          for (let dx = cdx * 2 - 2; dx <= cdx * 2 + 2; dx++) {
+            if (Math.abs(dx) > range || Math.abs(dy) > range || x0 + dx < 0 || y0 + dy < 0 || x0 + dx + block > w || y0 + dy + block > h) continue;
+            const id = (dy + 64) * 128 + dx + 64;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const s = sad(a, b, w, x0, y0, dx, dy, block, best);
+            if (better(s, best, dx, dy, bdx, bdy)) ((best = s), (bdx = dx), (bdy = dy));
+          }
       vecs.push({ x: x0 + block / 2 - w / 2, y: y0 + block / 2 - h / 2, dx: bdx, dy: bdy });
     }
   if (!vecs.length) return { dx: 0, dy: 0, da: 0 };
@@ -300,8 +340,11 @@ export interface Stabilized {
 export function stabilize(g: Gray, radius = 15, maxZoom = 1.3): Stabilized {
   const n = g.frames.length;
   const path = [{ x: 0, y: 0, a: 0 }];
+  let prev = n ? half(g.frames[0], g.w, g.h) : new Uint8Array(0);
   for (let k = 1; k < n; k++) {
-    const m = frameMotion(g.frames[k - 1], g.frames[k], g.w, g.h);
+    const cur = half(g.frames[k], g.w, g.h);
+    const m = frameMotion(g.frames[k - 1], g.frames[k], g.w, g.h, 16, 8, [prev, cur]);
+    prev = cur;
     const p = path[k - 1];
     path.push({ x: p.x + m.dx, y: p.y + m.dy, a: p.a + m.da });
   }

@@ -218,7 +218,7 @@
     if (mode === 'off' || !r) return;
     const p = $state.snapshot(store.project) as Project;
     const snap = store.ui.compareSnap ? snapshots.list.find((s) => s.id === store.ui.compareSnap) : null;
-    const key = snap ? 'snap:' + snap.id + ':' + r.w : JSON.stringify([p.clips, p.encoder, r.w]);
+    const key = snap ? 'snap:' + snap.id + ':' + r.w : JSON.stringify([p.clips.map(({ label: _l, paths: _p, ...c }) => c), p.encoder, r.w]);
     if (key === origKey) return;
     origKey = key;
     loadingOrig = true;

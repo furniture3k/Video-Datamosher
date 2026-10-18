@@ -151,7 +151,9 @@ export async function trackClip(id: string, box: [number, number, number, number
       inWorker<TrackPoint[]>({ kind: 'track', w: g.w, h: g.h, buf: framesBuffer(g, 0, k + 1), start: k, cx, cy, bw, bh, dir: -1 }, () => trackBox({ ...g, frames: g.frames.slice(0, k + 1) }, k, cx, cy, bw, bh, -1)),
     ]);
     const all = [...back.slice(0, -1), ...fwd];
-    return { pts: all.map(([f, x, y]) => [c.in + f / fps, x / g.w, y / g.h] as [number, number, number]), whole: all[0][0] === 0 && all[all.length - 1][0] === n - 1, len: n / fps };
+    // rounded: well under a pixel, and the project (and every undo step) stays small
+    const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+    return { pts: all.map(([f, x, y]) => [r4(c.in + f / fps), r4(x / g.w), r4(y / g.h)] as [number, number, number]), whole: all[0][0] === 0 && all[all.length - 1][0] === n - 1, len: n / fps };
   });
   const { pts } = res;
   if (pts.length < 2) return store.toast('Could not follow that: draw the box snugly around something with detail (an edge, a pattern, a face).', 'error');
