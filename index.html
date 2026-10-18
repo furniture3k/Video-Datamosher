@@ -7,6 +7,7 @@
     <script>
       // The installed app (and old links to the editor) open the editor, not this page.
       if (matchMedia('(display-mode: standalone)').matches || /[?&](source=pwa|shared=1)\b/.test(location.search)) location.replace('app/' + location.search + location.hash);
+      document.documentElement.classList.add('js');
     </script>
     <meta name="description" content="moshpit is a free, open-source video editor with a datamosher built in. Melt, bloom and glitch your clips in the browser or the desktop app. Nothing is uploaded." />
     <link rel="canonical" href="https://furniture3k.github.io/Video-Datamosher/" />
@@ -23,6 +24,7 @@
     <meta name="theme-color" content="#0b0b0d" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23121214'/><path transform='translate(16 16) scale(0.95) translate(-16 -16)' d='M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z' fill='%23c8f031' fill-rule='evenodd'/></svg>" />
     <link rel="apple-touch-icon" href="./app/apple-touch-icon.png" />
+    <link rel="preload" as="image" href="./site/before.jpg" fetchpriority="high" />
     <link rel="stylesheet" href="./site/site.css" />
     <script type="application/ld+json">
       {
@@ -31,114 +33,243 @@
         "name": "moshpit",
         "applicationCategory": "MultimediaApplication",
         "operatingSystem": "Web, Windows, macOS, Linux",
+        "softwareVersion": "<!-- site:version -->",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "url": "https://furniture3k.github.io/Video-Datamosher/",
         "license": "https://www.gnu.org/licenses/gpl-3.0.html"
       }
     </script>
   </head>
-  <body>
+  <body class="landing">
+    <a class="skip" href="#main">Skip to content</a>
     <header class="nav">
       <div class="wrap">
         <a class="brand" href="./"><svg viewBox="4 3 24 26" aria-hidden="true"><path d="M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z" fill="#c8f031" fill-rule="evenodd" /></svg>moshpit</a>
-        <a class="link hide-s" href="#features">Features</a>
-        <a class="link hide-s" href="#gallery">Gallery</a>
-        <a class="link" href="./docs/">Docs</a>
-        <a class="link hide-s" href="https://github.com/furniture3k/Video-Datamosher">GitHub</a>
+        <nav class="nav-links" id="nav-links" aria-label="Sections">
+          <a class="link" href="#how">How it works</a>
+          <a class="link" href="#effects">Effects</a>
+          <a class="link" href="#editor">Editor</a>
+          <a class="link" href="#gallery">Gallery</a>
+          <a class="link" href="./docs/">Docs</a>
+          <a class="link" href="https://github.com/furniture3k/Video-Datamosher">GitHub</a>
+        </nav>
+        <button class="menu-btn" id="menu-btn" type="button" aria-expanded="false" aria-controls="nav-links" aria-label="Menu"><span></span><span></span></button>
         <a class="btn primary small" href="./app/">Open moshpit</a>
       </div>
     </header>
 
-    <main>
-      <div class="wrap">
-        <section class="hero">
-          <div>
+    <main id="main">
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-text">
+            <a class="pill" href="https://github.com/furniture3k/Video-Datamosher/blob/main/CHANGELOG.md"><b>v<!-- site:version-short --></b><span><!-- site:whatsnew --></span><span aria-hidden="true">→</span></a>
             <h1>Break your videos <em>beautifully.</em></h1>
-            <p class="lead">moshpit is a video editor with a datamosher built in. Cut your clips together, then melt, bloom and glitch them by editing the compressed video itself. Free, open source, and nothing is uploaded.</p>
+          </div>
+          <div class="hero-side">
+            <p class="lead">moshpit is a video editor with a datamosher built in. Cut your clips together, then melt, bloom and glitch them by editing the compressed video itself.</p>
             <div class="cta">
-              <a class="btn primary" href="./app/">Open in your browser</a>
-              <a class="btn" id="dl-main" href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Download the desktop app</a>
+              <a class="btn primary" href="./app/">Open in your browser<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" /></svg></a>
+              <a class="btn" id="dl-main" href="#download">Get the desktop app</a>
             </div>
-            <p class="cta-note faint" id="dl-note">Works in Chrome, Edge, Firefox and Safari, on computers and phones. Installable, and works offline.</p>
+            <p class="cta-note" id="dl-note">Free and open source. Works in Chrome, Edge, Firefox and Safari, on computers and phones.</p>
           </div>
-          <div class="hero-media">
-            <video src="./site/hero.webm" poster="./site/hero.jpg" autoplay muted loop playsinline aria-label="Colour bars melting into a Mandelbrot zoom, made in moshpit"></video>
-          </div>
-        </section>
-      </div>
+        </div>
 
-      <section class="block">
         <div class="wrap">
-          <h2>Same clips. Then moshed.</h2>
-          <p class="sub">Drag across the picture. On the left, three clips cut together; on the right, the keyframes at the cuts are gone, so each shot's movement drags the last picture around until it melts into the next.</p>
+          <div class="pad" id="pad">
+            <div class="pad-screen">
+              <img class="pad-poster" src="./site/before.jpg" alt="" width="480" height="270" fetchpriority="high" />
+              <canvas id="pad-canvas" width="480" height="270" tabindex="0" role="img" aria-label="Mosh pad: a clip that melts at its cuts. Drag across it, or use the arrow keys, to push its pixels around."></canvas>
+              <div class="hud hud-tl" aria-hidden="true"><span id="pad-tc">00:00:00:00</span></div>
+              <div class="hud hud-tr" aria-hidden="true"><span class="ft" id="pad-ft">I</span></div>
+              <div class="pad-flash" id="pad-flash" aria-hidden="true"></div>
+              <p class="pad-hint" id="pad-hint" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V11m0-.5a1.5 1.5 0 0 1 3 0v4.5a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.6 14a1.5 1.5 0 0 1 2.4-1.8L9 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>Drag across the picture</p>
+              <button class="pad-play" id="pad-play" type="button" hidden><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4l10 6-10 6z" fill="currentColor" /></svg>Play the mosh pad</button>
+            </div>
+            <div class="pad-bar" role="group" aria-label="Mosh pad controls">
+              <button class="pk" id="pk-key" type="button" aria-pressed="true"><b>KEY</b><span>Kill keyframes</span></button>
+              <button class="pk" id="pk-blm" type="button"><b>BLM</b><span>Hold to bloom</span></button>
+              <button class="pk" id="pk-glt" type="button"><b>GLT</b><span>Glitch</span></button>
+              <button class="pk" id="pk-i" type="button"><b>I</b><span>New keyframe</span></button>
+              <p class="pad-readout" id="pad-readout" aria-hidden="true">mv <span id="pad-mv">0.0</span> px · <span id="pad-frames">0</span> P-frames since the last I</p>
+            </div>
+          </div>
+          <p class="pad-caption">A tiny datamosher running right here on your graphics card: it measures how each 16&#8239;px block moves and rebuilds every frame from the last one, the way a decoder does. With <b>KEY</b> on, the keyframes at the cuts are dropped, so each new shot melts out of the old picture. The editor does the real thing, to the compressed video.</p>
+        </div>
+      </section>
+
+      <section class="block" id="how">
+        <div class="wrap">
+          <div class="head">
+            <p class="eyebrow"><span>01</span>How a mosh works</p>
+            <h2>Video files mostly store movement.</h2>
+            <p class="sub">A full picture, a <em>keyframe</em>, now and then. In between, only which blocks moved where. Take away the keyframe at a cut and the next shot's movement gets played on the last picture.</p>
+          </div>
+
+          <div class="frames" id="frames" data-removed="false">
+            <div class="frames-row">
+              <div class="fr" style="--i: 0"><span class="fr-img"></span><span class="fr-t">P</span></div>
+              <div class="fr" style="--i: 1"><span class="fr-img"></span><span class="fr-t">P</span></div>
+              <div class="fr" style="--i: 2"><span class="fr-img"></span><span class="fr-t">P</span></div>
+              <div class="fr fr-key" style="--i: 3"><span class="fr-img"></span><span class="fr-t">I</span><span class="fr-cut" aria-hidden="true">cut</span></div>
+              <div class="fr" style="--i: 4"><span class="fr-img"></span><span class="fr-t">P</span></div>
+              <div class="fr" style="--i: 5"><span class="fr-img"></span><span class="fr-t">P</span></div>
+              <div class="fr" style="--i: 6"><span class="fr-img"></span><span class="fr-t">P</span></div>
+              <div class="fr" style="--i: 7"><span class="fr-img"></span><span class="fr-t">P</span></div>
+            </div>
+            <div class="frames-ctl">
+              <button class="btn" id="frames-btn" type="button" aria-pressed="false" aria-controls="frames"><span class="when-off">Delete the keyframe at the cut</span><span class="when-on">Put the keyframe back</span></button>
+              <p class="frames-say" id="frames-say" aria-live="polite">Eight frames around a cut, from a real export. <b class="i-dot">I</b> is a full picture; each <b>P</b> only says how blocks move.</p>
+            </div>
+          </div>
+
+          <div class="ba-head">
+            <h3>Same clips, played back.</h3>
+            <p class="faint">Drag across the picture: the clean cut on the left, moshed on the right.</p>
+          </div>
           <div class="ba" id="ba" style="--split: 50%">
-            <video class="before" src="./site/before.webm" poster="./site/before.jpg" muted loop playsinline preload="metadata" aria-hidden="true"></video>
-            <video class="after" src="./site/after.webm" poster="./site/after.jpg" muted loop playsinline preload="metadata" aria-hidden="true"></video>
+            <video class="before" src="./site/before.webm" poster="./site/before.jpg" muted loop playsinline preload="none" aria-hidden="true"></video>
+            <video class="after" src="./site/after.webm" poster="./site/after.jpg" muted loop playsinline preload="none" aria-hidden="true"></video>
             <div class="handle"></div>
-            <span class="tag l">before</span><span class="tag r">moshed</span>
+            <span class="tag l">clean</span><span class="tag r">moshed</span>
             <input type="range" min="0" max="100" value="50" aria-label="Compare the clean cut and the moshed one" />
           </div>
         </div>
       </section>
 
-      <section class="block" id="features">
+      <section class="block" id="effects">
         <div class="wrap">
-          <h2>A real datamosher, inside a real editor.</h2>
-          <p class="sub">Most glitch apps paint effects over the picture. moshpit rewrites the compressed frames themselves, the way datamoshing was always done, with a timeline and a live preview around it.</p>
-          <div class="features">
-            <div class="feature"><div class="ic">KEY</div><h3>Melts and blooms</h3><p>Remove keyframes so one shot melts into the next, repeat motion until the picture erupts, borrow movement from another clip, or corrupt the bytes.</p></div>
-            <div class="feature"><div class="ic">TL</div><h3>A proper timeline</h3><p>Multiple video and audio tracks, trimming, splitting, titles, keyframes, speed ramps, chroma key and LUTs, with mosh effects as bars you drag and resize.</p></div>
-            <div class="feature"><div class="ic">♪</div><h3>Moshes to the music</h3><p>Effects can fire on every beat or bar, swell with the bass, or cut your whole edit to the song for you.</p></div>
-            <div class="feature"><div class="ic">⚄</div><h3>Happy accidents on tap</h3><p>Presets, templates, Randomize, a chaos dial, and a grid of variations you can breed. Every result comes from a seed, so you can get it back.</p></div>
-            <div class="feature"><div class="ic">↗</div><h3>Ready for anywhere</h3><p>MP4, WebM and GIF up to 4K, vertical crops that follow the action, seamless loops, captions, and size limits for Discord.</p></div>
-            <div class="feature"><div class="ic">⌂</div><h3>Private and offline</h3><p>Everything happens on your device: in the browser with WebAssembly, or in the desktop app with native FFmpeg. Nothing is uploaded.</p></div>
+          <div class="head">
+            <p class="eyebrow"><span>02</span>Effects</p>
+            <h2><!-- site:fx-count --> effects, each with a three-letter name.</h2>
+            <p class="sub">Most glitch apps paint over the picture. moshpit's <!-- site:mosh-count --> mosh effects rewrite the compressed frames, the way datamoshing was always done; the <!-- site:pixel-count --> picture effects finish the look. Pick one.</p>
           </div>
-          <img class="shot" src="./site/studio.png" alt="The moshpit editor: media, preview, inspector and a timeline with mosh effects, titles, video and music" loading="lazy" width="1440" height="900" />
+          <!-- site:rack -->
+          <p class="rack-more"><a href="./docs/effects/">Every effect and setting, in the docs</a> · <!-- site:preset-count --> presets and <!-- site:transition-count --> transitions to start from</p>
+        </div>
+      </section>
+
+      <section class="block" id="editor">
+        <div class="wrap">
+          <div class="head">
+            <p class="eyebrow"><span>03</span>The editor</p>
+            <h2>And around it, a whole editor.</h2>
+            <p class="sub">A multi-track timeline with the tools you'd expect from a desktop editor, so you can cut the video you want to break in the same place you break it.</p>
+          </div>
+
+          <div class="tour" id="tour">
+            <div class="tour-shot">
+              <img src="./site/studio.png" alt="The moshpit editor: media, preview, inspector and a timeline with mosh effects, titles, video and music" loading="lazy" decoding="async" width="1440" height="900" />
+              <button type="button" class="spot" style="--x: 9%; --y: 13%" data-spot="0" aria-label="1: Media">1</button>
+              <button type="button" class="spot" style="--x: 47%; --y: 33%" data-spot="1" aria-label="2: Player">2</button>
+              <button type="button" class="spot" style="--x: 40%; --y: 6%" data-spot="2" aria-label="3: Presets, Randomize and Variations">3</button>
+              <button type="button" class="spot" style="--x: 88%; --y: 24%" data-spot="3" aria-label="4: Inspector">4</button>
+              <button type="button" class="spot" style="--x: 48.5%; --y: 76%" data-spot="4" aria-label="5: Mosh FX lanes">5</button>
+              <button type="button" class="spot" style="--x: 57%; --y: 88%" data-spot="5" aria-label="6: Transitions">6</button>
+              <button type="button" class="spot" style="--x: 94%; --y: 6%" data-spot="6" aria-label="7: Export">7</button>
+            </div>
+            <ol class="tour-list">
+              <li data-spot="0"><b>Media</b> Import video, photos, GIFs and music, record your camera or screen, or generate test footage.</li>
+              <li data-spot="1"><b>Player</b> Plays your cut straight away from the source files, and the rendered mosh as soon as it's ready.</li>
+              <li data-spot="2"><b>Presets, Randomize, Variations</b> <!-- site:preset-count --> presets, a chaos dial and a grid of variations to breed from. Every result has a seed, so you can get it back.</li>
+              <li data-spot="3"><b>Inspector</b> Every setting comes with a line explaining what it does.</li>
+              <li data-spot="4"><b>Mosh FX lanes</b> Effects are bars on the timeline: drag, resize and stack them, or let them fire on the beat.</li>
+              <li data-spot="5"><b>Transitions</b> Melt, Bloom melt, Glitch cut and more on any cut, next to dissolves, wipes and slides.</li>
+              <li data-spot="6"><b>Export</b> MP4, WebM, GIF, PNG frames or the raw broken AVI, up to 4K.</li>
+            </ol>
+          </div>
+
+          <dl class="specs">
+            <div><dt>Timeline</dt><dd>Video and audio tracks, as many as you like. Magnetic main track, ripple trims, blade, slip and roll.</dd></div>
+            <div><dt>Clips</dt><dd>Speed 0.05–16×, speed ramps, reverse, freeze frames, keyframed position, zoom, rotation and opacity.</dd></div>
+            <div><dt>Colour</dt><dd>.cube LUTs, chroma key, adjustment layers, waveform, parade, vectorscope and histogram.</dd></div>
+            <div><dt>Music</dt><dd>Effects that fire on every beat or bar or swell with the bass, and an edit cut to the song for you.</dd></div>
+            <div><dt>Tracking</dt><dd>Follow an object through the shot and pin a title, an overlay or a clean area to it. One-click stabilize.</dd></div>
+            <div><dt>Captions</dt><dd>Whisper, running on your device. Clean, karaoke, or melting with the mosh. Export .srt or .vtt.</dd></div>
+            <div><dt>Live</dt><dd>Play effects from MIDI knobs and pads, or over OSC in the desktop app, and record the take.</dd></div>
+            <div><dt>Output</dt><dd>Up to 4K. 10 minutes in the browser, 30 in the desktop app. Vertical crops that follow the action, seamless loops.</dd></div>
+          </dl>
         </div>
       </section>
 
       <section class="block" id="gallery">
         <div class="wrap">
-          <h2>Gallery</h2>
-          <p class="sub">Made with moshpit. Every one comes with its recipe: open it and the same mosh goes onto your own footage. <a href="https://github.com/furniture3k/Video-Datamosher/discussions/new?category=show-and-tell">Share yours</a>.</p>
+          <div class="head head-row">
+            <div>
+              <p class="eyebrow"><span>04</span>Gallery</p>
+              <h2>Made with moshpit.</h2>
+            </div>
+            <p class="sub">Each one comes with its recipe: open it and the same mosh goes onto your own footage. <a href="https://github.com/furniture3k/Video-Datamosher/discussions/new?category=show-and-tell">Share yours</a>.</p>
+          </div>
           <div class="gallery" id="gallery-list"><p class="faint">Loading…</p></div>
+        </div>
+      </section>
+
+      <section class="private">
+        <div class="wrap private-grid">
+          <h2>Your footage never leaves your device.</h2>
+          <dl class="facts">
+            <div><dt>Decoding and encoding</dt><dd>FFmpeg, as WebAssembly in this tab, or native in the desktop app</dd></div>
+            <div><dt>Effects</dt><dd>WebGL, on your graphics card</dd></div>
+            <div><dt>Videos uploaded</dt><dd class="big">0</dd></div>
+            <div><dt>Account needed</dt><dd>None. Installable, and works offline.</dd></div>
+          </dl>
         </div>
       </section>
 
       <section class="block" id="download">
         <div class="wrap">
-          <h2>Get moshpit</h2>
-          <p class="sub">Use it in your browser, install it from there (it then works offline), or get the desktop app: it runs a native FFmpeg on every core, so 4K and long videos are practical.</p>
-          <div class="downloads" id="downloads">
-            <div class="dl" data-os="web"><b>Browser</b><a href="./app/">Open moshpit</a><span class="faint">Any modern browser. Install it from the address bar or Share → Add to Home Screen.</span></div>
-            <div class="dl" data-os="windows"><b>Windows 10 / 11</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Installer (.exe or .msi)</a></div>
-            <div class="dl" data-os="mac"><b>macOS</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Apple Silicon or Intel (.dmg)</a></div>
-            <div class="dl" data-os="linux"><b>Linux</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">.AppImage, .deb or .rpm</a></div>
+          <div class="head">
+            <p class="eyebrow"><span>05</span>Get it</p>
+            <h2>Open it in a tab, or install it.</h2>
+            <p class="sub">The desktop app runs a native FFmpeg on every core, so 4K and long videos are practical.</p>
           </div>
-          <p class="faint" style="font-size: 13.5px; margin-top: 14px">The desktop builds aren't code-signed yet: on macOS right-click the app and choose Open the first time; on Windows choose More info → Run anyway. <a href="./docs/desktop/">More about the desktop app</a>.</p>
+          <div class="downloads" id="downloads">
+            <div class="dl" data-os="web"><span class="dl-for">Your system</span><b>Browser</b><a class="dl-main" href="./app/">Open moshpit</a><span class="dl-note">Chrome, Edge, Firefox or Safari. Install it from the address bar, or Share → Add to Home Screen on a phone.</span></div>
+            <div class="dl" data-os="windows"><span class="dl-for">Your system</span><b>Windows 10 / 11</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Installer (.exe or .msi)</a></div>
+            <div class="dl" data-os="mac"><span class="dl-for">Your system</span><b>macOS</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">Apple Silicon or Intel (.dmg)</a></div>
+            <div class="dl" data-os="linux"><span class="dl-for">Your system</span><b>Linux</b><a href="https://github.com/furniture3k/Video-Datamosher/releases/latest">.AppImage, .deb or .rpm</a></div>
+          </div>
+          <p class="dl-foot">The desktop builds aren't code-signed yet: on macOS right-click the app and choose Open the first time; on Windows choose More info → Run anyway. <a href="./docs/desktop/">More about the desktop app</a>.</p>
         </div>
       </section>
 
       <section class="block" id="faq">
+        <div class="wrap faq-grid">
+          <div class="head">
+            <p class="eyebrow"><span>06</span>Questions</p>
+            <h2>Questions.</h2>
+            <p class="sub">More in the <a href="./docs/faq/">docs</a>, or ask on <a href="https://github.com/furniture3k/Video-Datamosher/discussions">GitHub</a>.</p>
+          </div>
+          <div class="faq">
+            <details><summary>What is datamoshing?</summary><p>Video files mostly store changes, not pictures: a full picture now and then (a keyframe) and in between only how blocks of it move. Remove a keyframe and the movement of the next shot gets applied to the old picture, so it melts. Repeat a movement and the picture smears and blooms. <a href="./docs/what-is-datamoshing/">Read more</a>.</p></details>
+            <details><summary>Is it really free? Are my videos uploaded?</summary><p>Yes, and no. moshpit is free software (GPL-3.0). Your videos never leave your device: decoding, moshing and encoding all happen in your browser or in the desktop app.</p></details>
+            <details><summary>Does it work on my phone?</summary><p>Yes. Phones get their own editor with a big preview, a swipe-to-scrub timeline and tools that follow what you select. Add it to your home screen to use it like an app.</p></details>
+            <details><summary>How long and how big can videos be?</summary><p>In the browser, up to 10 minutes and comfortably 1080p; 1440p and 4K work for short videos. The desktop app goes to 30 minutes and is much faster at 4K.</p></details>
+            <details><summary>Why does the exported AVI look different in every player?</summary><p>Because a moshed AVI is broken on purpose and every player hides the damage in its own way. MP4, WebM and GIF exports contain exactly what the preview shows.</p></details>
+            <details><summary>Can I help?</summary><p>Please do. Report bugs, suggest features or send code on <a href="https://github.com/furniture3k/Video-Datamosher">GitHub</a>, improve a translation, and share what you make in the gallery.</p></details>
+          </div>
+        </div>
+      </section>
+
+      <section class="outro">
         <div class="wrap">
-          <h2>Questions</h2>
-          <details><summary>What is datamoshing?</summary><p>Video files mostly store changes, not pictures: a full picture now and then (a keyframe) and in between only how blocks of it move. Remove a keyframe and the movement of the next shot gets applied to the old picture, so it melts. Repeat a movement and the picture smears and blooms. <a href="./docs/what-is-datamoshing/">Read more</a>.</p></details>
-          <details><summary>Is it really free? Are my videos uploaded?</summary><p>Yes, and no. moshpit is free software (GPL-3.0). Your videos never leave your device: decoding, moshing and encoding all happen in your browser or in the desktop app.</p></details>
-          <details><summary>Does it work on my phone?</summary><p>Yes. Phones get their own editor with a big preview, a swipe-to-scrub timeline and tools that follow what you select. Add it to your home screen to use it like an app.</p></details>
-          <details><summary>How long and how big can videos be?</summary><p>In the browser, up to 10 minutes and comfortably 1080p; 1440p and 4K work for short videos. The desktop app goes to 30 minutes and is much faster at 4K.</p></details>
-          <details><summary>Why does the exported AVI look different in every player?</summary><p>Because a moshed AVI is broken on purpose and every player hides the damage in its own way. MP4, WebM and GIF exports contain exactly what the preview shows.</p></details>
-          <details><summary>Can I help?</summary><p>Please do. Report bugs, suggest features or send code on <a href="https://github.com/furniture3k/Video-Datamosher">GitHub</a>, and share what you make in the gallery.</p></details>
+          <p class="outro-line">Go break something.</p>
+          <a class="btn primary big" href="./app/">Open moshpit<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" /></svg></a>
         </div>
       </section>
     </main>
 
     <footer class="foot">
       <div class="wrap">
-        <span>moshpit · free software under the <a href="https://github.com/furniture3k/Video-Datamosher/blob/main/LICENSE">GPL-3.0</a></span>
-        <a href="./docs/">Docs</a>
-        <a href="https://github.com/furniture3k/Video-Datamosher">Source code</a>
-        <a href="https://github.com/furniture3k/Video-Datamosher/releases">Releases</a>
-        <a href="https://github.com/furniture3k/Video-Datamosher/issues/new/choose">Report a problem</a>
+        <div class="foot-row">
+          <span>moshpit <!-- site:version --> · free software under the <a href="https://github.com/furniture3k/Video-Datamosher/blob/main/LICENSE">GPL-3.0</a></span>
+          <a href="./docs/">Docs</a>
+          <a href="https://github.com/furniture3k/Video-Datamosher">Source code</a>
+          <a href="https://github.com/furniture3k/Video-Datamosher/releases">Releases</a>
+          <a href="https://github.com/furniture3k/Video-Datamosher/issues/new/choose">Report a problem</a>
+        </div>
+        <p class="wordmark" id="wordmark" aria-hidden="true"><span></span><span></span><span></span></p>
       </div>
     </footer>
     <script type="module" src="/src/site/main.ts"></script>

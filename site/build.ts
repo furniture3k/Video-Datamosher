@@ -9,6 +9,9 @@ import { ALL_EFFECTS } from '../src/engine/effects';
 import type { ParamDef } from '../src/engine/effects/types';
 import { MOSH_TRANSITIONS, BLEND_TRANSITIONS } from '../src/engine/timeline';
 import { SHORTCUTS } from '../src/lib/shortcuts';
+import { GUIDE, FAMILIES, type Cell } from '../src/lib/effectguide';
+import { PRESETS } from '../src/engine/presets';
+import { parseChangelog } from '../src/engine/changelog';
 
 export const SITE_URL = 'https://furniture3k.github.io/Video-Datamosher/';
 const DOCS = path.resolve(__dirname, 'docs');
@@ -155,10 +158,77 @@ export function sitemap(all: Doc[]): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `  <url><loc>${SITE_URL}${u}</loc></url>`).join('\n')}\n</urlset>\n`;
 }
 
+// ---------------------------------------------------------------- landing page
+
+const CELL_TIP: Record<NonNullable<Cell['m']>, string> = { removed: 'removed', repeat: 'repeated', moved: 'moved', from: 'motion from elsewhere', glitch: 'damaged', vector: 'motion rewritten' };
+
+/** A strip of frames showing what an effect does (the same diagram as the editor's effect picker). */
+export function diagramHtml(cells: Cell[]): string {
+  return cells.map((c) => `<span class="cell${c.k === 'I' ? ' ifr' : ''}${c.m ? ' ' + c.m : ''}" title="${c.m ? CELL_TIP[c.m] : c.k === 'I' ? 'full picture' : 'motion frame'}">${c.k === 'I' ? 'I' : c.n}</span>`).join('');
+}
+
+/** The effect rack: a key per effect, and the panel that describes the one picked. */
+function rackHtml(): string {
+  const fx = ALL_EFFECTS.map((e) => {
+    const g = GUIDE[e.type];
+    const fam = FAMILIES.find((f) => f.id === g?.family);
+    return { type: e.type, code: e.icon, name: e.name, color: e.color, kind: e.kind, family: fam?.title ?? '', looks: g?.looks ?? '', description: e.description, diagram: g?.diagram ? diagramHtml(g.diagram) : '' };
+  });
+  const first = fx[0];
+  const key = (f: (typeof fx)[number]) =>
+    `<button type="button" class="key" data-fx="${f.type}" aria-pressed="${f === first}" style="--led: ${f.color}"><b>${esc(f.code)}</b><span>${esc(f.name)}</span></button>`;
+  const group = (kind: string, title: string, note: string) => {
+    const list = fx.filter((f) => f.kind === kind);
+    return `<div class="keys-group"><p class="keys-title"><span>${title}</span><span class="faint">${list.length}</span></p><p class="keys-note">${note}</p><div class="keys">${list.map(key).join('')}</div></div>`;
+  };
+  return `<div class="rack" id="rack">
+<div class="display" aria-live="polite">
+<div class="display-top"><span class="display-code" style="--led: ${first.color}">${esc(first.code)}</span><span class="display-family">${esc(first.family)}</span></div>
+<h3 class="display-name">${esc(first.name)}</h3>
+<p class="display-looks">${esc(first.looks)}</p>
+<p class="display-desc">${esc(first.description)}</p>
+<div class="display-diagram"${first.diagram ? '' : ' hidden'}><div class="strip" aria-hidden="true">${first.diagram}</div><span class="faint">what it does to the frames</span></div>
+</div>
+<div class="keys-wrap">
+${group('bitstream', 'Mosh effects', 'Rewrite the compressed video itself.')}
+${group('pixel', 'Picture effects', 'Work on the decoded picture, on the GPU.')}
+</div>
+</div>
+<script type="application/json" id="fx-data">${JSON.stringify(fx).replace(/</g, '\\u003c')}</script>`;
+}
+
+/** Fills the landing page's placeholders (<!-- site:… -->) from the app's code and changelog. */
+export function landingHtml(html: string): string {
+  const version = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8')).version as string;
+  const latest = parseChangelog(fs.readFileSync(path.resolve(__dirname, '../CHANGELOG.md'), 'utf8'))[0];
+  const headline = latest?.items[0]?.find((r) => r.bold)?.text ?? 'What’s new';
+  const values: Record<string, string | (() => string)> = {
+    version,
+    'version-short': version.replace(/\.0$/, ''),
+    whatsnew: esc(headline),
+    'fx-count': String(ALL_EFFECTS.length),
+    'mosh-count': String(ALL_EFFECTS.filter((e) => e.kind === 'bitstream').length),
+    'pixel-count': String(ALL_EFFECTS.filter((e) => e.kind === 'pixel').length),
+    'preset-count': String(PRESETS.length),
+    'transition-count': String(Object.keys(MOSH_TRANSITIONS).length + Object.keys(BLEND_TRANSITIONS).length),
+    rack: rackHtml,
+  };
+  return html.replace(/<!-- site:([a-z-]+) -->/g, (m, k: string) => {
+    const v = values[k];
+    if (v === undefined) throw new Error(`index.html: unknown placeholder ${m}`);
+    return typeof v === 'function' ? v() : v;
+  });
+}
+
 /** Vite plugin: emits the docs pages, sitemap and robots.txt, and serves the docs in dev. */
 export function sitePages(): Plugin {
   return {
     name: 'moshpit-site-pages',
+    transformIndexHtml: {
+      order: 'pre',
+      // the landing page only (the editor's app/index.html has no placeholders)
+      handler: (html, ctx) => (ctx.path === '/index.html' ? landingHtml(html) : html),
+    },
     generateBundle() {
       const all = loadDocs();
       for (const d of all) this.emitFile({ type: 'asset', fileName: docPath(d), source: renderDoc(d, all) });

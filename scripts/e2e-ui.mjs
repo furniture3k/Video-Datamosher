@@ -1546,6 +1546,14 @@ await step('website: landing page, gallery and docs', async () => {
   await page.waitForFunction(() => document.querySelectorAll('#gallery-list .gcard').length >= 4);
   // the website never loads the editor (or its video engine)
   if (await S(() => !!window.__moshpit)) throw new Error('the editor loaded on the landing page');
+  // the effect rack is built from the app's effects, and picking a key describes it
+  if ((await page.locator('#rack .key').count()) < 20) throw new Error('the effect rack is missing effects');
+  await page.locator('#rack .key[data-fx="bloom"]').click();
+  await page.locator('.display-name', { hasText: 'Bloom' }).waitFor();
+  // the frame diagram loses its keyframe and gets it back
+  await page.locator('#frames-btn').click();
+  await page.waitForFunction(() => document.getElementById('frames').dataset.removed === 'true');
+  await page.locator('#frames-btn').click();
   await page.locator('.nav a', { hasText: 'Docs' }).click();
   await page.locator('.prose h1', { hasText: 'moshpit docs' }).waitFor();
   await page.locator('.prose a', { hasText: 'Effects' }).first().click();
