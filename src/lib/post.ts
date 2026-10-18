@@ -392,8 +392,11 @@ export class PostRunner {
       if (!c) continue;
       const pts = pathOnTimeline(project, c, gp.pathId);
       const { w, h } = outputSize(project, project.encoder.previewWidth);
-      // tracks from before boxes were kept: the old default oval
-      if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, gp.pathId) ?? [0.26, (0.26 * w) / h] });
+      // tracks from before boxes were kept: the oval the guard's old Oval size gave (its radius
+      // was a share of the frame width), at the default scale
+      const old = Number(e.params.size) > 0 ? Number(e.params.size) : 0.18;
+      const legacy: [number, number] = [(2 * old) / 1.4, (2 * old * w) / h / 1.4];
+      if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, gp.pathId) ?? legacy });
     }
     this.texts = withTexts ? (project.texts ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
     this.fps = project.encoder.fps;

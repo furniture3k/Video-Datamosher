@@ -661,6 +661,75 @@ await step('analysis: track an object, title follows, stabilize', async () => {
   await settle();
 });
 
+await step('preview: GPU grading and keying match the CPU', async () => {
+  const r = await S(() => {
+    const { preview, gradegl } = window.__moshpit;
+    const W = 64;
+    const H = 48;
+    const src = document.createElement('canvas');
+    src.width = W;
+    src.height = H;
+    const g = src.getContext('2d');
+    // every hue and level, plus a green-screen patch to key out
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      g.fillStyle = `hsl(${(x / W) * 360} ${40 + (y % 4) * 20}% ${(y / H) * 100}%)`;
+      g.fillRect(x, y, 1, 1);
+    }
+    g.fillStyle = '#00ff00';
+    g.fillRect(4, 4, 12, 12);
+    const G = { brightness: 0.05, contrast: 1.3, saturation: 1.4, gamma: 0.9, hue: 25 };
+    const key = { color: '#00ff00', similarity: 0.25, blend: 0.08, spill: true };
+    // a LUT that swaps red and blue, half strength
+    const n = 9;
+    const data = new Float32Array(n ** 3 * 3);
+    for (let b = 0; b < n; b++) for (let gg = 0; gg < n; gg++) for (let rr = 0; rr < n; rr++) data.set([b / (n - 1), gg / (n - 1), rr / (n - 1)], (rr + gg * n + b * n * n) * 3);
+    const lut = { title: 't', size: n, data };
+    const cpu = g.getImageData(0, 0, W, H);
+    preview.chromaKeyPixels(cpu.data, key);
+    preview.gradePixels(cpu.data, G);
+    const gpu = gradegl.GradeGL.create();
+    if (!gpu) return { none: true };
+    gpu.apply(src, W, H, G, key, null, 1);
+    const out = document.createElement('canvas');
+    out.width = W;
+    out.height = H;
+    const o = out.getContext('2d');
+    o.drawImage(gpu.canvas, 0, 0);
+    const got = o.getImageData(0, 0, W, H).data;
+    let worst = 0;
+    let at = null;
+    for (let i = 0; i < got.length; i += 4) {
+      // fully keyed-out pixels have no colour to compare
+      if (cpu.data[i + 3] === 0 && got[i + 3] === 0) continue;
+      // colour as it shows (canvases keep little colour in nearly see-through pixels), and alpha
+      for (let c = 0; c < 4; c++) {
+        const d = c === 3 ? Math.abs(got[i + 3] - cpu.data[i + 3]) : (Math.abs(got[i + c] - cpu.data[i + c]) * cpu.data[i + 3]) / 255;
+        if (d > worst) ((worst = d), (at = { i: i / 4, c, got: [...got.slice(i, i + 4)], cpu: [...cpu.data.slice(i, i + 4)] }));
+      }
+    }
+    // and a LUT on its own, against the CPU's trilinear lookup
+    const plain = { brightness: 0, contrast: 1, saturation: 1, gamma: 1, hue: 0 };
+    const cpu2 = g.getImageData(0, 0, W, H);
+    const tmp = [0, 0, 0];
+    for (let i = 0; i < cpu2.data.length; i += 4) {
+      const v = [0, 1, 2].map((c) => cpu2.data[i + c] / 255);
+      window.__moshpit.lut.sampleLut(lut, v[0], v[1], v[2], tmp);
+      for (let c = 0; c < 3; c++) cpu2.data[i + c] = (v[c] + (tmp[c] - v[c]) * 0.5) * 255;
+    }
+    gpu.apply(src, W, H, plain, null, lut, 0.5);
+    o.clearRect(0, 0, W, H);
+    o.drawImage(gpu.canvas, 0, 0);
+    const got2 = o.getImageData(0, 0, W, H).data;
+    let worstLut = 0;
+    for (let i = 0; i < got2.length; i += 4) for (let c = 0; c < 3; c++) worstLut = Math.max(worstLut, Math.abs(got2[i + c] - cpu2.data[i + c]));
+    gpu.dispose();
+    return { worst, worstLut, at };
+  });
+  if (r.none) throw new Error('no WebGL2 for the GPU grader');
+  // a level or two of rounding between float GPU maths and 8-bit CPU steps
+  if (r.worst > 3 || r.worstLut > 3) throw new Error('GPU differs from CPU: ' + JSON.stringify(r));
+});
+
 await step('captions: listen (fake recogniser), add, subtitles', async () => {
   // something to listen to (the fake recogniser below ignores what it hears)
   await S(async () => {
@@ -1078,6 +1147,20 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   if ((await S(() => window.__moshpit.store.selectedClip?.speed)) !== 2) throw new Error('speed sheet did not set the speed');
   await page.keyboard.press('Control+Z');
   await page.locator('.sheet .done').click();
+  // tracking from the phone tools: arm it, drag a box on the preview, a track appears
+  const tid = await S(() => window.__moshpit.store.selectedClip?.id);
+  const paths0 = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).paths?.length ?? 0, tid);
+  await page.locator('.tools .tool', { hasText: 'Track' }).click();
+  await page.locator('.picknote').waitFor();
+  if ((await S(() => window.__moshpit.store.ui.trackPick)) !== tid) throw new Error('Track tool did not arm tracking');
+  const st = await page.locator('.preview .stage').boundingBox();
+  await page.mouse.move(st.x + st.width * 0.4, st.y + st.height * 0.35);
+  await page.mouse.down();
+  await page.mouse.move(st.x + st.width * 0.6, st.y + st.height * 0.65, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForFunction(({ id, n }) => (window.__moshpit.store.project.clips.find((c) => c.id === id).paths?.length ?? 0) > n || window.__moshpit.store.toasts.some((t) => t.kind === 'error'), { id: tid, n: paths0 }, { timeout: 60000 });
+  const err = await S(() => window.__moshpit.store.toasts.find((t) => t.kind === 'error')?.text);
+  if (err) throw new Error('phone tracking: ' + err);
   await page.locator('.tools .back').click();
   await page.locator('.tools .tool', { hasText: 'Media' }).click();
   await page.locator('.sheet').waitFor();

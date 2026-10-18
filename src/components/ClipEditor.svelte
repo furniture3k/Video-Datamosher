@@ -368,7 +368,7 @@
         <div class="row sect"><span class="label grow">Motion</span>{#if motionJob.running}<span class="small faint">{motionJob.stage}…</span>{/if}</div>
         <Field label="Stabilize strength" min={4} max={60} step={1} value={stabStrength} help="How smooth the camera should end up: bigger values iron out slower wobbles too (and zoom in more)." onchange={(v: number) => (stabStrength = v)} />
         <div class="row btns">
-          <button class="small" disabled={motionJob.running} onclick={() => stabilizeClip(c.id, stabStrength)} title="Measure the camera shake and smooth it out">{c.stab ? 'Stabilize again' : 'Stabilize'}</button>
+          <button class="small" disabled={motionJob.running} onclick={() => stabilizeClip(c.id, stabStrength).catch((e) => store.toast('Stabilize failed: ' + (e as Error).message, 'error'))} title="Measure the camera shake and smooth it out">{c.stab ? 'Stabilize again' : 'Stabilize'}</button>
           {#if c.stab}<button class="small ghost" onclick={() => editKeys((x) => (x.stab = undefined))}>Remove ({Math.round((c.stab.zoom - 1) * 100)}% zoom)</button>{/if}
         </div>
         <div class="row btns">

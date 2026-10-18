@@ -76,6 +76,8 @@
     chevron: '<path d="M6 3l5 5-5 5"/>',
     reverse: '<path d="M13 5.5H4M6.5 3 4 5.5 6.5 8M3 10.5h9M9.5 8l2.5 2.5L9.5 13"/>',
     volume: '<path d="M2.5 6h2.5l3-2.5v9L5 10H2.5zM10.5 5.5a3.5 3.5 0 0 1 0 5"/>',
+    target: '<path d="M2.5 5.5v-3h3M10.5 2.5h3v3M13.5 10.5v3h-3M5.5 13.5h-3v-3"/><circle cx="8" cy="8" r="2"/>',
+    steady: '<path d="M2 9.5c2-3 4 3 6 0s4 3 6 0" opacity=".45"/><path d="M2 6.5h12"/>',
     crop: '<path d="M4.5 1.5v10h10M1.5 4.5h10v10"/>',
     add: '<rect x="2" y="2" width="12" height="12" rx="2.5"/><path d="M8 5v6M5 8h6"/>',
   };
