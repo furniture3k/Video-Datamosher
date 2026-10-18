@@ -4,7 +4,7 @@ import { ask } from './ask';
 import { forgetMedia } from './media';
 import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips } from '../engine/timeline';
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TransitionType } from '../engine/types';
-import { FIRST_ROW, type TextLayer } from '../engine/layers';
+import { FIRST_ROW, nextRow, type TextLayer } from '../engine/layers';
 import { addToTimeline } from './media';
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -401,6 +401,19 @@ export function zoomFit() {
 
 export function newText(start: number): TextLayer {
   return { id: uid(), kind: 'text', row: FIRST_ROW, text: 'Title', start, duration: 3, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0.3, moshed: false };
+}
+
+/**
+ * The graphics row under the pointer while dragging layer `id` on a timeline: the row whose lane
+ * it's over, a new row on top when it's above the topmost lane, or null (stay where it is).
+ */
+export function graphicsRowAt(clientX: number, clientY: number, id: string): string | null {
+  const over = (document.elementFromPoint(clientX, clientY)?.closest('[data-row]') as HTMLElement | null)?.dataset.row;
+  if (over) return over;
+  const top = document.querySelector('[data-row]');
+  if (!top || clientY >= top.getBoundingClientRect().top) return null;
+  // the row above all the others (a layer already alone on top stays there)
+  return nextRow(store.project.layers.filter((l) => l.id !== id));
 }
 
 /** Add a text title at the playhead. */

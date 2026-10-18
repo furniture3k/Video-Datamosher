@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { TextLayer } from '../engine/layers';
+  import { layerRows, type TextLayer } from '../engine/layers';
 import { formatSeconds } from '../engine/eta';
   import { compoundOf } from '../engine/compound';
   import { makeCompound, openCompound } from '../lib/compound.svelte';
@@ -38,6 +38,7 @@ import { formatSeconds } from '../engine/eta';
   const fps = $derived(store.project.encoder.fps);
   const duration = $derived(store.duration);
   const placed = $derived(layoutVideo(store.project));
+  const graphicsRows = $derived(layerRows(store.project.layers));
   const audioTracks = $derived(store.project.tracks.filter((t) => t.kind === 'audio' && t.id !== CLIP_AUDIO));
   /** upper video tracks, top one first (as drawn) */
   const upperTracks = $derived(edit.videoTracks(store.project).reverse().map((id) => store.project.tracks.find((t) => t.id === id)!));
@@ -438,6 +439,9 @@ import { formatSeconds } from '../engine/eta';
         const s2 = snapT(s, e, d.id, d.targets);
         s = s2 !== s ? s2 : snapT(s + o.duration, e, d.id, d.targets) - o.duration;
         tx.start = Math.max(0, s);
+        // up or down onto another graphics row (or the new one on top)
+        const row = edit.graphicsRowAt(e.clientX, e.clientY, d.id);
+        if (row && row !== tx.row) tx.row = row;
         return;
       }
       const c = store.project.clips.find((x) => x.id === d.id)!;
@@ -876,21 +880,24 @@ import { formatSeconds } from '../engine/eta';
         <canvas class="lane keys" bind:this={keyCanvas} style="width:{W}px" ondblclick={keysDbl} title="Double-click to add or remove a forced keyframe"></canvas>
       </div>
 
-      <!-- titles -->
+      <!-- graphics rows: titles and other layers, the top row drawn over the ones below -->
       {#if store.project.layers.length}
-        <div class="trow">
-          <div class="g g-track"><Icon name="text" size={12} /><span class="tname">Titles</span></div>
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="lane text-lane" style="width:{W}px" onpointerdown={scrubDown}>
-            {#each store.project.layers as tx (tx.id)}
-              <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
-                <div class="edge l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}></div>
-                <span class="cname">{tx.text || 'Text'}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}
-                <div class="edge r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}></div>
-              </div>
-            {/each}
+        {#each [...graphicsRows].reverse() as row (row)}
+          <div class="trow">
+            <div class="g g-track"><Icon name="text" size={12} /><span class="tname">{graphicsRows.length > 1 ? 'G' + (graphicsRows.indexOf(row) + 1) : 'Graphics'}</span></div>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="lane text-lane" data-row={row} style="width:{W}px" onpointerdown={scrubDown}>
+              {#if drag?.k === 'move' && drag.kind === 't' && drag.moved && row === graphicsRows.at(-1)}<span class="rowhint faint small">↑ drag above for a new row</span>{/if}
+              {#each store.project.layers.filter((l) => l.row === row) as tx (tx.id)}
+                <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
+                  <div class="edge l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}></div>
+                  <span class="cname">{tx.text || 'Text'}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}
+                  <div class="edge r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}></div>
+                </div>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/each}
       {/if}
 
       <!-- upper video tracks (drawn over the main track) -->
@@ -1490,6 +1497,13 @@ import { formatSeconds } from '../engine/eta';
   }
   .text-lane {
     height: 26px;
+  }
+  .rowhint {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
   }
   .lane.muted {
     opacity: 0.45;

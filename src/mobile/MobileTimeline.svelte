@@ -5,10 +5,11 @@
   // handles to trim, press and hold a clip to move it.
   import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
+  import { graphicsRowAt } from '../lib/edit';
   import { EFFECTS } from '../engine/effects';
   import { layoutVideo, clipLen, nearestCut, remapToFootage, trimClip, moveVideo, isOverlayTrack, mediaOf } from '../engine/timeline';
   import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project } from '../engine/types';
-  import type { TextLayer } from '../engine/layers';
+  import { layerRows, type TextLayer } from '../engine/layers';
   import { mediaState } from '../lib/mediastate.svelte';
   import Icon from '../components/Icon.svelte';
   import Waveform from '../components/Waveform.svelte';
@@ -23,6 +24,7 @@
   const fps = $derived(store.project.encoder.fps);
   const duration = $derived(store.duration);
   const placed = $derived(layoutVideo(store.project));
+  const graphicsRows = $derived(layerRows(store.project.layers));
   const sel = $derived(new Set(store.ui.selectedClips));
   const totalF = $derived(Math.max(1, store.totalFrames));
   const overlays = $derived(store.project.clips.filter((c) => isOverlayTrack(c.track)));
@@ -212,7 +214,11 @@
       const s = Math.max(0, Math.round((d.s0 + dt) * fps) / fps);
       if (d.ck === 't') {
         const tx = store.project.layers.find((t) => t.id === d.id);
-        if (tx) tx.start = s;
+        if (!tx) return;
+        tx.start = s;
+        // up or down onto another graphics row (or the new one on top)
+        const row = graphicsRowAt(e.clientX, e.clientY, d.id);
+        if (row && row !== tx.row) tx.row = row;
       } else {
         const c = store.project.clips.find((x) => x.id === d.id);
         if (c) c.start = s;
@@ -377,23 +383,26 @@
         </div>
       {/if}
 
-      <!-- titles -->
-      <div class="lane small" style="width:{W}px">
-        {#each store.project.layers as tx (tx.id)}
-          {@const on = sel.has(tx.id)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="item text" class:sel={on} style="left:{x(tx.start)}px;width:{x(tx.duration)}px" onpointerdown={(e) => itemDown(e, tx.id, 't')}>
-            <Icon name="text" size={11} /><span class="nm">{tx.text}</span>
-            {#if on}
-              <span class="h l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}><i></i></span>
-              <span class="h r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}><i></i></span>
-            {/if}
-          </div>
-        {/each}
-        {#if !store.project.layers.length && placed.length}
-          <button class="pill" style="left:{Math.min(x(store.ui.time), W)}px" onclick={() => onaction('text')}><Icon name="plus" size={12} />Add text</button>
-        {/if}
-      </div>
+      <!-- graphics rows: titles and other layers, the top row drawn over the ones below -->
+      {#each [...graphicsRows].reverse() as row (row)}
+        <div class="lane small" data-row={row} style="width:{W}px">
+          {#if drag?.k === 'move' && drag.ck === 't' && drag.moved && row === graphicsRows.at(-1)}<span class="rowhint">↑ drag above for a new row</span>{/if}
+          {#each store.project.layers.filter((l) => l.row === row) as tx (tx.id)}
+            {@const on = sel.has(tx.id)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="item text" class:sel={on} style="left:{x(tx.start)}px;width:{x(tx.duration)}px" onpointerdown={(e) => itemDown(e, tx.id, 't')}>
+              <Icon name="text" size={11} /><span class="nm">{tx.text}</span>
+              {#if on}
+                <span class="h l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}><i></i></span>
+                <span class="h r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}><i></i></span>
+              {/if}
+            </div>
+          {/each}
+          {#if !store.project.layers.length && placed.length}
+            <button class="pill" style="left:{Math.min(x(store.ui.time), W)}px" onclick={() => onaction('text')}><Icon name="plus" size={12} />Add text</button>
+          {/if}
+        </div>
+      {/each}
 
       <!-- music and sound -->
       {#each audioRows as row (row.t.id)}
@@ -483,6 +492,15 @@
     position: relative;
     height: 30px;
     margin-bottom: 6px;
+  }
+  .rowhint {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: var(--text-2);
+    pointer-events: none;
   }
   .lane.main {
     height: 58px;

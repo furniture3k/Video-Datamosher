@@ -294,6 +294,51 @@ await step('editor: a melting title that moves is burned in where it is on each 
   if (!(m.early.left - m.late.left > 15 && m.late.right - m.early.right > 15)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
 });
 
+await step('graphics rows: drag a title above for a new row and back, on desktop and on a phone', async () => {
+  await S(() => {
+    const base = { kind: 'text', row: 'g1', duration: 1.5, size: 0.1, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false };
+    window.__moshpit.store.edit((p) => p.layers.push({ ...base, id: 'ra', text: 'RA', start: 0 }, { ...base, id: 'rb', text: 'RB', start: 2 }));
+  });
+  await page.waitForTimeout(200);
+  const row = (id) => S((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).row, id);
+  const lanes = () => S(() => document.querySelectorAll('[data-row]').length);
+  /** drag the item a little sideways (so it counts as a move), then to y */
+  const dragTo = async (box, y) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 12, box.y + box.height / 2, { steps: 3 });
+    await page.mouse.move(box.x + box.width / 2 + 12, y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+  // desktop: above the top lane makes a new row on top; a sideways move alone keeps the row
+  const b = await page.locator('.clip.text[data-clip="rb"]').boundingBox();
+  await dragTo(b, b.y + b.height / 2);
+  if ((await row('rb')) !== 'g1') throw new Error('a sideways drag changed the row');
+  const top = await page.locator('[data-row]').first().boundingBox();
+  await dragTo(await page.locator('.clip.text[data-clip="rb"]').boundingBox(), top.y - 8);
+  if ((await row('rb')) !== 'g2' || (await row('ra')) !== 'g1' || (await lanes()) !== 2) throw new Error(`no new row: rb ${await row('rb')}, ${await lanes()} lanes`);
+  const order = await S(() => window.__moshpit.store.project.layers.filter((l) => l.id === 'ra' || l.id === 'rb').map((l) => l.row));
+  if (order.length !== 2) throw new Error('lost a title');
+  // and back down onto the first row: the empty row goes away
+  const g1 = await page.locator('[data-row="g1"]').boundingBox();
+  await dragTo(await page.locator('.clip.text[data-clip="rb"]').boundingBox(), g1.y + g1.height / 2);
+  if ((await row('rb')) !== 'g1' || (await lanes()) !== 1) throw new Error(`not back on the first row: rb ${await row('rb')}, ${await lanes()} lanes`);
+  // phone: tap to select, then drag above the rows
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  const item = page.locator('.mtl .item.text', { hasText: 'RB' });
+  await item.scrollIntoViewIfNeeded();
+  await item.click();
+  const mtop = await page.locator('.mtl [data-row]').first().boundingBox();
+  await dragTo(await item.boundingBox(), mtop.y - 8);
+  const phoneRow = await row('rb');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== 'ra' && l.id !== 'rb'))));
+  await settle();
+  if (phoneRow !== 'g2') throw new Error('phone: dragging above the rows did not make a new row: ' + phoneRow);
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
