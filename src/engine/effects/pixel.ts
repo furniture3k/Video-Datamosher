@@ -109,7 +109,7 @@ export const subjectGuard: PixelEffectDef = {
       default: 'person',
       options: [
         { value: 'person', label: 'People', hint: 'Finds people in the clean footage with a small AI model that runs on this device (downloaded once).' },
-        { value: 'track', label: 'A tracked object', hint: 'An oval that follows a track made in the Clip tab (Track an object).' },
+        { value: 'track', label: 'A tracked object', hint: 'An oval around the box you tracked, following it (select the clip, then Clip tab › Track an object).' },
         { value: 'luma', label: 'Bright parts', hint: 'Everything brighter than the threshold. Lower the threshold to keep more.' },
         { value: 'dark', label: 'Dark parts', hint: 'Everything darker than the threshold.' },
         { value: 'chroma', label: 'A colour', hint: 'Everything close to a colour (pick it below).' },
@@ -148,7 +148,7 @@ export const subjectGuard: PixelEffectDef = {
     { show: (p) => p.source === 'gradient', key: 'gx', label: 'Centre X', type: 'number', min: -0.5, max: 1.5, step: 0.01, default: 0.5, help: 'Where the middle of the fade is, across. Automate it to sweep.' },
     { show: (p) => p.source === 'gradient', key: 'gy', label: 'Centre Y', type: 'number', min: -0.5, max: 1.5, step: 0.01, default: 0.5, help: 'Where the middle of the fade is, down.' },
     { show: (p) => p.source === 'gradient', key: 'spread', label: 'Spread', type: 'number', min: 0.02, max: 2, step: 0.01, default: 0.5, help: 'How wide the fade is (radial: the size of the clean circle).' },
-    { show: (p) => p.source === 'track', key: 'size', label: 'Oval size', type: 'number', min: 0.02, max: 0.8, step: 0.01, default: 0.18, help: 'Size of the oval around the tracked point, as a share of the frame.' },
+    { show: (p) => p.source === 'track', key: 'scale', label: 'Oval size', type: 'number', min: 0.3, max: 4, step: 0.05, default: 1.4, unit: '×', help: 'Size of the oval compared with the box you drew when tracking (1.4 just covers its corners).' },
     { key: 'feather', label: 'Feather', type: 'number', min: 0, max: 0.2, step: 0.005, default: 0.03, help: 'Soft edge, as a share of the frame.' },
     { key: 'expand', label: 'Grow / shrink', type: 'number', min: -0.4, max: 0.4, step: 0.01, default: 0.05, help: 'Grows (+) or shrinks (−) the subject a little.' },
     { key: 'mix', label: 'Strength', type: 'number', min: 0, max: 1, step: 0.01, default: 1, intensity: 'down', help: 'How much of the clean picture comes back. Lower values let some mosh bleed into the subject.' },

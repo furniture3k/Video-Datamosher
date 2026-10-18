@@ -10,7 +10,7 @@
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
-  import { trackClip } from '../lib/motion.svelte';
+  import { trackClip, pathOnTimeline, pathSize, pathAt } from '../lib/motion.svelte';
   import { rasterizeField, type Stroke } from '../engine/flowfield';
   import { drawMask, type MaskStroke } from '../lib/maps';
   import { SAMPLE_RATE } from '../engine/audio';
@@ -183,6 +183,7 @@
   onMount(() => {
     const ro = new ResizeObserver(() => {
       if (!wrap) return;
+      stageSize = wrap.clientWidth * 1e5 + wrap.clientHeight;
       const tw = Math.round(wrap.clientWidth * (window.devicePixelRatio || 1));
       preview ??= new EditPreview(editCanvas);
       if (Math.abs(preview.targetWidth - tw) > 32) {
@@ -547,6 +548,29 @@
     return out;
   });
 
+  /** bumped when the stage changes size, so overlays placed on the picture follow it */
+  let stageSize = $state(0);
+  /** the selected clip's tracked objects, on the timeline */
+  const tracks = $derived.by(() => {
+    const c = store.selectedClip;
+    if (!c?.paths?.length) return [];
+    const p = store.project;
+    return c.paths.map((path) => ({ id: path.id, name: path.name, pts: pathOnTimeline(p, c, path.id), size: pathSize(p, c, path.id) ?? [0.06, 0.06] })).filter((x) => x.pts.length);
+  });
+  /** where those boxes are at the playhead, and the picture they're drawn over (stage pixels) */
+  const trackView = $derived.by(() => {
+    if (!tracks.length || !wrap || store.ui.trackPick) return null;
+    // re-place the boxes when the stage resizes or the other canvas shows
+    void (stageSize + Number(mosh));
+    const t = store.ui.time;
+    const boxes = tracks.flatMap((tr) => {
+      if (t < tr.pts[0][0] - 0.05 || t > tr.pts[tr.pts.length - 1][0] + 0.05) return [];
+      const [x, y] = pathAt(tr.pts, t);
+      return [{ id: tr.id, name: tr.name, x, y, w: tr.size[0], h: tr.size[1] }];
+    });
+    return boxes.length ? { pb: pictureBox(), boxes } : null;
+  });
+
   /** The box being drawn around something to track, in stage pixels. */
   let trackRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
   function drawTrackBox(e: PointerEvent) {
@@ -702,7 +726,14 @@
       <div class="trackbox" style="left:{trackRect.x}px;top:{trackRect.y}px;width:{trackRect.w}px;height:{trackRect.h}px"></div>
     {/if}
     {#if store.ui.trackPick && !trackRect}
-      <div class="stage-note mono picknote">drag a box around what to follow</div>
+      <div class="stage-note mono picknote">drag a box snugly around what to follow (something with detail) · Esc to cancel</div>
+    {/if}
+    {#if trackView && hasTimeline}
+      <div class="tracklayer" style="left:{trackView.pb.left}px;top:{trackView.pb.top}px;width:{trackView.pb.width}px;height:{trackView.pb.height}px" aria-hidden="true">
+        {#each trackView.boxes as b (b.id)}
+          <div class="tbox" style="left:{(b.x - b.w / 2) * 100}%;top:{(b.y - b.h / 2) * 100}%;width:{b.w * 100}%;height:{b.h * 100}%"><span class="mono">{b.name}</span></div>
+        {/each}
+      </div>
     {/if}
     {#if store.ui.scopes && hasTimeline}
       <Scopes source={() => (mosh ? canvas : editCanvas)} />
@@ -932,6 +963,27 @@
     background: rgba(255, 255, 255, 0.06);
     pointer-events: none;
     z-index: 3;
+  }
+  .tracklayer {
+    position: absolute;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .tbox {
+    position: absolute;
+    border: 1.5px dashed var(--accent);
+    border-radius: 2px;
+  }
+  .tbox span {
+    position: absolute;
+    left: -1.5px;
+    bottom: 100%;
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 15px;
+    white-space: nowrap;
+    color: #000;
+    background: var(--accent);
   }
   .picknote {
     top: auto;

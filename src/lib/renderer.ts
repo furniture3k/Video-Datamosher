@@ -344,7 +344,10 @@ export class CleanFrames {
     private prep: Prepared,
     private span = 96,
     private eng: Engine = ffmpeg,
-  ) {}
+  ) {
+    const key = JSON.stringify(project.decoder ?? null);
+    if (key !== sharedClean.key) sharedClean = { key, pics: new Map() };
+  }
   private async load(pos: number) {
     const fr = this.prep.frames;
     const to = Math.min(fr.length, pos + this.span);
@@ -358,10 +361,21 @@ export class CleanFrames {
     }
     const js = await decode(this.project, writeMoshedBlob(this.prep, list), 4, list.length, 'Clean frames', undefined, {}, this.eng);
     if (this.cache.size > this.span * 3) this.cache.clear();
-    js.slice(1).forEach((j, i) => this.cache.set(kf + i, j));
+    js.slice(1).forEach((j, i) => {
+      this.cache.set(kf + i, j);
+      // the same stretch of a cached segment decodes to the same pictures next render
+      const f = fr[kf + i];
+      if (f && f.size === undefined) sharedClean.pics.set(f.data, j);
+    });
+    const pics = sharedClean.pics;
+    if (pics.size > 1200) for (const k of [...pics.keys()].slice(0, pics.size - 900)) pics.delete(k);
   }
   async get(pos: number): Promise<Uint8Array | null> {
     pos = Math.max(0, Math.min(this.prep.frames.length - 1, pos));
+    // (frames kept on disk have only their headers in memory: no key for them)
+    const f = this.prep.frames[pos];
+    const shared = f && f.size === undefined ? sharedClean.pics.get(f.data) : undefined;
+    if (shared && !this.cache.has(pos)) this.cache.set(pos, shared);
     while (!this.cache.has(pos)) {
       if (this.loading) {
         await this.loading;
@@ -378,6 +392,12 @@ export class CleanFrames {
     return this.cache.get(pos) ?? null;
   }
 }
+
+/**
+ * Clean pictures decoded for earlier renders, by the frame data they came from. Prepared
+ * segments are cached, so an unchanged clip keeps the same frame data and needs no new decode.
+ */
+let sharedClean: { key: string; pics: Map<Uint8Array, Uint8Array> } = { key: '', pics: new Map() };
 
 /** Does any active effect need clean frames? */
 const needsClean = (p: Project) => p.effects.some((e) => e.enabled && e.type === 'mask');

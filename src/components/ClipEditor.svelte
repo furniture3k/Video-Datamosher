@@ -10,7 +10,7 @@
   import { hasKeys, keyedValue, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { motionJob, stabilizeClip, titleFollows, clipFollows } from '../lib/motion.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
@@ -372,8 +372,9 @@
           {#if c.stab}<button class="small ghost" onclick={() => editKeys((x) => (x.stab = undefined))}>Remove ({Math.round((c.stab.zoom - 1) * 100)}% zoom)</button>{/if}
         </div>
         <div class="row btns">
-          <button class="small" class:on={store.ui.trackPick === c.id} disabled={motionJob.running} onclick={() => (store.ui.trackPick = store.ui.trackPick === c.id ? null : c.id)} title="Then drag a box on the player around what to follow">Track an object</button>
+          <button class="small" class:on={store.ui.trackPick === c.id} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id)} title="Then drag a box on the player around what to follow">{store.ui.trackPick === c.id ? 'Cancel tracking' : 'Track an object'}</button>
         </div>
+        {#if store.ui.trackPick === c.id}<p class="small faint">Drag a box on the player around something with clear detail. It is followed forwards and backwards from this frame.</p>{/if}
         {#each c.paths ?? [] as path (path.id)}
           <div class="pathrow">
             <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>

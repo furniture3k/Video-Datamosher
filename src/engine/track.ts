@@ -9,115 +9,231 @@ export interface Gray {
 /** A tracked path: [frame index, centre x, centre y (pixels of the analysis frames), confidence 0..1]. */
 export type TrackPoint = [number, number, number, number];
 
-/** Zero-mean normalised cross-correlation of the template against frame `f` at top-left (x, y). */
-function ncc(f: Uint8Array, fw: number, x: number, y: number, tpl: Float32Array, tw: number, th: number, tMean: number, tNorm: number, step: number): number {
-  let sum = 0;
-  let n = 0;
-  for (let j = 0; j < th; j += step) for (let i = 0; i < tw; i += step) ((sum += f[(y + j) * fw + x + i]), n++);
-  const mean = sum / n;
-  let num = 0;
-  let den = 0;
-  for (let j = 0; j < th; j += step)
-    for (let i = 0; i < tw; i += step) {
-      const a = f[(y + j) * fw + x + i] - mean;
-      num += a * (tpl[j * tw + i] - tMean);
-      den += a * a;
-    }
-  return den > 0 && tNorm > 0 ? num / Math.sqrt(den * tNorm) : 0;
-}
-
-function stats(tpl: Float32Array, tw: number, th: number, step: number) {
-  let s = 0;
-  let n = 0;
-  for (let j = 0; j < th; j += step) for (let i = 0; i < tw; i += step) ((s += tpl[j * tw + i]), n++);
-  const mean = s / n;
-  let v = 0;
-  for (let j = 0; j < th; j += step) for (let i = 0; i < tw; i += step) v += (tpl[j * tw + i] - mean) ** 2;
-  return { mean, norm: v };
-}
-
-/**
- * Follow the box (centre cx, cy; size bw × bh) from frame `start`, forwards (dir 1) or
- * backwards (-1), until the end or until it's lost. Coarse-to-fine template matching with a
- * slowly updated template, so it copes with gradual changes in look.
- */
-/** 3×3 box blur: gives fine texture some spatial spread so the coarse search can find it. */
+/** 3×3 box blur (separable): gives fine texture some spatial spread so the coarse search can find it. */
 function blur3(f: Uint8Array, w: number, h: number): Uint8Array {
+  const tmp = new Uint16Array(f.length);
+  for (let y = 0; y < h; y++) {
+    const r = y * w;
+    if (w === 1) {
+      tmp[r] = f[r] * 3;
+      continue;
+    }
+    tmp[r] = ((f[r] + f[r + 1]) * 3) >> 1;
+    for (let x = 1; x < w - 1; x++) tmp[r + x] = f[r + x - 1] + f[r + x] + f[r + x + 1];
+    tmp[r + w - 1] = ((f[r + w - 2] + f[r + w - 1]) * 3) >> 1;
+  }
   const out = new Uint8Array(f.length);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      let s = 0;
-      let n = 0;
-      for (let j = -1; j <= 1; j++)
-        for (let i = -1; i <= 1; i++) {
-          const yy = y + j;
-          const xx = x + i;
-          if (yy >= 0 && yy < h && xx >= 0 && xx < w) ((s += f[yy * w + xx]), n++);
-        }
-      out[y * w + x] = s / n;
+  for (let y = 0; y < h; y++) {
+    const up = (y > 0 ? y - 1 : y) * w;
+    const dn = (y < h - 1 ? y + 1 : y) * w;
+    const r = y * w;
+    for (let x = 0; x < w; x++) out[r + x] = (tmp[up + x] + tmp[r + x] + tmp[dn + x]) / 9;
+  }
+  return out;
+}
+
+/** Half size (2×2 average). */
+function half(f: Uint8Array, w: number, h: number): Uint8Array {
+  const hw = w >> 1;
+  const hh = h >> 1;
+  const out = new Uint8Array(hw * hh);
+  for (let y = 0; y < hh; y++)
+    for (let x = 0; x < hw; x++) {
+      const i = 2 * y * w + 2 * x;
+      out[y * hw + x] = (f[i] + f[i + 1] + f[i + w] + f[i + w + 1]) >> 2;
     }
   return out;
 }
 
-export function trackBox(g: Gray, start: number, cx: number, cy: number, bw: number, bh: number, dir: 1 | -1 = 1, minConfidence = 0.45): TrackPoint[] {
-  // matching runs on lightly blurred frames, made as they're needed
-  const cache = new Map<number, Uint8Array>();
-  const frame = (k: number) => {
-    let f = cache.get(k);
-    if (!f) cache.set(k, (f = blur3(g.frames[k], g.w, g.h)));
-    return f;
-  };
+/** A frame ready for matching: its pixels plus integral images of the values and their squares. */
+interface Level {
+  f: Uint8Array;
+  w: number;
+  h: number;
+  s: Float64Array;
+  q: Float64Array;
+}
+
+function level(f: Uint8Array, w: number, h: number): Level {
+  const W = w + 1;
+  const s = new Float64Array(W * (h + 1));
+  const q = new Float64Array(W * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let rs = 0;
+    let rq = 0;
+    for (let x = 0; x < w; x++) {
+      const v = f[y * w + x];
+      rs += v;
+      rq += v * v;
+      s[(y + 1) * W + x + 1] = s[y * W + x + 1] + rs;
+      q[(y + 1) * W + x + 1] = q[y * W + x + 1] + rq;
+    }
+  }
+  return { f, w, h, s, q };
+}
+
+/** A zero-mean template (its values minus their mean) and its energy. */
+interface Tpl {
+  z: Float32Array;
+  w: number;
+  h: number;
+  norm: number;
+}
+
+function zeroMean(t: Float32Array, w: number, h: number): Tpl {
+  let m = 0;
+  for (let i = 0; i < t.length; i++) m += t[i];
+  m /= t.length;
+  const z = new Float32Array(t.length);
+  let norm = 0;
+  for (let i = 0; i < t.length; i++) ((z[i] = t[i] - m), (norm += z[i] * z[i]));
+  return { z, w, h, norm };
+}
+
+/** Zero-mean normalised cross-correlation of the template against the frame at top-left (x, y). */
+function ncc(L: Level, x: number, y: number, t: Tpl): number {
+  if (t.norm <= 0) return 0;
+  const W = L.w + 1;
+  const a = y * W + x;
+  const b = (y + t.h) * W + x;
+  const n = t.w * t.h;
+  const sum = L.s[b + t.w] - L.s[b] - L.s[a + t.w] + L.s[a];
+  const den = L.q[b + t.w] - L.q[b] - L.q[a + t.w] + L.q[a] - (sum * sum) / n;
+  if (den <= 1e-6) return 0;
+  // the template has zero mean, so the frame's own mean drops out of the numerator
+  let num = 0;
+  const f = L.f;
+  for (let j = 0; j < t.h; j++) {
+    const r = (y + j) * L.w + x;
+    const tr = j * t.w;
+    for (let i = 0; i < t.w; i++) num += f[r + i] * t.z[tr + i];
+  }
+  return num / Math.sqrt(den * t.norm);
+}
+
+/** Offset of a parabola's peak through three scores (−0.5..0.5). */
+function peak(l: number, c: number, r: number): number {
+  const d = l - 2 * c + r;
+  return d < 0 ? Math.max(-0.5, Math.min(0.5, (l - r) / (2 * d))) : 0;
+}
+
+/**
+ * Follow the box (centre cx, cy; size bw × bh) from frame `start`, forwards (dir 1) or
+ * backwards (-1), until the end or until it's lost. Coarse-to-fine template matching (a half-size
+ * search, then every pixel, then sub-pixel) with a slowly updated template, so it copes with
+ * gradual changes in look. It coasts through up to `maxMiss` frames where the object is hidden
+ * or blurred and picks it up again (those frames are left out of the path).
+ */
+export function trackBox(g: Gray, start: number, cx: number, cy: number, bw: number, bh: number, dir: 1 | -1 = 1, minConfidence = 0.45, maxMiss = 8): TrackPoint[] {
   const tw = Math.max(6, Math.min(g.w - 2, Math.round(bw)));
   const th = Math.max(6, Math.min(g.h - 2, Math.round(bh)));
   const clampX = (x: number) => Math.max(0, Math.min(g.w - tw, Math.round(x)));
   const clampY = (y: number) => Math.max(0, Math.min(g.h - th, Math.round(y)));
+  // the half-size search needs a template and a frame of some size: small boxes search at full size
+  const pyramid = tw >= 12 && th >= 12 && g.w >= 24 && g.h >= 24;
+  const tw1 = tw >> 1;
+  const th1 = th >> 1;
+  const prep = (k: number) => {
+    const f = blur3(g.frames[k], g.w, g.h);
+    return { L0: level(f, g.w, g.h), L1: pyramid ? level(half(f, g.w, g.h), g.w >> 1, g.h >> 1) : null };
+  };
   let x = clampX(cx - tw / 2);
   let y = clampY(cy - th / 2);
   const tpl = new Float32Array(tw * th);
-  const grab = (f: Uint8Array, ox: number, oy: number, into: Float32Array, mix: number) => {
-    for (let j = 0; j < th; j++) for (let i = 0; i < tw; i++) into[j * tw + i] = into[j * tw + i] * (1 - mix) + f[(oy + j) * g.w + ox + i] * mix;
+  const grab = (f: Uint8Array, ox: number, oy: number) => {
+    for (let j = 0; j < th; j++) for (let i = 0; i < tw; i++) tpl[j * tw + i] = f[(oy + j) * g.w + ox + i];
   };
-  grab(frame(start), x, y, tpl, 1);
+  grab(prep(start).L0.f, x, y);
+  const orig = tpl.slice();
   const out: TrackPoint[] = [[start, x + tw / 2, y + th / 2, 1]];
   let vx = 0;
   let vy = 0;
-  const R = Math.max(6, Math.round(Math.max(tw, th) * 0.6));
+  let miss = 0;
+  // the search follows the predicted motion, so it only needs to cover changes in speed
+  const R0 = Math.max(6, Math.min(24, Math.round(Math.max(tw, th) * 0.45)));
   for (let k = start + dir; k >= 0 && k < g.frames.length; k += dir) {
-    const f = frame(k);
-    // predict with the last motion, then search around it: coarse grid, then every pixel
+    const { L0, L1 } = prep(k);
+    // predict with the last motion, then search around it (wider while the object is lost)
+    const R = miss ? R0 * 2 : R0;
     const px = clampX(x + vx);
     const py = clampY(y + vy);
-    const coarse = stats(tpl, tw, th, 2);
-    let best = -2;
+    const T0 = zeroMean(tpl, tw, th);
     let bx = px;
     let by = py;
-    for (let dy = -R; dy <= R; dy += 2)
-      for (let dx = -R; dx <= R; dx += 2) {
-        const sx = clampX(px + dx);
-        const sy = clampY(py + dy);
-        const s = ncc(f, g.w, sx, sy, tpl, tw, th, coarse.mean, coarse.norm, 2);
-        if (s > best) ((best = s), (bx = sx), (by = sy));
-      }
-    // refine around the coarse winner, scoring every pixel this time
-    const fine = stats(tpl, tw, th, 1);
-    const cx0 = bx;
-    const cy0 = by;
-    best = -2;
-    for (let dy = -2; dy <= 2; dy++)
-      for (let dx = -2; dx <= 2; dx++) {
-        const sx = clampX(cx0 + dx);
-        const sy = clampY(cy0 + dy);
-        const s = ncc(f, g.w, sx, sy, tpl, tw, th, fine.mean, fine.norm, 1);
-        if (s > best) ((best = s), (bx = sx), (by = sy));
-      }
-    if (best < minConfidence) break;
+    if (L1) {
+      // half size: every position within the search radius
+      const t1 = new Float32Array(tw1 * th1);
+      for (let j = 0; j < th1; j++) for (let i = 0; i < tw1; i++) t1[j * tw1 + i] = (tpl[2 * j * tw + 2 * i] + tpl[2 * j * tw + 2 * i + 1] + tpl[(2 * j + 1) * tw + 2 * i] + tpl[(2 * j + 1) * tw + 2 * i + 1]) / 4;
+      const T1 = zeroMean(t1, tw1, th1);
+      const mx = L1.w - tw1;
+      const my = L1.h - th1;
+      const r = Math.ceil(R / 2);
+      const x0 = Math.max(0, (px >> 1) - r);
+      const x1 = Math.min(mx, (px >> 1) + r);
+      const y0 = Math.max(0, (py >> 1) - r);
+      const y1 = Math.min(my, (py >> 1) + r);
+      let best = -2;
+      for (let sy = y0; sy <= y1; sy++)
+        for (let sx = x0; sx <= x1; sx++) {
+          const s = ncc(L1, sx, sy, T1);
+          if (s > best) ((best = s), (bx = sx * 2), (by = sy * 2));
+        }
+    } else {
+      let best = -2;
+      for (let dy = -R; dy <= R; dy += 2)
+        for (let dx = -R; dx <= R; dx += 2) {
+          const sx = clampX(px + dx);
+          const sy = clampY(py + dy);
+          const s = ncc(L0, sx, sy, T0);
+          if (s > best) ((best = s), (bx = sx), (by = sy));
+        }
+    }
+    // full size: climb to the best pixel near the coarse winner, then fit a parabola for sub-pixel
+    const memo = new Map<number, number>();
+    const score = (sx: number, sy: number) => {
+      if (sx < 0 || sy < 0 || sx > g.w - tw || sy > g.h - th) return -2;
+      const key = sy * g.w + sx;
+      let s = memo.get(key);
+      if (s === undefined) memo.set(key, (s = ncc(L0, sx, sy, T0)));
+      return s;
+    };
+    let best = score(bx, by);
+    for (let it = 0; it < 6; it++) {
+      let nx = bx;
+      let ny = by;
+      for (let dy = -2; dy <= 2; dy++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const s = score(bx + dx, by + dy);
+          if (s > best) ((best = s), (nx = bx + dx), (ny = by + dy));
+        }
+      if (nx === bx && ny === by) break;
+      bx = nx;
+      by = ny;
+    }
+    if (best < minConfidence + (miss ? 0.1 : 0)) {
+      // lost for now: carry on along the last motion, slowing down
+      if (++miss > maxMiss) break;
+      x = px;
+      y = py;
+      vx *= 0.8;
+      vy *= 0.8;
+      continue;
+    }
+    const ox = bx > 0 && bx < g.w - tw ? peak(score(bx - 1, by), best, score(bx + 1, by)) : 0;
+    const oy = by > 0 && by < g.h - th ? peak(score(bx, by - 1), best, score(bx, by + 1)) : 0;
+    // (while it was lost, x and y moved on with the prediction)
     vx = (bx - x) * 0.7 + vx * 0.3;
     vy = (by - y) * 0.7 + vy * 0.3;
     x = bx;
     y = by;
-    // let the template follow slow changes, but only when the match is good
-    if (best > 0.8) grab(f, x, y, tpl, 0.08);
-    out.push([k, x + tw / 2, y + th / 2, Math.max(0, best)]);
+    miss = 0;
+    // let the template follow slow changes, but only when the match is good, and keep a little
+    // of the first look in it so it can't drift off onto the background
+    if (best > 0.8) for (let j = 0; j < th; j++) for (let i = 0; i < tw; i++) {
+      const q = j * tw + i;
+      tpl[q] = tpl[q] * 0.9 + L0.f[(y + j) * g.w + x + i] * 0.08 + orig[q] * 0.02;
+    }
+    out.push([k, x + ox + tw / 2, y + oy + th / 2, Math.max(0, best)]);
   }
   return dir > 0 ? out : out.reverse();
 }

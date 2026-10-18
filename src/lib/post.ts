@@ -2,13 +2,13 @@
 import { GL, COPY, type Target } from './gl';
 import { FlowEngine, CHROMA, defaultFlow, type FlowParams } from './flow';
 import { rasterizeField, encodeField, FIELD_MAX, type Stroke } from '../engine/flowfield';
-import { linearAt } from '../engine/track';
 import { personMask } from './segment';
 import { paintedMask, mediaMap, depthMap, type MaskStroke } from './maps';
 import { VHS, CRT, GRAIN, POSTERIZE } from './retro';
 
 const RETRO: Record<string, string> = { vhs: VHS, crt: CRT, grain: GRAIN, posterize: POSTERIZE };
-import { pathOnTimeline } from './motion.svelte';
+import { pathOnTimeline, pathSize, pathAt } from './motion.svelte';
+import { outputSize } from '../engine/args';
 import { activeEffects, allEffects } from '../engine/mosh';
 import { EFFECTS } from '../engine/effects';
 import { paramAt } from '../engine/automation';
@@ -20,10 +20,12 @@ import type { EffectInstance, Frame, Project, TextClip } from '../engine/types';
 import { drawTexts, textAlpha } from './text';
 import { Cancelled } from './ffmpeg';
 
+/** Pixel effects in the order they run: Subject Guards last, so what they keep clean stays clean. */
 export function pixelEffectsOf(project: Project, audio?: MoshAudio): EffectInstance[] {
-  return activeEffects(allEffects(project))
+  const fx = activeEffects(allEffects(project))
     .filter((e) => EFFECTS[e.type].kind === 'pixel')
     .map((e) => bakeAudio(withChaos(e, project.chaos), audio, project));
+  return [...fx.filter((e) => e.type !== 'mask'), ...fx.filter((e) => e.type === 'mask')];
 }
 
 const tOf = (src: number, e: EffectInstance) => (src - e.start) / Math.max(1, e.end - e.start - 1);
@@ -146,8 +148,8 @@ export interface FrameExtras {
   clean?: ImageBitmap | null;
   /** people mask of the clean frame (grayscale, white = person) */
   person?: CanvasImageSource | null;
-  /** effect id → tracked point [x, y] (shares of the frame) */
-  track?: Map<string, [number, number] | null>;
+  /** effect id → tracked box [centre x, centre y, width, height] (shares of the frame) */
+  track?: Map<string, [number, number, number, number] | null>;
   /** effect id → its map (painted, from media, depth) */
   maps?: Map<string, CanvasImageSource | null>;
 }
@@ -224,13 +226,14 @@ export class PostProcessor {
       gl.upload(this.personT, pc);
     }
     const ang = (Number(paramAt(e, 'angle', t)) * Math.PI) / 180;
-    const size = Number(paramAt(e, 'size', t));
+    // the oval's half-axes: the tracked box, scaled
+    const scale = Number(paramAt(e, 'scale', t) ?? 1.4) || 1.4;
     const col = hexRgb(String(e.data?.color ?? '#00ff00'));
     gl.pass(MASKGEN, this.maskA, { clean: this.cleanT.tex, person: (this.personT ?? this.cleanT).tex }, {
       mode: source === 'gradient' && e.params.shape === 'radial' ? 6 : (MASK_MODES[source] ?? 2),
       thr: Number(paramAt(e, 'threshold', t)),
       center: pt ? [pt[0], 1 - pt[1]] : source === 'gradient' ? [Number(paramAt(e, 'gx', t)), 1 - Number(paramAt(e, 'gy', t))] : [0.5, 0.5],
-      radius: [size, (size * this.w) / this.h],
+      radius: pt ? [Math.max(0.005, (pt[2] / 2) * scale), Math.max(0.005, (pt[3] / 2) * scale)] : [0.2, 0.2],
       key: col,
       dir: [Math.cos(ang), -Math.sin(ang)],
       spread: Math.max(0.01, Number(paramAt(e, 'spread', t))),
@@ -360,7 +363,8 @@ export class PostRunner {
   private texts: TextClip[];
   private fps: number;
   private c2d: HTMLCanvasElement | null = null;
-  private paths = new Map<string, [number, number, number][]>();
+  /** Subject Guards on a tracked object: its path on the timeline and the box's size */
+  private paths = new Map<string, { pts: [number, number, number][]; size: [number, number] }>();
   private personCache = new Map<number, HTMLCanvasElement>();
   private depthCache = new Map<number, HTMLCanvasElement>();
   private project: Project;
@@ -378,7 +382,11 @@ export class PostRunner {
     for (const e of this.effects) {
       if (e.type !== 'mask' || e.params.source !== 'track') continue;
       const c = project.clips.find((x) => x.id === e.data?.clipId);
-      if (c) this.paths.set(e.id, pathOnTimeline(project, c, String(e.data?.pathId)));
+      if (!c) continue;
+      const pts = pathOnTimeline(project, c, String(e.data?.pathId));
+      const { w, h } = outputSize(project, project.encoder.previewWidth);
+      // tracks from before boxes were kept: the old default oval
+      if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, String(e.data?.pathId)) ?? [0.26, (0.26 * w) / h] });
     }
     this.texts = withTexts ? (project.texts ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
     this.fps = project.encoder.fps;
@@ -471,11 +479,13 @@ export class PostRunner {
         maps.set(e.id, d);
       }
     }
-    const track = new Map<string, [number, number] | null>();
+    const track = new Map<string, [number, number, number, number] | null>();
     const t = pos / this.fps;
-    for (const [id, path] of this.paths) {
-      const inside = path.length && t >= path[0][0] - 1e-6 && t <= path[path.length - 1][0] + 1e-6;
-      track.set(id, inside ? [linearAt(path.map(([a, x]) => [a, x]), t), linearAt(path.map(([a, , y]) => [a, y]), t)] : null);
+    // a few frames' grace at the ends, so a track that stops a frame short doesn't flash the mosh over the subject
+    const grace = 3 / this.fps;
+    for (const [id, { pts, size }] of this.paths) {
+      const inside = t >= pts[0][0] - grace && t <= pts[pts.length - 1][0] + grace;
+      track.set(id, inside ? [...pathAt(pts, t), size[0], size[1]] : null);
     }
     return { clean, person, track, maps };
   }
