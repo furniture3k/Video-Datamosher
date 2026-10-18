@@ -258,6 +258,42 @@ await step('editor: titles (clean and melted) + audio track + detach', async () 
   if (tracks < 4) throw new Error('no new track');
 });
 
+await step('editor: a melting title that moves is burned in where it is on each frame', async () => {
+  const keep = await S(() => {
+    const st = window.__moshpit.store;
+    const effects = JSON.parse(JSON.stringify(st.project.effects));
+    st.edit((p) => {
+      p.effects = [];
+      p.layers.push({ id: 'mv', kind: 'text', row: 'g1', text: 'MM', start: 0, duration: 2, size: 0.3, color: '#000000', font: 'sans', bold: true, x: 0.2, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: true, follow: [[0, 0.2, 0.5], [2, 0.8, 0.5]] });
+    });
+    return effects;
+  });
+  await settle();
+  const m = await S(async () => {
+    const st = window.__moshpit.store;
+    const r = st.render;
+    const fps = st.project.encoder.fps;
+    // how dark the left and right thirds are on frame i (the example's colour bars have no black)
+    const at = async (i) => {
+      const b = await createImageBitmap(new Blob([r.jpegs[i]], { type: 'image/jpeg' }), { resizeWidth: 48, resizeHeight: 27 });
+      const c = new OffscreenCanvas(48, 27).getContext('2d');
+      c.drawImage(b, 0, 0);
+      const d = c.getImageData(0, 0, 48, 27).data;
+      const third = (x0) => {
+        let s = 0;
+        let n = 0;
+        for (let y = 0; y < 27; y++) for (let x = x0; x < x0 + 16; x++) (s += 255 - Math.max(d[(y * 48 + x) * 4], d[(y * 48 + x) * 4 + 1], d[(y * 48 + x) * 4 + 2])), n++;
+        return s / n;
+      };
+      return { left: third(0), right: third(32) };
+    };
+    return { early: await at(Math.round(0.2 * fps)), late: await at(Math.round(1.8 * fps)) };
+  });
+  await S((effects) => window.__moshpit.store.edit((p) => ((p.effects = effects), (p.layers = p.layers.filter((l) => l.id !== 'mv')))), keep);
+  await settle();
+  if (!(m.early.left - m.late.left > 15 && m.late.right - m.early.right > 15)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));

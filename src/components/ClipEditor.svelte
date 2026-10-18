@@ -238,10 +238,10 @@ import { store } from '../lib/store.svelte';
       label="Comes in"
       value={text.anim ?? 'none'}
       options={TEXT_ANIMS}
-      help={text.moshed ? 'Titles that melt with the video stay still: turn off Melt with the video to animate it.' : 'How the title arrives.'}
+      help="How the title arrives."
       onchange={(v: TextAnim) => store.edit(() => (text.anim = v))}
     />
-    {#if text.anim && text.anim !== 'none' && !text.moshed}
+    {#if text.anim && text.anim !== 'none'}
       <Field label="Takes" unit="s" min={0.1} max={4} step={0.05} value={text.animIn ?? 0.6} help="How long it takes to come in." onchange={(v: number) => store.edit(() => (text.animIn = v), 'animIn' + text.id)} />
     {/if}
     <Field type="bool" label="Melt with the video" value={text.moshed} help="Burn the text into the footage before moshing, so it smears and melts with everything else. Off = clean text on top." onchange={(v: boolean) => store.edit(() => (text.moshed = v))} />
