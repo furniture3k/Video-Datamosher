@@ -291,7 +291,9 @@ await step('editor: a melting title that moves is burned in where it is on each 
   });
   await S((effects) => window.__moshpit.store.edit((p) => ((p.effects = effects), (p.layers = p.layers.filter((l) => l.id !== 'mv')))), keep);
   await settle();
-  if (!(m.early.left - m.late.left > 15 && m.late.right - m.early.right > 15)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
+  // the title darkens the left early and the right late; the footage's own left-right difference cancels out
+  const swing = m.early.left - m.early.right - (m.late.left - m.late.right);
+  if (!(swing > 30 && m.early.left > m.late.left)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
 });
 
 await step('graphics rows: drag a title above for a new row and back, on desktop and on a phone', async () => {
