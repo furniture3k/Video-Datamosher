@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { formatSeconds } from '../engine/eta';
+  import type { TextLayer } from '../engine/layers';
+import { formatSeconds } from '../engine/eta';
   import { compoundOf } from '../engine/compound';
   import { makeCompound, openCompound } from '../lib/compound.svelte';
   import { beatInfo, refreshBeats, beatInputs } from '../lib/beatinfo.svelte';
@@ -8,7 +9,7 @@
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
   import { layoutVideo, clipLen, nearestCut, mediaOf, transitionName, isBlend, isMoshTransition, remapToFootage, trimClip, moveVideo, rollEdit, slipClip, changeVideoTrack, isOverlayTrack, clipEnd, splitClip, splitText, type Placed } from '../engine/timeline';
-  import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project, type TextClip, type TransitionType } from '../engine/types';
+  import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project, type TransitionType } from '../engine/types';
   import { tc } from '../lib/timecode';
   import { mediaState } from '../lib/mediastate.svelte';
   import { addFiles, addToTimeline } from '../lib/media';
@@ -90,7 +91,7 @@
     const t: number[] = [0, store.ui.time, duration];
     for (const pl of placed) if (pl.clip.id !== exclude) t.push(pl.start, pl.end);
     for (const c of store.project.clips) if (c.track !== VIDEO_TRACK && c.id !== exclude) t.push(c.start, c.start + clipLen(c));
-    for (const tx of store.project.texts) if (tx.id !== exclude) t.push(tx.start, tx.start + tx.duration);
+    for (const tx of store.project.layers) if (tx.id !== exclude) t.push(tx.start, tx.start + tx.duration);
     for (const m of markers) t.push(m.t);
     if (beatInfo.grid) t.push(...beatInfo.beats);
     if (store.ui.inPoint !== null) t.push(store.ui.inPoint);
@@ -109,8 +110,8 @@
   // ---------------------------------------------------------------- dragging
   type Drag =
     | { k: 'scrub' }
-    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | TextClip; before: Project; grab: number; insert?: number; targets: number[]; to?: string; toT?: number }
-    | { k: 'trim'; id: string; kind: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextClip; before: Project; targets: number[] }
+    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | TextLayer; before: Project; grab: number; insert?: number; targets: number[]; to?: string; toT?: number }
+    | { k: 'trim'; id: string; kind: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextLayer; before: Project; targets: number[] }
     | { k: 'fade'; id: string; edge: 'in' | 'out'; x0: number; orig: Clip }
     | { k: 'fx'; id: string; mode: 'move' | 'l' | 'r'; x0: number; s0: number; e0: number }
     | { k: 'trans'; id: string; x0: number; d0: number; before: Project }
@@ -207,7 +208,7 @@
   }
 
   function startMove(e: PointerEvent, id: string, kind: 'v' | 'a' | 't') {
-    const orig = kind === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
+    const orig = kind === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     const start = kind === 'v' ? (placed.find((p) => p.clip.id === id)?.start ?? 0) : (orig as { start: number }).start;
     drag = { k: 'move', id, kind, x0: e.clientX, dx: 0, moved: false, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, grab: laneT(e) - start, targets: snapTargets(id) };
   }
@@ -216,7 +217,7 @@
   function bladeAt(e: PointerEvent, id: string, kind: 'v' | 'a' | 't') {
     const t = snapT(laneT(e), e, id);
     if (kind === 't') {
-      const tx = store.project.texts.find((x) => x.id === id);
+      const tx = store.project.layers.find((x) => x.id === id);
       if (!tx || t <= tx.start + 0.05 || t >= tx.start + tx.duration - 0.05) return;
       store.edit((p) => void splitText(p, id, t));
       return;
@@ -241,7 +242,7 @@
       }
     }
     store.selectClip(id);
-    const orig = kind === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
+    const orig = kind === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     drag = { k: 'trim', id, kind, edge, x0: e.clientX, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, targets: snapTargets(id) };
   }
 
@@ -395,8 +396,8 @@
     if (d.k === 'trim') {
       let dt = (e.clientX - d.x0) / pps;
       if (d.kind === 't') {
-        const tx = store.project.texts.find((t) => t.id === d.id)!;
-        const o = d.orig as TextClip;
+        const tx = store.project.layers.find((t) => t.id === d.id)!;
+        const o = d.orig as TextLayer;
         if (d.edge === 'l') {
           const s = Math.min(o.start + o.duration - 0.2, Math.max(0, snapT(o.start + dt, e, d.id, d.targets)));
           tx.start = s;
@@ -431,8 +432,8 @@
         return;
       }
       if (d.kind === 't') {
-        const tx = store.project.texts.find((x) => x.id === d.id)!;
-        const o = d.orig as TextClip;
+        const tx = store.project.layers.find((x) => x.id === d.id)!;
+        const o = d.orig as TextLayer;
         let s = Math.max(0, t - d.grab);
         const s2 = snapT(s, e, d.id, d.targets);
         s = s2 !== s ? s2 : snapT(s + o.duration, e, d.id, d.targets) - o.duration;
@@ -876,12 +877,12 @@
       </div>
 
       <!-- titles -->
-      {#if store.project.texts.length}
+      {#if store.project.layers.length}
         <div class="trow">
           <div class="g g-track"><Icon name="text" size={12} /><span class="tname">Titles</span></div>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div class="lane text-lane" style="width:{W}px" onpointerdown={scrubDown}>
-            {#each store.project.texts as tx (tx.id)}
+            {#each store.project.layers as tx (tx.id)}
               <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
                 <div class="edge l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}></div>
                 <span class="cname">{tx.text || 'Text'}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}

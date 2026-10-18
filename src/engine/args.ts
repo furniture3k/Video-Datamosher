@@ -1,5 +1,6 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
-import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project, type TextClip } from './types';
+import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project } from './types';
+import type { TextLayer } from './layers';
 import { findRecipe } from './recipe';
 import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
@@ -32,7 +33,7 @@ export type PathFn = (m: MediaItem) => string;
 
 /** A title burned into the video before moshing: a transparent PNG of the text, full frame. */
 export interface TextOverlay {
-  tx: TextClip;
+  tx: TextLayer;
   path: string;
 }
 
@@ -460,7 +461,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
     size: outputSize(project, width),
     n: seg.f1 - seg.f0,
     keys: keyTimes(project).filter((t) => t > t0 + 0.001 && t < t1 - 0.001).map((t) => r3(t - t0)),
-    texts: (project.texts ?? []).filter((t) => t.moshed && t.start < t1 && t.start + t.duration > t0),
+    texts: (project.layers ?? []).filter((t) => t.moshed && t.start < t1 && t.start + t.duration > t0),
     clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '', ...clipLook(pl.clip) })),
     layers: seg.layers.map((l) => ({ m: path(l.media) || JSON.stringify(l.media.source), w: l.media.width, h: l.media.height, i: l.clip.in, o: l.clip.out, s: l.clip.speed, r: l.clip.reverse, f: l.clip.fit, st: r3(l.start - t0), tr: l.track, ...clipLook(l.clip) })),
     hb: seg.hideBase,
@@ -737,7 +738,7 @@ export function parseProbe(log: string): { duration: number; width: number; heig
 }
 
 /** Generation loss: decode a moshed AVI and encode it again (settings `enc`) for another pass. */
-export function regenArgs(project: Pick<Project, 'decoder' | 'encoder' | 'clips' | 'media' | 'texts'>, enc: EncoderSettings, input: string, out: string): string[] {
+export function regenArgs(project: Pick<Project, 'decoder' | 'encoder' | 'clips' | 'media' | 'layers'>, enc: EncoderSettings, input: string, out: string): string[] {
   return [...decoderInputArgs(project.decoder), '-i', input, '-an', '-pix_fmt', 'yuv420p', ...encoderArgs(enc, keyTimes(project as Project)), '-f', 'avi', out];
 }
 

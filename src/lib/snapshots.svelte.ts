@@ -3,6 +3,7 @@
 import { store } from './store.svelte';
 import { kvGet, kvSet } from './storage';
 import { uid } from '../engine/presets';
+import { migrate } from '../engine/migrate';
 import type { Project } from '../engine/types';
 
 export interface Snapshot {
@@ -27,7 +28,14 @@ export const snapshots = $state<{ list: Snapshot[]; loaded: boolean }>({ list: [
 let loading: Promise<void> | null = null;
 export function loadSnapshots(): Promise<void> {
   loading ??= kvGet<Snapshot[]>(KEY).then((l) => {
-    snapshots.list = l ?? [];
+    // snapshots taken by older versions are in older project formats
+    snapshots.list = (l ?? []).flatMap((s) => {
+      try {
+        return [{ ...s, project: migrate(s.project) }];
+      } catch {
+        return [];
+      }
+    });
     snapshots.loaded = true;
   });
   return loading;

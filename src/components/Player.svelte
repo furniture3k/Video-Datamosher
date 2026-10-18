@@ -15,7 +15,7 @@
   import { drawMask, type MaskStroke } from '../lib/maps';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
-  import { drawTexts } from '../lib/text';
+  import { drawLayers } from '../lib/layers';
   import { audioCtx } from '../lib/audioctx';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
@@ -113,7 +113,7 @@
       ctx.drawImage(b, 0, 0, w, h);
     } else ctx.drawImage(a, 0, 0, w, h);
     // clean titles sit on top of the mosh (they're baked in only on export)
-    if (mode !== 'hold' && store.project.texts.length) drawTexts(ctx, store.project.texts, src / r.fps, w, h, 'clean');
+    if (mode !== 'hold' && store.project.layers.length) drawLayers(ctx, store.project.layers, src / r.fps, w, h, 'clean');
     // prefetch
     for (let k = 1; k < 8; k++) bitmap(r.jpegs, i + k, 'm');
   }
@@ -124,7 +124,7 @@
     void store.ui.compare;
     void store.ui.split;
     void originals;
-    void textsSig;
+    void layersSig;
     if (mosh) draw();
   });
 
@@ -148,13 +148,13 @@
   }
   // deep signatures of the timeline: worked out again only when it changes, not on every frame
   const clipsSig = $derived(JSON.stringify(store.project.clips));
-  const textsSig = $derived(JSON.stringify(store.project.texts));
+  const layersSig = $derived(JSON.stringify(store.project.layers));
   const soundSig = $derived(JSON.stringify(store.project.tracks) + clipsSig);
   $effect(() => {
     // redraw when the time or anything on the timeline changes (while paused)
     void store.ui.time;
     void clipsSig;
-    void textsSig;
+    void layersSig;
     void store.project.media.length;
     void store.project.encoder.aspect;
     void lutState.loaded;
@@ -684,7 +684,7 @@
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else (el.requestFullscreen?.() ?? Promise.reject()).catch(() => store.toast('Full screen is not available here.', 'error'));
   }
-  const hasTimeline = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
+  const hasTimeline = $derived(store.project.clips.length > 0 || store.project.layers.length > 0);
 </script>
 
 <svelte:window onclick={() => (pmenu = false)} />

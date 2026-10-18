@@ -3,7 +3,8 @@ import { store } from './store.svelte';
 import { ask } from './ask';
 import { forgetMedia } from './media';
 import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips } from '../engine/timeline';
-import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TextClip, type TransitionType } from '../engine/types';
+import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TransitionType } from '../engine/types';
+import { FIRST_ROW, type TextLayer } from '../engine/layers';
 import { addToTimeline } from './media';
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -13,7 +14,7 @@ export function splitAtPlayhead() {
   const t = store.ui.time;
   const selected = store.ui.selectedClips;
   const under = clipsAt(store.project, t).filter((c) => !lockedTrack(c.track));
-  const titles = store.project.texts.filter((x) => selected.includes(x.id) && t > x.start + 0.05 && t < x.start + x.duration - 0.05);
+  const titles = store.project.layers.filter((x) => selected.includes(x.id) && t > x.start + 0.05 && t < x.start + x.duration - 0.05);
   const targets = (selected.length ? under.filter((c) => selected.includes(c.id)) : under).map((c) => c.id);
   if (!targets.length && !titles.length) return store.toast(selected.length ? 'Move the playhead over the selected clip to split it.' : 'Move the playhead over a clip to split it.');
   const created: string[] = [];
@@ -44,7 +45,7 @@ export function deleteSelected(ripple = false) {
     store.editTimeline((p) => {
       if (ripple) rippleDelete(p, ids);
       else deleteClips(p, ids);
-      p.texts = p.texts.filter((t) => !ids.includes(t.id));
+      p.layers = p.layers.filter((t) => !ids.includes(t.id));
     });
     store.ui.selectedClips = [];
     return true;
@@ -89,7 +90,7 @@ export function nudgeSelected(frames: number) {
   const ids = editable(store.ui.selectedClips);
   const d = frames / store.fps;
   const free = store.project.clips.filter((c) => ids.includes(c.id) && c.track !== VIDEO_TRACK);
-  const texts = store.project.texts.filter((t) => ids.includes(t.id));
+  const texts = store.project.layers.filter((t) => ids.includes(t.id));
   if (!free.length && !texts.length) return false;
   store.editTimeline(() => {
     for (const c of free) c.start = Math.max(0, c.start + d);
@@ -213,7 +214,7 @@ export function editPoints(p: Project = store.project): number[] {
   const t = new Set<number>([0]);
   for (const pl of layoutVideo(p)) (t.add(pl.start), t.add(pl.end));
   for (const c of p.clips) if (c.track !== VIDEO_TRACK) (t.add(c.start), t.add(clipEnd(c)));
-  for (const x of p.texts) (t.add(x.start), t.add(x.start + x.duration));
+  for (const x of p.layers) (t.add(x.start), t.add(x.start + x.duration));
   return [...t].map((x) => Math.round(x * 1000) / 1000).sort((a, b) => a - b);
 }
 
@@ -257,10 +258,10 @@ export function duplicateSelected() {
   const created: string[] = [];
   store.editTimeline((p) => {
     for (const id of ids) {
-      const tx = p.texts.find((x) => x.id === id);
+      const tx = p.layers.find((x) => x.id === id);
       if (tx) {
         const d = { ...clone(tx), id: uid(), start: tx.start + tx.duration };
-        p.texts.push(d);
+        p.layers.push(d);
         created.push(d.id);
         continue;
       }
@@ -398,13 +399,13 @@ export function zoomFit() {
   store.ui.pxPerSec = 0;
 }
 
-export function newText(start: number): TextClip {
-  return { id: uid(), text: 'Title', start, duration: 3, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0.3, moshed: false };
+export function newText(start: number): TextLayer {
+  return { id: uid(), kind: 'text', row: FIRST_ROW, text: 'Title', start, duration: 3, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0.3, moshed: false };
 }
 
 /** Add a text title at the playhead. */
 export function addText() {
   const tx = newText(store.ui.time);
-  store.edit((p) => p.texts.push(tx));
+  store.edit((p) => p.layers.push(tx));
   store.selectClip(tx.id);
 }

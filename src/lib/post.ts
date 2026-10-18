@@ -16,8 +16,9 @@ import { withChaos } from '../engine/chaos';
 import { bend, type BendMode, type BendOptions } from '../engine/dsp';
 import { bakeAudio, type MoshAudio } from '../engine/audiofx';
 import { makeRng, hashSeed } from '../engine/rng';
-import type { EffectInstance, Frame, Project, TextClip } from '../engine/types';
-import { drawTexts, textAlpha } from './text';
+import type { EffectInstance, Frame, Project } from '../engine/types';
+import type { TextLayer } from '../engine/layers';
+import { anyLayerAt, drawLayers } from './layers';
 import { Cancelled } from './ffmpeg';
 
 /** Pixel effects in the order they run: Subject Guards last, so what they keep clean stays clean. */
@@ -366,7 +367,7 @@ export class PostProcessor {
 export class PostRunner {
   private pp: PostProcessor | null = null;
   private effects: EffectInstance[];
-  private texts: TextClip[];
+  private layers: TextLayer[];
   private fps: number;
   private c2d: HTMLCanvasElement | null = null;
   /** Subject Guards on a tracked object: its path on the timeline and the box's size */
@@ -398,11 +399,11 @@ export class PostRunner {
       const legacy: [number, number] = [(2 * old) / 1.4, (2 * old * w) / h / 1.4];
       if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, gp.pathId) ?? legacy });
     }
-    this.texts = withTexts ? (project.texts ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
+    this.layers = withTexts ? (project.layers ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
     this.fps = project.encoder.fps;
   }
   get active() {
-    return this.effects.length > 0 || this.texts.length > 0;
+    return this.effects.length > 0 || this.layers.length > 0;
   }
 
   /** jpegs[i] is output frame offset + i */
@@ -424,15 +425,15 @@ export class PostRunner {
           this.pp.processFrame(bmp, fr, k, this.effects, extras);
           src = this.pp.canvas;
         }
-        if (this.texts.length) {
+        if (this.layers.length) {
           const t = (fr.at ?? fr.src) / this.fps;
-          if (this.texts.some((x) => textAlpha(x, t) > 0)) {
+          if (anyLayerAt(this.layers, t, 'clean')) {
             this.c2d ??= document.createElement('canvas');
             this.c2d.width = bmp.width;
             this.c2d.height = bmp.height;
             const ctx = this.c2d.getContext('2d')!;
             ctx.drawImage(src, 0, 0);
-            drawTexts(ctx, this.texts, t, bmp.width, bmp.height, 'clean');
+            drawLayers(ctx, this.layers, t, bmp.width, bmp.height, 'clean');
             src = this.c2d;
           }
         }

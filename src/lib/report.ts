@@ -49,7 +49,7 @@ export function diagnostics(): string {
     `moshpit ${VERSION} · ${where()}`,
     navigator.userAgent,
     `screen ${screen.width}×${screen.height} @${devicePixelRatio}x · cores ${navigator.hardwareConcurrency ?? '?'}`,
-    `project: ${p.clips.length} clips, ${p.texts.length} titles, ${p.effects.length} effects (${[...new Set(p.effects.map((x) => x.type))].join(', ') || 'none'}), ${p.media.length} media`,
+    `project: ${p.clips.length} clips, ${p.layers.length} titles, ${p.effects.length} effects (${[...new Set(p.effects.map((x) => x.type))].join(', ') || 'none'}), ${p.media.length} media`,
     `encoder: ${e.codec} ${e.width}px ${e.fps}fps · preview ${store.ui.previewRes} · ${store.totalFrames} frames`,
   ];
   if (store.status.error) lines.push('', 'error: ' + store.status.error.slice(0, 600));

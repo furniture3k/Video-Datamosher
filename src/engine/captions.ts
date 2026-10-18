@@ -1,5 +1,5 @@
 // Auto captions: turn timed words (from speech recognition) into caption titles, and subtitle files.
-import type { TextClip } from './types';
+import { FIRST_ROW, type TextLayer } from './layers';
 
 export interface Word {
   /** seconds on the timeline */
@@ -51,7 +51,7 @@ export function groupWords(words: Word[], o: GroupOptions): Word[][] {
 const tidy = (ws: Word[]) => ws.map((w) => w.text.trim()).join(' ').replace(/\s+([,.!?;:…])/g, '$1');
 
 /** Caption titles in a style (ids from `newId`). */
-export function captionTexts(words: Word[], style: CaptionStyle, newId: () => string): TextClip[] {
+export function captionTexts(words: Word[], style: CaptionStyle, newId: () => string): TextLayer[] {
   const bold = style === 'bold';
   const groups = groupWords(words, bold ? { maxChars: 16, maxSeconds: 1.6, gap: 0.4 } : { maxChars: 38, maxSeconds: 3.5, gap: 0.7 });
   return groups.map((g) => {
@@ -60,6 +60,8 @@ export function captionTexts(words: Word[], style: CaptionStyle, newId: () => st
     const text = tidy(g);
     return {
       id: newId(),
+      kind: 'text',
+      row: FIRST_ROW,
       text: bold ? text.toUpperCase() : text,
       start,
       duration: end - start,
@@ -76,7 +78,7 @@ export function captionTexts(words: Word[], style: CaptionStyle, newId: () => st
       moshed: style === 'melt',
       caption: true,
       ...(style === 'karaoke' || bold ? { words: g.map((w) => ({ t0: w.t0 - start, t1: w.t1 - start, text: bold ? w.text.trim().toUpperCase() : w.text.trim() })), highlight: '#ffd23f' } : {}),
-    } satisfies TextClip;
+    } satisfies TextLayer;
   });
 }
 
@@ -87,12 +89,12 @@ const stamp = (s: number, sep: ',' | '.') => {
 };
 
 /** SubRip (.srt) of caption titles. */
-export function toSrt(texts: Pick<TextClip, 'start' | 'duration' | 'text'>[]): string {
+export function toSrt(texts: Pick<TextLayer, 'start' | 'duration' | 'text'>[]): string {
   return texts.map((t, i) => `${i + 1}\n${stamp(t.start, ',')} --> ${stamp(t.start + t.duration, ',')}\n${t.text}\n`).join('\n');
 }
 
 /** WebVTT (.vtt) of caption titles. */
-export function toVtt(texts: Pick<TextClip, 'start' | 'duration' | 'text'>[]): string {
+export function toVtt(texts: Pick<TextLayer, 'start' | 'duration' | 'text'>[]): string {
   return 'WEBVTT\n\n' + texts.map((t) => `${stamp(t.start, '.')} --> ${stamp(t.start + t.duration, '.')}\n${t.text}\n`).join('\n');
 }
 

@@ -73,15 +73,15 @@ export async function transcribe(source: string, o: TranscribeOptions): Promise<
 export function applyCaptions(words: Word[], style: CaptionStyle, replace: boolean): number {
   const texts = captionTexts(words, style, uid);
   store.edit((p) => {
-    if (replace) p.texts = p.texts.filter((t) => !t.caption);
-    p.texts.push(...texts);
+    if (replace) p.layers = p.layers.filter((t) => !t.caption);
+    p.layers.push(...texts);
   });
   return texts.length;
 }
 
 /** Download the captions as subtitles. */
 export function downloadSubtitles(kind: 'srt' | 'vtt') {
-  const caps = store.project.texts.filter((t) => t.caption).sort((a, b) => a.start - b.start);
+  const caps = store.project.layers.filter((t) => t.caption).sort((a, b) => a.start - b.start);
   const text = kind === 'srt' ? toSrt(caps) : toVtt(caps);
   download(new Blob([text], { type: 'text/plain' }), `${(store.project.name || 'captions').replace(/[^\w-]+/g, '_')}.${kind}`);
 }

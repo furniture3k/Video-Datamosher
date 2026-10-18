@@ -1,11 +1,12 @@
 <script lang="ts">
-  import { store } from '../lib/store.svelte';
+  import type { TextAnim, TextLayer } from '../engine/layers';
+import { store } from '../lib/store.svelte';
   import Field from './Field.svelte';
   import { TEXT_ANIMS } from '../lib/text';
-  import type { TextAnim } from '../engine/types';
+  ;
   import Icon from './Icon.svelte';
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
-  import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type TextClip, type Transform, type TransitionType } from '../engine/types';
+  import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
   import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead } from '../lib/edit';
   import { hasKeys, keyedValue, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
@@ -15,7 +16,7 @@
 
   const c = $derived(store.selectedClip);
   const media = $derived(c ? mediaOf(store.project, c.mediaId) : undefined);
-  const text = $derived(store.ui.selectedClips.length === 1 ? store.project.texts.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
+  const text = $derived(store.ui.selectedClips.length === 1 ? store.project.layers.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
   const trClip = $derived(store.ui.selectedTransition ? store.project.clips.find((x) => x.id === store.ui.selectedTransition) : undefined);
   const isStill = $derived(media?.source.kind === 'file' && media.source.isImage);
   const isVideo = $derived(c?.track === VIDEO_TRACK);
@@ -153,7 +154,7 @@
     });
   };
 
-  const setT = <K extends keyof TextClip>(k: K) => (v: TextClip[K]) => store.edit(() => (text![k] = v), 'text' + k + text!.id);
+  const setT = <K extends keyof TextLayer>(k: K) => (v: TextLayer[K]) => store.edit(() => (text![k] = v), 'text' + k + text!.id);
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toFixed(2).padStart(5, '0')}`;
 </script>
 

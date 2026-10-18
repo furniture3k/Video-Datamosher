@@ -1,5 +1,6 @@
 import type { MoshCodec } from './bitstream';
 import type { Keys, Ramp } from './keys';
+import type { Layer } from './layers';
 
 export type FrameType = 'I' | 'P' | 'B' | 'S' | '?';
 
@@ -28,7 +29,7 @@ export interface Frame {
 export interface Sequence {
   clips: Clip[];
   tracks: Track[];
-  texts: TextClip[];
+  layers: Layer[];
   effects: EffectInstance[];
   markers?: Marker[];
   /** the compound's own mosh effects are rendered into it */
@@ -213,39 +214,6 @@ export interface Track {
   locked?: boolean;
 }
 
-export interface TextClip {
-  id: string;
-  text: string;
-  start: number;
-  duration: number;
-  /** font size as a fraction of frame height */
-  size: number;
-  color: string;
-  font: 'sans' | 'serif' | 'mono' | 'impact';
-  bold: boolean;
-  /** position of the text centre, 0..1 */
-  x: number;
-  y: number;
-  align: 'left' | 'center' | 'right';
-  shadow: boolean;
-  box: boolean;
-  fade: number;
-  /** burn into the video before moshing so the text melts too */
-  moshed: boolean;
-  /** made by auto captions */
-  caption?: boolean;
-  /** word timings (seconds from the title's start), for word-by-word highlighting */
-  words?: { t0: number; t1: number; text: string }[];
-  /** colour of the word being spoken */
-  highlight?: string;
-  /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
-  follow?: [number, number, number][];
-  /** how it comes in (clean titles; titles that melt with the video stay still) */
-  anim?: TextAnim;
-  /** how long it takes to come in (s) */
-  animIn?: number;
-}
-
 /** A knob, fader, pad (MIDI) or OSC address that moves one effect setting. */
 export interface ControlMap {
   /** "cc:<channel>:<number>", "note:<channel>:<number>" or "osc:<address>" */
@@ -253,8 +221,6 @@ export interface ControlMap {
   effectId: string;
   param: string;
 }
-
-export type TextAnim = 'none' | 'type' | 'glitch' | 'slide' | 'pop';
 
 export type Aspect = 'auto' | '16:9' | '4:3' | '1:1' | '9:16' | '4:5' | '21:9';
 
@@ -342,12 +308,13 @@ export interface AudioSettings {
 }
 
 export interface Project {
-  version: 2;
+  version: 3;
   name: string;
   media: MediaItem[];
   clips: Clip[];
   tracks: Track[];
-  texts: TextClip[];
+  /** titles and other graphics over the picture */
+  layers: Layer[];
   encoder: EncoderSettings;
   decoder: DecoderSettings;
   effects: EffectInstance[];
@@ -421,12 +388,12 @@ export const defaultTracks = (): Track[] => [
 ];
 
 export const newProject = (): Project => ({
-  version: 2,
+  version: 3,
   name: 'Untitled mosh',
   media: [],
   clips: [],
   tracks: defaultTracks(),
-  texts: [],
+  layers: [],
   encoder: defaultEncoder(),
   decoder: defaultDecoder(),
   effects: [],

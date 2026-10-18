@@ -652,7 +652,7 @@ await step('analysis: track an object, title follows, stabilize', async () => {
   await S(() => window.__moshpit.store.edit((p) => (p.effects = [])));
   await settle();
   await page.locator('.pathrow').getByRole('button', { name: 'Title follows' }).click();
-  const tx = await S(() => window.__moshpit.store.project.texts.at(-1));
+  const tx = await S(() => window.__moshpit.store.project.layers.at(-1));
   if (!tx.follow?.length) throw new Error('title does not follow');
   // (the new title is selected now: back to the clip)
   await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
@@ -744,7 +744,7 @@ await step('captions: listen (fake recogniser), add, subtitles', async () => {
   await page.locator('.modal select').filter({ has: page.locator('option[value="karaoke"]') }).selectOption('karaoke');
   await page.getByRole('button', { name: 'Listen', exact: true }).click();
   await page.getByRole('button', { name: 'Add captions' }).click();
-  const caps = await S(() => window.__moshpit.store.project.texts.filter((t) => t.caption).map((t) => [t.text, t.words?.length]));
+  const caps = await S(() => window.__moshpit.store.project.layers.filter((t) => t.caption).map((t) => [t.text, t.words?.length]));
   if (JSON.stringify(caps) !== JSON.stringify([['Hello mosh.', 2], ['Again', 1]])) throw new Error('captions: ' + JSON.stringify(caps));
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Auto captions/ }).click();
@@ -956,13 +956,13 @@ await step('text animations: each one draws less (or moves) while coming in, the
   // the setting in the Clip tab
   await S(() => {
     const st = window.__moshpit.store;
-    st.edit((p) => p.texts.push({ id: 'tt', text: 'TITLE', start: 0, duration: 2, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false }));
+    st.edit((p) => p.layers.push({ id: 'tt', kind: 'text', row: 'g1', text: 'TITLE', start: 0, duration: 2, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false }));
     st.ui.selectedClips = ['tt'];
   });
   await page.locator('.tabs button', { hasText: 'Clip' }).click();
   await page.locator('.field', { hasText: 'Comes in' }).locator('select').selectOption('glitch');
-  if ((await S(() => window.__moshpit.store.project.texts.find((t) => t.id === 'tt').anim)) !== 'glitch') throw new Error('animation not set from the Clip tab');
-  await S(() => window.__moshpit.store.edit((p) => (p.texts = p.texts.filter((t) => t.id !== 'tt'))));
+  if ((await S(() => window.__moshpit.store.project.layers.find((t) => t.id === 'tt').anim)) !== 'glitch') throw new Error('animation not set from the Clip tab');
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((t) => t.id !== 'tt'))));
   await settle();
 });
 

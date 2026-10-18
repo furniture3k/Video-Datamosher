@@ -206,8 +206,8 @@ d('native ffmpeg pipeline', () => {
 
   it('burns melting titles into prepared segments', () => {
     ff(dir, ['-f', 'lavfi', '-i', 'color=c=red:s=320x240,format=rgba,geq=r=255:g=0:b=0:a=if(between(X\\,100\\,220)*between(Y\\,100\\,140)\\,255\\,0)', '-frames:v', '1', 'title.png']);
-    const tx = { id: 't', text: 'Hi', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans' as const, bold: true, x: 0.5, y: 0.5, align: 'center' as const, shadow: false, box: false, fade: 0.3, moshed: true };
-    const p: Project = { ...project, texts: [tx] };
+    const tx = { id: 't', kind: 'text' as const, row: 'g1', text: 'Hi', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans' as const, bold: true, x: 0.5, y: 0.5, align: 'center' as const, shadow: false, box: false, fade: 0.3, moshed: true };
+    const p: Project = { ...project, layers: [tx] };
     const segs = segments(p, 25);
     ff(dir, segmentArgs(p, segs[0], 320, 'tseg.avi', undefined, [{ tx, path: 'title.png' }]));
     expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'tseg.avi'))), 'mpeg4').frames.length).toBe(50);
@@ -218,11 +218,11 @@ d('native ffmpeg pipeline', () => {
     ff(dir, prepArgs(p, 320, 'tall.avi', undefined, [{ tx, path: 'title.png' }]));
     expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'tall.avi'))), 'mpeg4').frames.length).toBe(100);
     // the black tail segment can carry a title too
-    const q: Project = { ...p, texts: [{ ...tx, start: 0.2 }], clips: [], media: p.media };
+    const q: Project = { ...p, layers: [{ ...tx, start: 0.2 }], clips: [], media: p.media };
     q.clips = [clipOf(p.media[0], { track: 'a1', out: 2 })];
     const bs = segments(q, 25)[0];
     expect(bs.f1 - bs.f0).toBe(55); // the title (to 2.2 s) is the longest thing
-    ff(dir, segmentArgs(q, bs, 320, 'tblack.avi', undefined, [{ tx: q.texts[0], path: 'title.png' }]));
+    ff(dir, segmentArgs(q, bs, 320, 'tblack.avi', undefined, [{ tx: q.layers[0], path: 'title.png' }]));
     expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'tblack.avi'))), 'mpeg4').frames.length).toBe(55);
   });
 });

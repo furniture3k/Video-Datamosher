@@ -8,16 +8,16 @@ export const compoundOf = (m: MediaItem | undefined): Sequence | undefined => (m
 
 /** The timeline inside a compound, with the project's settings and media. */
 export function innerProject(parent: Project, seq: Sequence): Project {
-  return { ...parent, clips: seq.clips, tracks: seq.tracks, texts: seq.texts, effects: seq.effects, markers: seq.markers ?? [] };
+  return { ...parent, clips: seq.clips, tracks: seq.tracks, layers: seq.layers, effects: seq.effects, markers: seq.markers ?? [] };
 }
 
 /** What gets rendered into the compound's file (its own mosh only when `moshInside`). */
 export const renderProject = (parent: Project, seq: Sequence): Project => ({ ...innerProject(parent, seq), effects: seq.moshInside ? seq.effects : [] });
 
-export const sequenceOf = (inner: Pick<Project, 'clips' | 'tracks' | 'texts' | 'effects' | 'markers'>, moshInside = false): Sequence => ({
+export const sequenceOf = (inner: Pick<Project, 'clips' | 'tracks' | 'layers' | 'effects' | 'markers'>, moshInside = false): Sequence => ({
   clips: inner.clips,
   tracks: inner.tracks,
-  texts: inner.texts,
+  layers: inner.layers,
   effects: inner.effects,
   markers: inner.markers ?? [],
   moshInside,
@@ -58,13 +58,13 @@ export function buildCompound(parent: Project, ids: string[], media: MediaItem):
   const seq: Sequence = {
     clips,
     tracks: defaultTracks().filter((t) => t.id === VIDEO_TRACK || t.id === CLIP_AUDIO),
-    texts: [],
+    layers: [],
     effects,
     markers: [],
     moshInside: false,
   };
   const first = run[0].clip;
-  const len = timelineDuration({ clips, media: parent.media, texts: [] });
+  const len = timelineDuration({ clips, media: parent.media, layers: [] });
   const clip: Clip = {
     id: uid(),
     mediaId: media.id,
@@ -112,7 +112,7 @@ export function rootWithInner(stack: { parent: Project; mediaId: string }[], cur
  */
 export function parentAfter(parent: Project, inner: Project): Project {
   const media = [...parent.media, ...inner.media.filter((m) => !parent.media.some((p) => p.id === m.id))];
-  return { ...inner, clips: parent.clips, tracks: parent.tracks, texts: parent.texts, effects: parent.effects, markers: parent.markers, controls: parent.controls, beatSource: parent.beatSource, media };
+  return { ...inner, clips: parent.clips, tracks: parent.tracks, layers: parent.layers, effects: parent.effects, markers: parent.markers, controls: parent.controls, beatSource: parent.beatSource, media };
 }
 
 export const staleCompounds = (p: Project) => p.media.filter((m) => m.source.kind === 'file' && m.source.compound && m.source.stale);
