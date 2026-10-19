@@ -162,6 +162,15 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
   check the stored values; undo is one step per gesture.
 
 ### M3: Beat time and style kits (F6, F7)
+
+> **Done (PR for `feat/m3-beats-kits`).** Changes from this plan:
+> - Beat-locked layers (re-timed when the music changes) are left out: a lot of machinery for
+>   little gain in these edit styles. Beat *units* for durations and animations move to M4,
+>   where the animations are reworked.
+> - Kits are **title styles** for now (font, size, colour, highlight, shadow, box, entrance),
+>   stamped onto titles rather than resolved at draw time, so exports and melting need nothing
+>   new. Saved styles live on the device, like saved presets. They grow into fuller kits as
+>   fonts (M4) and shapes (M5) arrive.
 - `beattime.ts`; beat units in Field controls; ½ and ¼ snapping; beat-locked layers follow tempo
   changes; auto-edit subdivisions.
 - `kits.ts` with built-in kits for R2 (pink condensed), R4 (navy/off-white), R6 (white/red

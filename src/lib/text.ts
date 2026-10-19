@@ -18,7 +18,7 @@ const noise = (a: number, b: number) => {
 };
 const GLYPHS = '!<>-_\\/[]{}=+*^?#%&@$01';
 
-const FONTS: Record<TextLayer['font'], string> = {
+export const FONTS: Record<TextLayer['font'], string> = {
   sans: "-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   serif: "Georgia, 'Times New Roman', serif",
   mono: "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace",

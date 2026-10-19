@@ -6,6 +6,8 @@ import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, l
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TransitionType } from '../engine/types';
 import { FIRST_ROW, nextRow, type TextLayer } from '../engine/layers';
 import { addToTimeline } from './media';
+import { styleForNew } from './styles.svelte';
+import { applyStyle } from '../engine/styles';
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 
@@ -399,8 +401,12 @@ export function zoomFit() {
   store.ui.pxPerSec = 0;
 }
 
+/** A new title at `start`, in the style used last (if any). */
 export function newText(start: number): TextLayer {
-  return { id: uid(), kind: 'text', row: FIRST_ROW, text: 'Title', start, duration: 3, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0.3, moshed: false };
+  const l: TextLayer = { id: uid(), kind: 'text', row: FIRST_ROW, text: 'Title', start, duration: 3, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0.3, moshed: false };
+  const s = styleForNew();
+  if (s) applyStyle(l, s);
+  return l;
 }
 
 /**

@@ -341,6 +341,31 @@ await step('graphics rows: drag a title above for a new row and back, on desktop
   if (phoneRow !== 'g2') throw new Error('phone: dragging above the rows did not make a new row: ' + phoneRow);
 });
 
+await step('styles: put a built-in look on a title, save your own, new titles get the last one', async () => {
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.edit((p) => p.layers.push({ id: 'sty', kind: 'text', row: 'g1', text: 'STYLE', start: 0, duration: 2, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false }));
+    st.selectClip('sty');
+  });
+  await page.locator('.chip', { hasText: 'Word slam' }).click();
+  const l = await S(() => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.find((x) => x.id === 'sty'))));
+  if (l.font !== 'impact' || l.size !== 0.32 || l.color !== '#f3a8f0' || l.text !== 'STYLE') throw new Error('Word slam: ' + JSON.stringify(l));
+  // a look of your own (the prompt answers "Test preset")
+  await S(() => window.__moshpit.store.edit((p) => (p.layers.find((x) => x.id === 'sty').color = '#00ff88')));
+  await page.getByRole('button', { name: 'Save style' }).click();
+  await page.locator('.chip', { hasText: 'Test preset' }).waitFor();
+  // a new title comes in that look
+  await S(() => window.__moshpit.edit.addText());
+  const fresh = await S(() => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.at(-1))));
+  if (fresh.color !== '#00ff88' || fresh.font !== 'impact') throw new Error('the new title did not get the last style: ' + JSON.stringify(fresh));
+  // delete it; back to the plain look (as new titles start) for the steps after this one
+  await page.getByRole('button', { name: 'Delete the style Test preset' }).click();
+  if (await page.locator('.chip', { hasText: 'Test preset' }).count()) throw new Error('style not deleted');
+  await S(() => window.__moshpit.store.selectClip('sty'));
+  await page.locator('.chip', { hasText: 'Clean' }).click();
+  await S((id) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== 'sty' && l.id !== id))), fresh.id);
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
