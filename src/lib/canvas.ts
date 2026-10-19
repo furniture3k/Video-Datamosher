@@ -16,11 +16,26 @@ const sheet = (w: number, h: number) => {
   return c;
 };
 
-/** The backdrop (colour or gradient; clear for a blurred one, which comes from the picture) and the card's shadow. */
-export function backdropPlate(c: Canvas, W: number, H: number): HTMLCanvasElement {
+/** A picture for an image backdrop, and its size. */
+export interface BackdropImage {
+  src: CanvasImageSource;
+  w: number;
+  h: number;
+}
+
+/** The backdrop (colour, gradient or picture; clear for a blurred one, which comes from the picture) and the card's shadow. */
+export function backdropPlate(c: Canvas, W: number, H: number, img?: BackdropImage): HTMLCanvasElement {
   const out = sheet(W, H);
   const ctx = out.getContext('2d')!;
-  if (c.bg === 'color') {
+  if (c.bg === 'image') {
+    ctx.fillStyle = c.color;
+    ctx.fillRect(0, 0, W, H);
+    if (img && img.w && img.h) {
+      // covering the frame, its middle shown
+      const k = Math.max(W / img.w, H / img.h);
+      ctx.drawImage(img.src, (W - img.w * k) / 2, (H - img.h * k) / 2, img.w * k, img.h * k);
+    }
+  } else if (c.bg === 'color') {
     ctx.fillStyle = c.color;
     ctx.fillRect(0, 0, W, H);
   } else if (c.bg === 'gradient') {
@@ -92,12 +107,12 @@ let scratch: HTMLCanvasElement | null = null;
  * Turn the picture drawn on `ctx` (W×H) into the card on its backdrop, as exports draw it
  * (the blur is the browser's, near enough FFmpeg's box blur).
  */
-export function drawCanvas(ctx: CanvasRenderingContext2D, c: Canvas, W: number, H: number) {
-  const key = JSON.stringify([c, W, H]);
+export function drawCanvas(ctx: CanvasRenderingContext2D, c: Canvas, W: number, H: number, img?: BackdropImage) {
+  const key = JSON.stringify([c, W, H, !!img]);
   let plates = cache.get(key);
   if (!plates) {
     if (cache.size > 8) cache.clear();
-    plates = { bg: backdropPlate(c, W, H), border: borderPlate(c, W, H) };
+    plates = { bg: backdropPlate(c, W, H, img), border: borderPlate(c, W, H) };
     cache.set(key, plates);
   }
   if (!scratch || scratch.width !== W || scratch.height !== H) scratch = sheet(W, H);

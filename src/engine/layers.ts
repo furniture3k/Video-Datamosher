@@ -28,6 +28,23 @@ interface LayerBase {
   fade: number;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
+  /** stamp trail: every `every` seconds it steps on by (dx, dy) (shares of the frame), leaving a copy behind, `count` times */
+  trail?: Trail;
+}
+
+export interface Trail {
+  every: number;
+  count: number;
+  dx: number;
+  dy: number;
+}
+
+/** Where the copies of a stamp trail are at timeline time t: offsets (shares of the frame), oldest first, the layer itself last. */
+export function trailSteps(l: Pick<LayerBase, 'start' | 'trail'>, t: number): [number, number][] {
+  const tr = l.trail;
+  if (!tr || tr.count < 1 || tr.every <= 0) return [[0, 0]];
+  const n = Math.max(0, Math.min(tr.count, Math.floor((t - l.start) / tr.every + 1e-6)));
+  return Array.from({ length: n + 1 }, (_, k) => [k * tr.dx, k * tr.dy]);
 }
 
 export interface TextLayer extends LayerBase {
@@ -165,7 +182,7 @@ export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.sha
  * single picture of it can stand in for every frame (fades are applied on top of that picture).
  */
 export function isStill(l: Layer): boolean {
-  if (l.follow?.length) return false;
+  if (l.follow?.length || l.trail) return false;
   if (l.kind === 'shape') return !l.drawOn && !l.boil;
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }

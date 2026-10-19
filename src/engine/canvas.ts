@@ -3,7 +3,7 @@
 // edits). This is the model and its geometry (pure): ../lib/canvas draws it, args.ts builds the
 // same thing in FFmpeg.
 
-export type BackdropKind = 'color' | 'gradient' | 'blur';
+export type BackdropKind = 'color' | 'gradient' | 'blur' | 'image';
 
 export interface Canvas {
   /** what's behind the picture */
@@ -12,6 +12,8 @@ export interface Canvas {
   /** gradient: from `color` to `color2`, at this angle (degrees, 0 = top to bottom) */
   color2?: string;
   angle?: number;
+  /** image: the picture (an image in the media), filling the frame */
+  image?: string;
   /** blur: how soft the copy is, 0..1 */
   blur?: number;
   /** space round the picture, as a share of the frame's shorter side */

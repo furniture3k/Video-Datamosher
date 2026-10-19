@@ -5,6 +5,7 @@
   import { TEXT_ANIMS } from '../lib/text';
   import Field from './Field.svelte';
   import BeatChips from './BeatChips.svelte';
+  import TrailSettings from './TrailSettings.svelte';
   import type { TextAnim, TextLayer } from '../engine/layers';
 
   let { title }: { title: TextLayer } = $props();
@@ -70,6 +71,7 @@
     <Field label="Scroll" min={-2} max={2} step={0.05} value={title.scroll ?? 0} help="Copies run along like a ticker: frame widths a second (negative: the other way)." onchange={(v: number) => set('scroll', v)} />
   {/if}
 {/if}
+<TrailSettings layer={title} />
 
 <style>
   .label {

@@ -4,9 +4,12 @@
   import { store } from '../lib/store.svelte';
   import Field from './Field.svelte';
   import { CANVAS_PRESETS, DEFAULT_CANVAS, hasCanvas, type Canvas } from '../engine/canvas';
+  import { GRID_LAYOUTS } from '../engine/grid';
+  import { arrangeGrid } from '../lib/edit';
 
   const c = $derived(store.project.canvas);
   const on = $derived(hasCanvas(c));
+  const images = $derived(store.project.media.filter((m) => m.source.kind === 'file' && m.source.isImage));
 
   function set<K extends keyof Canvas>(k: K, v: Canvas[K] | undefined) {
     store.edit(
@@ -18,6 +21,7 @@
       'canvas' + String(k),
     );
   }
+  let gap = $state(0);
   const use = (cv: Canvas | undefined) => store.edit((p) => (cv ? (p.canvas = { ...cv }) : delete p.canvas));
 </script>
 
@@ -37,10 +41,18 @@
       { value: 'color', label: 'Colour' },
       { value: 'gradient', label: 'Gradient' },
       { value: 'blur', label: 'Blurred picture' },
+      { value: 'image', label: 'An image' },
     ]}
     help="What's behind the picture."
     onchange={(v: Canvas['bg']) => set('bg', v)}
   />
+  {#if c.bg === 'image'}
+    {#if images.length}
+      <Field type="select" label="Image" value={c.image ?? ''} options={[{ value: '', label: 'Pick one…' }, ...images.map((m) => ({ value: m.id, label: m.source.name }))]} help="An image from your media, filling the frame behind the picture." onchange={(v: string) => set('image', v || undefined)} />
+    {:else}
+      <p class="small faint">Import an image (Media) to use it as the backdrop.</p>
+    {/if}
+  {/if}
   {#if c.bg !== 'blur'}
     <div class="row small">
       <label class="row grow">Colour <input type="color" value={c.color} oninput={(e) => set('color', (e.target as HTMLInputElement).value)} aria-label="Backdrop colour" /></label>
@@ -62,7 +74,34 @@
   <Field label="Shadow" min={0} max={1} step={0.01} value={c.shadow ?? 0} help="A soft shadow under the picture." onchange={(v: number) => set('shadow', v || undefined)} />
 {/if}
 
+<div class="label sect">Split screen</div>
+<p class="small faint">Puts the clips under the playhead (on tracks above each other), or the selected ones, side by side or in a grid.</p>
+<div class="grids" role="group" aria-label="Split screen">
+  {#each GRID_LAYOUTS as g (g.id)}
+    <button class="grid" title={g.name} aria-label={g.name} onclick={() => arrangeGrid(g.id, gap)}>
+      <svg viewBox="0 0 18 32" width="18" height="32" aria-hidden="true">
+        {#each g.cells as [x, y, w, h], i (i)}<rect x={x * 18 + 1} y={y * 32 + 1} width={w * 18 - 2} height={h * 32 - 2} rx="1" />{/each}
+      </svg>
+    </button>
+  {/each}
+</div>
+<Field label="Gap" min={0} max={0.06} step={0.002} value={gap} help="Space between the cells, as a share of the frame's shorter side (set it before picking a layout)." onchange={(v: number) => (gap = v)} />
+
 <style>
+  .grids {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .grid {
+    height: auto;
+    padding: 4px 6px;
+  }
+  .grid rect {
+    fill: var(--surface-3, #444);
+    stroke: currentColor;
+    stroke-width: 1;
+  }
   .presets {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));

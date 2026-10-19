@@ -253,6 +253,14 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 > and graphics still use the whole frame. Handles, tracking and follow paths map between the
 > picture and the card. In the Encode tab (the phone's Look sheet). Image backdrops, card style
 > per clip, stamp trail, pop on beat, shape masks and grids are M6b.
+>
+> **M6b (PR for `feat/m6b-collage`)**: split screens (`src/engine/grid.ts`): side by side,
+> stacked, three stacked, three across, one big and two small, 2×2 and 3×3, with a gap; each clip
+> under the playhead (or each selected one) gets the transform that zooms, moves and crops it
+> over its cell, so nothing new is needed in FFmpeg or the preview. A stamp trail on any title or
+> shape (`Layer.trail`: steps on by an offset every beat or so many seconds, leaving copies). An
+> image from the media as the canvas backdrop. Still to do: card style per clip, pop on beat,
+> animated shape masks, cells swapping on beats.
 - **Canvas**: `Project.canvas` (colour, gradient, image or blurred copy) with the picture inset by
   padding, border and corner radius. Drawn in both `segmentGraph` (pad/overlay) and `EditPreview`.
 - **Card style** on clips and image stickers: border, shadow, radius, polaroid caption.

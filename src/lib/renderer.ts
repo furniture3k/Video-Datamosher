@@ -6,7 +6,7 @@ import { getFile } from './storage';
 import { lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
-import { backdropPlate, borderPlate, maskPlate } from './canvas';
+import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas } from '../engine/canvas';
 import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
@@ -163,7 +163,16 @@ async function canvasPlates(project: Project, w: number, h: number, mounts: Reco
   const c = project.canvas;
   if (!hasCanvas(c)) return undefined;
   const R = cardRect(c, w, h);
-  mounts['canvas_bg.png'] = await canvasPng(backdropPlate(c, w, h));
+  let img: BackdropImage | undefined;
+  const bm = c.bg === 'image' ? project.media.find((m) => m.id === c.image) : undefined;
+  if (bm?.source.kind === 'file') {
+    const blob = await getFile(bm.source.fileId);
+    if (blob) {
+      const b = await createImageBitmap(blob);
+      img = { src: b, w: b.width, h: b.height };
+    }
+  }
+  mounts['canvas_bg.png'] = await canvasPng(backdropPlate(c, w, h, img));
   const out: CanvasPlates = { bg: MOUNT + 'canvas_bg.png' };
   if (R.r > 0) {
     mounts['canvas_mask.png'] = await canvasPng(maskPlate(R));
