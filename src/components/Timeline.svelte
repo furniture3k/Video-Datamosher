@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { formatSeconds } from '../engine/eta';
+  import { layerRows, type TextLayer } from '../engine/layers';
+import { formatSeconds } from '../engine/eta';
   import { compoundOf } from '../engine/compound';
   import { makeCompound, openCompound } from '../lib/compound.svelte';
   import { beatInfo, refreshBeats, beatInputs } from '../lib/beatinfo.svelte';
@@ -8,7 +9,7 @@
   import { store } from '../lib/store.svelte';
   import { EFFECTS } from '../engine/effects';
   import { layoutVideo, clipLen, nearestCut, mediaOf, transitionName, isBlend, isMoshTransition, remapToFootage, trimClip, moveVideo, rollEdit, slipClip, changeVideoTrack, isOverlayTrack, clipEnd, splitClip, splitText, type Placed } from '../engine/timeline';
-  import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project, type TextClip, type TransitionType } from '../engine/types';
+  import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project, type TransitionType } from '../engine/types';
   import { tc } from '../lib/timecode';
   import { mediaState } from '../lib/mediastate.svelte';
   import { addFiles, addToTimeline } from '../lib/media';
@@ -37,6 +38,7 @@
   const fps = $derived(store.project.encoder.fps);
   const duration = $derived(store.duration);
   const placed = $derived(layoutVideo(store.project));
+  const graphicsRows = $derived(layerRows(store.project.layers));
   const audioTracks = $derived(store.project.tracks.filter((t) => t.kind === 'audio' && t.id !== CLIP_AUDIO));
   /** upper video tracks, top one first (as drawn) */
   const upperTracks = $derived(edit.videoTracks(store.project).reverse().map((id) => store.project.tracks.find((t) => t.id === id)!));
@@ -90,7 +92,7 @@
     const t: number[] = [0, store.ui.time, duration];
     for (const pl of placed) if (pl.clip.id !== exclude) t.push(pl.start, pl.end);
     for (const c of store.project.clips) if (c.track !== VIDEO_TRACK && c.id !== exclude) t.push(c.start, c.start + clipLen(c));
-    for (const tx of store.project.texts) if (tx.id !== exclude) t.push(tx.start, tx.start + tx.duration);
+    for (const tx of store.project.layers) if (tx.id !== exclude) t.push(tx.start, tx.start + tx.duration);
     for (const m of markers) t.push(m.t);
     if (beatInfo.grid) t.push(...beatInfo.beats);
     if (store.ui.inPoint !== null) t.push(store.ui.inPoint);
@@ -109,8 +111,8 @@
   // ---------------------------------------------------------------- dragging
   type Drag =
     | { k: 'scrub' }
-    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | TextClip; before: Project; grab: number; insert?: number; targets: number[]; to?: string; toT?: number }
-    | { k: 'trim'; id: string; kind: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextClip; before: Project; targets: number[] }
+    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | TextLayer; before: Project; grab: number; insert?: number; targets: number[]; to?: string; toT?: number }
+    | { k: 'trim'; id: string; kind: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextLayer; before: Project; targets: number[] }
     | { k: 'fade'; id: string; edge: 'in' | 'out'; x0: number; orig: Clip }
     | { k: 'fx'; id: string; mode: 'move' | 'l' | 'r'; x0: number; s0: number; e0: number }
     | { k: 'trans'; id: string; x0: number; d0: number; before: Project }
@@ -207,7 +209,7 @@
   }
 
   function startMove(e: PointerEvent, id: string, kind: 'v' | 'a' | 't') {
-    const orig = kind === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
+    const orig = kind === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     const start = kind === 'v' ? (placed.find((p) => p.clip.id === id)?.start ?? 0) : (orig as { start: number }).start;
     drag = { k: 'move', id, kind, x0: e.clientX, dx: 0, moved: false, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, grab: laneT(e) - start, targets: snapTargets(id) };
   }
@@ -216,7 +218,7 @@
   function bladeAt(e: PointerEvent, id: string, kind: 'v' | 'a' | 't') {
     const t = snapT(laneT(e), e, id);
     if (kind === 't') {
-      const tx = store.project.texts.find((x) => x.id === id);
+      const tx = store.project.layers.find((x) => x.id === id);
       if (!tx || t <= tx.start + 0.05 || t >= tx.start + tx.duration - 0.05) return;
       store.edit((p) => void splitText(p, id, t));
       return;
@@ -241,7 +243,7 @@
       }
     }
     store.selectClip(id);
-    const orig = kind === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
+    const orig = kind === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     drag = { k: 'trim', id, kind, edge, x0: e.clientX, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, targets: snapTargets(id) };
   }
 
@@ -395,8 +397,8 @@
     if (d.k === 'trim') {
       let dt = (e.clientX - d.x0) / pps;
       if (d.kind === 't') {
-        const tx = store.project.texts.find((t) => t.id === d.id)!;
-        const o = d.orig as TextClip;
+        const tx = store.project.layers.find((t) => t.id === d.id)!;
+        const o = d.orig as TextLayer;
         if (d.edge === 'l') {
           const s = Math.min(o.start + o.duration - 0.2, Math.max(0, snapT(o.start + dt, e, d.id, d.targets)));
           tx.start = s;
@@ -431,12 +433,15 @@
         return;
       }
       if (d.kind === 't') {
-        const tx = store.project.texts.find((x) => x.id === d.id)!;
-        const o = d.orig as TextClip;
+        const tx = store.project.layers.find((x) => x.id === d.id)!;
+        const o = d.orig as TextLayer;
         let s = Math.max(0, t - d.grab);
         const s2 = snapT(s, e, d.id, d.targets);
         s = s2 !== s ? s2 : snapT(s + o.duration, e, d.id, d.targets) - o.duration;
         tx.start = Math.max(0, s);
+        // up or down onto another graphics row (or the new one on top)
+        const row = edit.graphicsRowAt(e.clientX, e.clientY, d.id);
+        if (row && row !== tx.row) tx.row = row;
         return;
       }
       const c = store.project.clips.find((x) => x.id === d.id)!;
@@ -875,21 +880,24 @@
         <canvas class="lane keys" bind:this={keyCanvas} style="width:{W}px" ondblclick={keysDbl} title="Double-click to add or remove a forced keyframe"></canvas>
       </div>
 
-      <!-- titles -->
-      {#if store.project.texts.length}
-        <div class="trow">
-          <div class="g g-track"><Icon name="text" size={12} /><span class="tname">Titles</span></div>
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="lane text-lane" style="width:{W}px" onpointerdown={scrubDown}>
-            {#each store.project.texts as tx (tx.id)}
-              <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
-                <div class="edge l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}></div>
-                <span class="cname">{tx.text || 'Text'}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}
-                <div class="edge r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}></div>
-              </div>
-            {/each}
+      <!-- graphics rows: titles and other layers, the top row drawn over the ones below -->
+      {#if store.project.layers.length}
+        {#each [...graphicsRows].reverse() as row (row)}
+          <div class="trow">
+            <div class="g g-track"><Icon name="text" size={12} /><span class="tname">{graphicsRows.length > 1 ? 'G' + (graphicsRows.indexOf(row) + 1) : 'Graphics'}</span></div>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="lane text-lane" data-row={row} style="width:{W}px" onpointerdown={scrubDown}>
+              {#if drag?.k === 'move' && drag.kind === 't' && drag.moved && row === graphicsRows.at(-1)}<span class="rowhint faint small">↑ drag above for a new row</span>{/if}
+              {#each store.project.layers.filter((l) => l.row === row) as tx (tx.id)}
+                <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
+                  <div class="edge l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}></div>
+                  <span class="cname">{tx.text || 'Text'}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}
+                  <div class="edge r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}></div>
+                </div>
+              {/each}
+            </div>
           </div>
-        </div>
+        {/each}
       {/if}
 
       <!-- upper video tracks (drawn over the main track) -->
@@ -1489,6 +1497,13 @@
   }
   .text-lane {
     height: 26px;
+  }
+  .rowhint {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    pointer-events: none;
   }
   .lane.muted {
     opacity: 0.45;

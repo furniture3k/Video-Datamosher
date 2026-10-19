@@ -1,5 +1,6 @@
 // Bring saved projects (autosave, project files) up to the current format.
-import { CLIP_AUDIO, VIDEO_TRACK, defaultTracks, newProject, type Clip, type EffectInstance, type MediaItem, type Project } from './types';
+import { CLIP_AUDIO, VIDEO_TRACK, defaultTracks, newProject, type Clip, type EffectInstance, type MediaItem, type Project, type Sequence } from './types';
+import { FIRST_ROW, type Layer } from './layers';
 
 interface V1Clip {
   id: string;
@@ -49,37 +50,55 @@ function fromV1(p: Record<string, unknown>): Project {
   return {
     ...base,
     ...(p as object),
-    version: 2,
+    version: 3,
     media,
     clips: out,
     tracks,
-    texts: [],
+    layers: [],
   } as Project;
+}
+
+type V2Text = Omit<Layer, 'kind' | 'row'>;
+type V2Sequence = Omit<Sequence, 'layers'> & { texts?: V2Text[]; layers?: Layer[] };
+
+/** v2 kept titles in `texts`; v3 keeps them (and other graphics) as layers on graphics rows. */
+const textsToLayers = (texts: V2Text[] | undefined): Layer[] => (texts ?? []).map((t) => ({ ...t, kind: 'text', row: FIRST_ROW }));
+
+function sequenceToV3(seq: V2Sequence): Sequence {
+  const { texts, ...rest } = seq;
+  return { ...rest, layers: seq.layers ?? textsToLayers(texts) };
+}
+
+function fromV2(p: Record<string, unknown>): Project {
+  const { texts, ...rest } = p as Record<string, unknown> & { texts?: V2Text[]; media?: MediaItem[] };
+  // compound clips keep a timeline of their own, with its own titles
+  const media = rest.media?.map((m) => (m.source.kind === 'file' && m.source.compound ? { ...m, source: { ...m.source, compound: sequenceToV3(m.source.compound as V2Sequence) } } : m));
+  return { ...(rest as unknown as Project), ...(media ? { media } : {}), version: 3, layers: textsToLayers(texts) };
 }
 
 export function migrate(raw: unknown): Project {
   const p = (raw ?? {}) as Record<string, unknown>;
   const base = newProject();
-  const v2 = p.version === 1 ? fromV1(p) : (p as unknown as Project);
-  if (v2.version !== 2) throw new Error('Unknown project version');
-  const audio = { ...base.audio, ...(v2.audio ?? {}) } as Project['audio'] & Record<string, unknown>;
+  const cur = p.version === 1 ? fromV1(p) : p.version === 2 ? fromV2(p) : (p as unknown as Project);
+  if (cur.version !== 3) throw new Error('Unknown project version');
+  const audio = { ...base.audio, ...(cur.audio ?? {}) } as Project['audio'] & Record<string, unknown>;
   delete audio.source;
   delete audio.clipId;
   // a copy: the tracks missing from old projects are added without touching the saved data
-  const tracks = v2.tracks?.length ? [...v2.tracks] : base.tracks;
+  const tracks = cur.tracks?.length ? [...cur.tracks] : base.tracks;
   if (!tracks.some((t) => t.id === VIDEO_TRACK)) tracks.unshift(base.tracks[0]);
   if (!tracks.some((t) => t.id === CLIP_AUDIO)) tracks.splice(1, 0, base.tracks[1]);
   return {
     ...base,
-    ...v2,
-    media: v2.media ?? [],
-    clips: (v2.clips ?? []).map((c) => ({ ...{ volume: 1, muted: false, fadeIn: 0, fadeOut: 0, start: 0, speed: 1, reverse: false, fit: 'fit' as const }, ...c })),
+    ...cur,
+    media: cur.media ?? [],
+    clips: (cur.clips ?? []).map((c) => ({ ...{ volume: 1, muted: false, fadeIn: 0, fadeOut: 0, start: 0, speed: 1, reverse: false, fit: 'fit' as const }, ...c })),
     tracks,
-    texts: v2.texts ?? [],
-    encoder: { ...base.encoder, ...v2.encoder },
-    decoder: { ...base.decoder, ...v2.decoder },
+    layers: cur.layers ?? [],
+    encoder: { ...base.encoder, ...cur.encoder },
+    decoder: { ...base.decoder, ...cur.decoder },
     audio,
-    effects: (v2.effects ?? []).filter((e) => !e.transition).map(upgradeEffect),
+    effects: (cur.effects ?? []).filter((e) => !e.transition).map(upgradeEffect),
   };
 }
 

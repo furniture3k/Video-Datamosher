@@ -91,7 +91,7 @@ if (process.argv.includes('--site')) {
     const st = window.__moshpit.store;
     st.edit((p) => {
       for (const c of p.clips) c.transition = undefined;
-      for (const t of p.texts) t.moshed = false;
+      for (const t of p.layers) t.moshed = false;
       p.effects = [];
     });
   });

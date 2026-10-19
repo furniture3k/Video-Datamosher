@@ -5,9 +5,11 @@
   // handles to trim, press and hold a clip to move it.
   import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
+  import { graphicsRowAt } from '../lib/edit';
   import { EFFECTS } from '../engine/effects';
   import { layoutVideo, clipLen, nearestCut, remapToFootage, trimClip, moveVideo, isOverlayTrack, mediaOf } from '../engine/timeline';
-  import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project, type TextClip } from '../engine/types';
+  import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project } from '../engine/types';
+  import { layerRows, type TextLayer } from '../engine/layers';
   import { mediaState } from '../lib/mediastate.svelte';
   import Icon from '../components/Icon.svelte';
   import Waveform from '../components/Waveform.svelte';
@@ -22,6 +24,7 @@
   const fps = $derived(store.project.encoder.fps);
   const duration = $derived(store.duration);
   const placed = $derived(layoutVideo(store.project));
+  const graphicsRows = $derived(layerRows(store.project.layers));
   const sel = $derived(new Set(store.ui.selectedClips));
   const totalF = $derived(Math.max(1, store.totalFrames));
   const overlays = $derived(store.project.clips.filter((c) => isOverlayTrack(c.track)));
@@ -92,7 +95,7 @@
 
   // ---- taps, trims, moves
   type D =
-    | { k: 'trim'; id: string; ck: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextClip; before: Project }
+    | { k: 'trim'; id: string; ck: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextLayer; before: Project }
     | { k: 'move'; id: string; ck: 'a' | 't'; x0: number; s0: number; before: Project; moved: boolean }
     | { k: 'fx'; id: string; mode: 'move' | 'l' | 'r'; x0: number; s0: number; e0: number; moved: boolean }
     | { k: 'reorder'; id: string; x: number; insert: number; before: Project };
@@ -161,8 +164,8 @@
   function edgeDown(e: PointerEvent, id: string, ck: 'v' | 'a' | 't', edge: 'l' | 'r') {
     e.stopPropagation();
     e.preventDefault();
-    const orig = ck === 't' ? store.project.texts.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
-    drag = { k: 'trim', id, ck, edge, x0: e.clientX, orig: clone($state.snapshot(orig)) as Clip | TextClip, before: clone($state.snapshot(store.project)) as Project };
+    const orig = ck === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
+    drag = { k: 'trim', id, ck, edge, x0: e.clientX, orig: clone($state.snapshot(orig)) as Clip | TextLayer, before: clone($state.snapshot(store.project)) as Project };
     haptics.grab();
     listen();
   }
@@ -172,7 +175,7 @@
     if (e.button !== 0) return;
     if (!sel.has(id)) return onTap(e, () => store.selectClip(id));
     e.stopPropagation();
-    const s0 = ck === 't' ? store.project.texts.find((t) => t.id === id)!.start : store.project.clips.find((c) => c.id === id)!.start;
+    const s0 = ck === 't' ? store.project.layers.find((t) => t.id === id)!.start : store.project.clips.find((c) => c.id === id)!.start;
     drag = { k: 'move', id, ck, x0: e.clientX, s0, before: clone($state.snapshot(store.project)) as Project, moved: false };
     listen();
   }
@@ -192,8 +195,8 @@
     const dt = (e.clientX - ('x0' in d ? d.x0 : d.x)) / pps;
     if (d.k === 'trim') {
       if (d.ck === 't') {
-        const tx = store.project.texts.find((t) => t.id === d.id);
-        const o = d.orig as TextClip;
+        const tx = store.project.layers.find((t) => t.id === d.id);
+        const o = d.orig as TextLayer;
         if (!tx) return;
         if (d.edge === 'l') {
           const s = Math.min(o.start + o.duration - 0.2, Math.max(0, o.start + dt));
@@ -210,8 +213,12 @@
       d.moved = true;
       const s = Math.max(0, Math.round((d.s0 + dt) * fps) / fps);
       if (d.ck === 't') {
-        const tx = store.project.texts.find((t) => t.id === d.id);
-        if (tx) tx.start = s;
+        const tx = store.project.layers.find((t) => t.id === d.id);
+        if (!tx) return;
+        tx.start = s;
+        // up or down onto another graphics row (or the new one on top)
+        const row = graphicsRowAt(e.clientX, e.clientY, d.id);
+        if (row && row !== tx.row) tx.row = row;
       } else {
         const c = store.project.clips.find((x) => x.id === d.id);
         if (c) c.start = s;
@@ -376,23 +383,26 @@
         </div>
       {/if}
 
-      <!-- titles -->
-      <div class="lane small" style="width:{W}px">
-        {#each store.project.texts as tx (tx.id)}
-          {@const on = sel.has(tx.id)}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <div class="item text" class:sel={on} style="left:{x(tx.start)}px;width:{x(tx.duration)}px" onpointerdown={(e) => itemDown(e, tx.id, 't')}>
-            <Icon name="text" size={11} /><span class="nm">{tx.text}</span>
-            {#if on}
-              <span class="h l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}><i></i></span>
-              <span class="h r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}><i></i></span>
-            {/if}
-          </div>
-        {/each}
-        {#if !store.project.texts.length && placed.length}
-          <button class="pill" style="left:{Math.min(x(store.ui.time), W)}px" onclick={() => onaction('text')}><Icon name="plus" size={12} />Add text</button>
-        {/if}
-      </div>
+      <!-- graphics rows: titles and other layers, the top row drawn over the ones below -->
+      {#each [...graphicsRows].reverse() as row (row)}
+        <div class="lane small" data-row={row} style="width:{W}px">
+          {#if drag?.k === 'move' && drag.ck === 't' && drag.moved && row === graphicsRows.at(-1)}<span class="rowhint">↑ drag above for a new row</span>{/if}
+          {#each store.project.layers.filter((l) => l.row === row) as tx (tx.id)}
+            {@const on = sel.has(tx.id)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="item text" class:sel={on} style="left:{x(tx.start)}px;width:{x(tx.duration)}px" onpointerdown={(e) => itemDown(e, tx.id, 't')}>
+              <Icon name="text" size={11} /><span class="nm">{tx.text}</span>
+              {#if on}
+                <span class="h l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}><i></i></span>
+                <span class="h r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}><i></i></span>
+              {/if}
+            </div>
+          {/each}
+          {#if !store.project.layers.length && placed.length}
+            <button class="pill" style="left:{Math.min(x(store.ui.time), W)}px" onclick={() => onaction('text')}><Icon name="plus" size={12} />Add text</button>
+          {/if}
+        </div>
+      {/each}
 
       <!-- music and sound -->
       {#each audioRows as row (row.t.id)}
@@ -425,7 +435,7 @@
   {#if !store.ui.selectedClips.length && !store.ui.selectedEffect}
     <button class="addclip" aria-label="Add media" onclick={onadd}><Icon name="plus" size={20} stroke={2} /></button>
   {/if}
-  {#if !placed.length && !store.project.texts.length}
+  {#if !placed.length && !store.project.layers.length}
     <div class="emptyhint">
       <button class="primary big" onclick={onadd}><Icon name="plus" size={18} stroke={2} />Add videos or photos</button>
     </div>
@@ -482,6 +492,15 @@
     position: relative;
     height: 30px;
     margin-bottom: 6px;
+  }
+  .rowhint {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: var(--text-2);
+    pointer-events: none;
   }
   .lane.main {
     height: 58px;

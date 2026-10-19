@@ -38,9 +38,9 @@
   let toolRow: HTMLDivElement;
 
   const clip = $derived(store.selectedClip);
-  const text = $derived(store.ui.selectedClips.length === 1 ? store.project.texts.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
+  const text = $derived(store.ui.selectedClips.length === 1 ? store.project.layers.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
   const fx = $derived(store.selected);
-  const hasClips = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
+  const hasClips = $derived(store.project.clips.length > 0 || store.project.layers.length > 0);
   const mode = $derived(fx ? 'fx' : text ? 'text' : clip ? (clip.track === VIDEO_TRACK ? 'video' : 'audio') : 'root');
   const TITLES: Record<SheetId, string> = {
     media: 'Media',

@@ -1,6 +1,7 @@
 // Names for undo steps ("Add Bloom", "Trim Test pattern", "Melt a cut"), worked out by comparing the
 // project before and after, so no edit has to label itself.
-import type { Project, Clip, EffectInstance, TextClip } from './types';
+import type { TextLayer } from './layers';
+import type { Project, Clip, EffectInstance } from './types';
 import { EFFECTS } from './effects';
 import { MOSH_TRANSITIONS, BLEND_TRANSITIONS } from './timeline';
 
@@ -77,12 +78,12 @@ function clips(a: Project, b: Project): string | null {
 }
 
 function texts(a: Project, b: Project): string | null {
-  const A = byId<TextClip>(a.texts);
-  const added = b.texts.filter((t) => !A.has(t.id));
-  const removedN = a.texts.length - (b.texts.length - added.length);
+  const A = byId<TextLayer>(a.layers);
+  const added = b.layers.filter((t) => !A.has(t.id));
+  const removedN = a.layers.length - (b.layers.length - added.length);
   if (added.length) return added.length === 1 ? 'Add a title' : `Add ${plural(added.length, 'title')}`;
   if (removedN > 0) return removedN === 1 ? 'Delete a title' : `Delete ${plural(removedN, 'title')}`;
-  const t = b.texts.find((x) => !same(A.get(x.id), x));
+  const t = b.layers.find((x) => !same(A.get(x.id), x));
   if (!t) return null;
   const o = A.get(t.id)!;
   if (o.text !== t.text) return `Title: “${t.text.slice(0, 24)}”`;

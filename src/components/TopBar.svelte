@@ -18,7 +18,7 @@
   let { onchaos, onmutate }: { onchaos: () => void; onmutate: () => void } = $props();
   let loadInput: HTMLInputElement;
   let menuOpen = $state(false);
-  const hasClips = $derived(store.project.clips.length > 0 || store.project.texts.length > 0);
+  const hasClips = $derived(store.project.clips.length > 0 || store.project.layers.length > 0);
 </script>
 
 <svelte:window onclick={() => (menuOpen = false)} />

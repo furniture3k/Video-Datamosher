@@ -1,6 +1,7 @@
 // Timeline model: layout of the magnetic video track, audio tracks, segments for rendering,
 // pure edit operations and the mapping that keeps effects attached to footage across edits.
-import { CLIP_AUDIO, VIDEO_TRACK, clipOn, type Clip, type EffectInstance, type MediaItem, type Project, type TextClip, type Track, type Transition, type TransitionType } from './types';
+import type { TextLayer } from './layers';
+import { CLIP_AUDIO, VIDEO_TRACK, clipOn, type Clip, type EffectInstance, type MediaItem, type Project, type Track, type Transition, type TransitionType } from './types';
 import { EFFECTS, defaultParams } from './effects';
 import { hashSeed } from './rng';
 import { rampIntegral, rampInverse, rampLength, rampSpeedAt, splitRamp, type Ramp } from './keys';
@@ -95,14 +96,14 @@ export function layoutVideo(p: Pick<Project, 'clips' | 'media'>): Placed[] {
 
 export const videoEnd = (p: Pick<Project, 'clips' | 'media'>) => layoutVideo(p).at(-1)?.end ?? 0;
 
-export function timelineDuration(p: Pick<Project, 'clips' | 'media' | 'texts'>): number {
+export function timelineDuration(p: Pick<Project, 'clips' | 'media' | 'layers'>): number {
   let d = videoEnd(p);
   for (const c of freeClips(p)) if (mediaOf(p, c.mediaId)) d = Math.max(d, c.start + clipLen(c));
-  for (const t of p.texts ?? []) d = Math.max(d, t.start + t.duration);
+  for (const t of p.layers ?? []) d = Math.max(d, t.start + t.duration);
   return d;
 }
 
-export const timelineFrames = (p: Pick<Project, 'clips' | 'media' | 'texts'>, fps: number) => Math.max(1, Math.round(timelineDuration(p) * fps));
+export const timelineFrames = (p: Pick<Project, 'clips' | 'media' | 'layers'>, fps: number) => Math.max(1, Math.round(timelineDuration(p) * fps));
 
 /** Source time shown at `local` seconds into a clip. */
 export function sourceTime(c: Clip, local: number): number {
@@ -184,7 +185,7 @@ export const baseHidden = (p: { tracks?: Track[] }) => !!p.tracks?.find((t) => t
  * must be encoded together; everything else starts a new piece (each piece starts with a
  * keyframe, which is exactly what melts need). With `whole`, everything is one piece.
  */
-export function segments(p: Pick<Project, 'clips' | 'media' | 'texts'>, fps: number, whole = false): Segment[] {
+export function segments(p: Pick<Project, 'clips' | 'media' | 'layers'>, fps: number, whole = false): Segment[] {
   const placed = layoutVideo(p);
   const total = timelineDuration(p);
   const runs: Placed[][] = [];
@@ -415,19 +416,19 @@ export function splitClip(p: Project, id: string, t: number): Clip | null {
 }
 
 /** Cut a title in two at timeline time t. Returns the second half (null when t isn't inside it). */
-export function splitText(p: Project, id: string, t: number): TextClip | null {
-  const a = p.texts.find((x) => x.id === id);
+export function splitText(p: Project, id: string, t: number): TextLayer | null {
+  const a = p.layers.find((x) => x.id === id);
   if (!a) return null;
   const local = t - a.start;
   if (local < 0.05 || local > a.duration - 0.05) return null;
   // the second half carries on where the first stops: no second fade or entrance
-  const b: TextClip = { ...JSON.parse(JSON.stringify(a)), id: uid(), start: t, duration: a.duration - local, anim: undefined, animIn: undefined };
+  const b: TextLayer = { ...JSON.parse(JSON.stringify(a)), id: uid(), start: t, duration: a.duration - local, anim: undefined, animIn: undefined };
   if (a.words) {
     b.words = a.words.filter((w) => w.t1 > local).map((w) => ({ ...w, t0: Math.max(0, w.t0 - local), t1: w.t1 - local }));
     a.words = a.words.filter((w) => w.t0 < local);
   }
   a.duration = local;
-  p.texts.splice(p.texts.indexOf(a) + 1, 0, b);
+  p.layers.splice(p.layers.indexOf(a) + 1, 0, b);
   return b;
 }
 

@@ -258,6 +258,89 @@ await step('editor: titles (clean and melted) + audio track + detach', async () 
   if (tracks < 4) throw new Error('no new track');
 });
 
+await step('editor: a melting title that moves is burned in where it is on each frame', async () => {
+  const keep = await S(() => {
+    const st = window.__moshpit.store;
+    const effects = JSON.parse(JSON.stringify(st.project.effects));
+    st.edit((p) => {
+      p.effects = [];
+      p.layers.push({ id: 'mv', kind: 'text', row: 'g1', text: 'MM', start: 0, duration: 2, size: 0.3, color: '#000000', font: 'sans', bold: true, x: 0.2, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: true, follow: [[0, 0.2, 0.5], [2, 0.8, 0.5]] });
+    });
+    return effects;
+  });
+  await settle();
+  const m = await S(async () => {
+    const st = window.__moshpit.store;
+    const r = st.render;
+    const fps = st.project.encoder.fps;
+    // how dark the left and right thirds are on frame i (the example's colour bars have no black)
+    const at = async (i) => {
+      const b = await createImageBitmap(new Blob([r.jpegs[i]], { type: 'image/jpeg' }), { resizeWidth: 48, resizeHeight: 27 });
+      const c = new OffscreenCanvas(48, 27).getContext('2d');
+      c.drawImage(b, 0, 0);
+      const d = c.getImageData(0, 0, 48, 27).data;
+      const third = (x0) => {
+        let s = 0;
+        let n = 0;
+        for (let y = 0; y < 27; y++) for (let x = x0; x < x0 + 16; x++) (s += 255 - Math.max(d[(y * 48 + x) * 4], d[(y * 48 + x) * 4 + 1], d[(y * 48 + x) * 4 + 2])), n++;
+        return s / n;
+      };
+      return { left: third(0), right: third(32) };
+    };
+    return { early: await at(Math.round(0.2 * fps)), late: await at(Math.round(1.8 * fps)) };
+  });
+  await S((effects) => window.__moshpit.store.edit((p) => ((p.effects = effects), (p.layers = p.layers.filter((l) => l.id !== 'mv')))), keep);
+  await settle();
+  // the title darkens the left early and the right late; the footage's own left-right difference cancels out
+  const swing = m.early.left - m.early.right - (m.late.left - m.late.right);
+  if (!(swing > 30 && m.early.left > m.late.left)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
+});
+
+await step('graphics rows: drag a title above for a new row and back, on desktop and on a phone', async () => {
+  await S(() => {
+    const base = { kind: 'text', row: 'g1', duration: 1.5, size: 0.1, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false };
+    window.__moshpit.store.edit((p) => p.layers.push({ ...base, id: 'ra', text: 'RA', start: 0 }, { ...base, id: 'rb', text: 'RB', start: 2 }));
+  });
+  await page.waitForTimeout(200);
+  const row = (id) => S((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).row, id);
+  const lanes = () => S(() => document.querySelectorAll('[data-row]').length);
+  /** drag the item a little sideways (so it counts as a move), then to y */
+  const dragTo = async (box, y) => {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 12, box.y + box.height / 2, { steps: 3 });
+    await page.mouse.move(box.x + box.width / 2 + 12, y, { steps: 6 });
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+  };
+  // desktop: above the top lane makes a new row on top; a sideways move alone keeps the row
+  const b = await page.locator('.clip.text[data-clip="rb"]').boundingBox();
+  await dragTo(b, b.y + b.height / 2);
+  if ((await row('rb')) !== 'g1') throw new Error('a sideways drag changed the row');
+  const top = await page.locator('[data-row]').first().boundingBox();
+  await dragTo(await page.locator('.clip.text[data-clip="rb"]').boundingBox(), top.y - 8);
+  if ((await row('rb')) !== 'g2' || (await row('ra')) !== 'g1' || (await lanes()) !== 2) throw new Error(`no new row: rb ${await row('rb')}, ${await lanes()} lanes`);
+  const order = await S(() => window.__moshpit.store.project.layers.filter((l) => l.id === 'ra' || l.id === 'rb').map((l) => l.row));
+  if (order.length !== 2) throw new Error('lost a title');
+  // and back down onto the first row: the empty row goes away
+  const g1 = await page.locator('[data-row="g1"]').boundingBox();
+  await dragTo(await page.locator('.clip.text[data-clip="rb"]').boundingBox(), g1.y + g1.height / 2);
+  if ((await row('rb')) !== 'g1' || (await lanes()) !== 1) throw new Error(`not back on the first row: rb ${await row('rb')}, ${await lanes()} lanes`);
+  // phone: tap to select, then drag above the rows
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  const item = page.locator('.mtl .item.text', { hasText: 'RB' });
+  await item.scrollIntoViewIfNeeded();
+  await item.click();
+  const mtop = await page.locator('.mtl [data-row]').first().boundingBox();
+  await dragTo(await item.boundingBox(), mtop.y - 8);
+  const phoneRow = await row('rb');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== 'ra' && l.id !== 'rb'))));
+  await settle();
+  if (phoneRow !== 'g2') throw new Error('phone: dragging above the rows did not make a new row: ' + phoneRow);
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
@@ -652,7 +735,7 @@ await step('analysis: track an object, title follows, stabilize', async () => {
   await S(() => window.__moshpit.store.edit((p) => (p.effects = [])));
   await settle();
   await page.locator('.pathrow').getByRole('button', { name: 'Title follows' }).click();
-  const tx = await S(() => window.__moshpit.store.project.texts.at(-1));
+  const tx = await S(() => window.__moshpit.store.project.layers.at(-1));
   if (!tx.follow?.length) throw new Error('title does not follow');
   // (the new title is selected now: back to the clip)
   await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
@@ -744,7 +827,7 @@ await step('captions: listen (fake recogniser), add, subtitles', async () => {
   await page.locator('.modal select').filter({ has: page.locator('option[value="karaoke"]') }).selectOption('karaoke');
   await page.getByRole('button', { name: 'Listen', exact: true }).click();
   await page.getByRole('button', { name: 'Add captions' }).click();
-  const caps = await S(() => window.__moshpit.store.project.texts.filter((t) => t.caption).map((t) => [t.text, t.words?.length]));
+  const caps = await S(() => window.__moshpit.store.project.layers.filter((t) => t.caption).map((t) => [t.text, t.words?.length]));
   if (JSON.stringify(caps) !== JSON.stringify([['Hello mosh.', 2], ['Again', 1]])) throw new Error('captions: ' + JSON.stringify(caps));
   await page.locator('.menu-wrap > button').click();
   await page.getByRole('button', { name: /Auto captions/ }).click();
@@ -956,13 +1039,13 @@ await step('text animations: each one draws less (or moves) while coming in, the
   // the setting in the Clip tab
   await S(() => {
     const st = window.__moshpit.store;
-    st.edit((p) => p.texts.push({ id: 'tt', text: 'TITLE', start: 0, duration: 2, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false }));
+    st.edit((p) => p.layers.push({ id: 'tt', kind: 'text', row: 'g1', text: 'TITLE', start: 0, duration: 2, size: 0.12, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false }));
     st.ui.selectedClips = ['tt'];
   });
   await page.locator('.tabs button', { hasText: 'Clip' }).click();
   await page.locator('.field', { hasText: 'Comes in' }).locator('select').selectOption('glitch');
-  if ((await S(() => window.__moshpit.store.project.texts.find((t) => t.id === 'tt').anim)) !== 'glitch') throw new Error('animation not set from the Clip tab');
-  await S(() => window.__moshpit.store.edit((p) => (p.texts = p.texts.filter((t) => t.id !== 'tt'))));
+  if ((await S(() => window.__moshpit.store.project.layers.find((t) => t.id === 'tt').anim)) !== 'glitch') throw new Error('animation not set from the Clip tab');
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((t) => t.id !== 'tt'))));
   await settle();
 });
 

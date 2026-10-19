@@ -58,10 +58,10 @@ describe('edit operations', () => {
 
   it('split a title: two halves, word timings follow', () => {
     const p = proj();
-    p.texts = [{ id: 'T', text: 'a b', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans', bold: false, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, anim: 'pop', words: [{ t0: 0, t1: 0.5, text: 'a' }, { t0: 1.2, t1: 1.6, text: 'b' }] }];
+    p.layers = [{ id: 'T', kind: 'text', row: 'g1', text: 'a b', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans', bold: false, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, anim: 'pop', words: [{ t0: 0, t1: 0.5, text: 'a' }, { t0: 1.2, t1: 1.6, text: 'b' }] }];
     const b = splitText(p, 'T', 2)!;
-    expect(p.texts.map((t) => [t.start, t.duration])).toEqual([[1, 1], [2, 1]]);
-    expect(p.texts[0].words!.map((w) => w.text)).toEqual(['a']);
+    expect(p.layers.map((t) => [t.start, t.duration])).toEqual([[1, 1], [2, 1]]);
+    expect(p.layers[0].words!.map((w) => w.text)).toEqual(['a']);
     expect(b.words!.map((w) => [w.text, +w.t0.toFixed(6), +w.t1.toFixed(6)])).toEqual([['b', 0.2, 0.6]]);
     expect(b.anim).toBeUndefined();
     expect(splitText(p, 'T', 1.01)).toBeNull();
@@ -168,7 +168,8 @@ describe('migration', () => {
       globalSeed: 3,
     };
     const p = migrate(v1);
-    expect(p.version).toBe(2);
+    expect(p.version).toBe(3);
+    expect(p.layers).toEqual([]);
     expect(p.media.map((m) => m.id)).toEqual(['x', 'y']);
     expect(p.clips.map((c) => [c.mediaId, c.in, c.out, c.track, c.muted])).toEqual([['x', 1, 3, 'v1', true], ['y', 0, 2, 'v1', false]]);
     expect(p.encoder.fps).toBe(12);

@@ -206,23 +206,77 @@ d('native ffmpeg pipeline', () => {
 
   it('burns melting titles into prepared segments', () => {
     ff(dir, ['-f', 'lavfi', '-i', 'color=c=red:s=320x240,format=rgba,geq=r=255:g=0:b=0:a=if(between(X\\,100\\,220)*between(Y\\,100\\,140)\\,255\\,0)', '-frames:v', '1', 'title.png']);
-    const tx = { id: 't', text: 'Hi', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans' as const, bold: true, x: 0.5, y: 0.5, align: 'center' as const, shadow: false, box: false, fade: 0.3, moshed: true };
-    const p: Project = { ...project, texts: [tx] };
+    const tx = { id: 't', kind: 'text' as const, row: 'g1', text: 'Hi', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans' as const, bold: true, x: 0.5, y: 0.5, align: 'center' as const, shadow: false, box: false, fade: 0.3, moshed: true };
+    const p: Project = { ...project, layers: [tx] };
     const segs = segments(p, 25);
-    ff(dir, segmentArgs(p, segs[0], 320, 'tseg.avi', undefined, [{ tx, path: 'title.png' }]));
+    ff(dir, segmentArgs(p, segs[0], 320, 'tseg.avi', undefined, [{ layer: tx, path: 'title.png' }]));
     expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'tseg.avi'))), 'mpeg4').frames.length).toBe(50);
     ff(dir, ['-i', 'tseg.avi', '-vf', 'select=eq(n\\,40),crop=20:20:150:110', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'px.raw']);
     const px = fs.readFileSync(path.join(dir, 'px.raw'));
     expect(px[0]).toBeGreaterThan(180); // red box visible at 1.6 s
     expect(px[1]).toBeLessThan(90);
-    ff(dir, prepArgs(p, 320, 'tall.avi', undefined, [{ tx, path: 'title.png' }]));
+    ff(dir, prepArgs(p, 320, 'tall.avi', undefined, [{ layer: tx, path: 'title.png' }]));
     expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'tall.avi'))), 'mpeg4').frames.length).toBe(100);
     // the black tail segment can carry a title too
-    const q: Project = { ...p, texts: [{ ...tx, start: 0.2 }], clips: [], media: p.media };
+    const q: Project = { ...p, layers: [{ ...tx, start: 0.2 }], clips: [], media: p.media };
     q.clips = [clipOf(p.media[0], { track: 'a1', out: 2 })];
     const bs = segments(q, 25)[0];
     expect(bs.f1 - bs.f0).toBe(55); // the title (to 2.2 s) is the longest thing
-    ff(dir, segmentArgs(q, bs, 320, 'tblack.avi', undefined, [{ tx: q.texts[0], path: 'title.png' }]));
+    ff(dir, segmentArgs(q, bs, 320, 'tblack.avi', undefined, [{ layer: q.layers[0], path: 'title.png' }]));
     expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'tblack.avi'))), 'mpeg4').frames.length).toBe(55);
+  });
+
+  it('burns in melting layers that move, one picture per frame, across segments', () => {
+    // a box moving right at 100 px/s, drawn for each of the title's 50 frames (1 s to 3 s)
+    ff(dir, ['-f', 'lavfi', '-i', 'color=c=black@0:s=320x240:r=25:d=2,format=rgba', '-f', 'lavfi', '-i', 'color=c=white:s=40x40:r=25:d=2,format=rgba', '-filter_complex', "[0][1]overlay=x='20+t*100':y=100:format=auto,format=rgba", '-f', 'image2pipe', '-c:v', 'png', 'moving.pngs']);
+    const tx = { id: 'm', kind: 'text' as const, row: 'g1', text: 'Hi', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans' as const, bold: true, x: 0.5, y: 0.5, align: 'center' as const, shadow: false, box: false, fade: 0, moshed: true, anim: 'type' as const };
+    const p: Project = { ...project, layers: [tx] };
+    const over = [{ layer: tx, path: 'moving.pngs', frames: { first: 25, count: 50 } }];
+    const segs = segments(p, 25);
+    expect(segs.map((sg) => [sg.f0, sg.f1])).toEqual([[0, 50], [50, 100]]);
+    ff(dir, segmentArgs(p, segs[0], 320, 'mov0.avi', undefined, over));
+    ff(dir, segmentArgs(p, segs[1], 320, 'mov1.avi', undefined, over));
+    ff(dir, segmentArgs(p, segs[0], 320, 'base0.avi'));
+    ff(dir, segmentArgs(p, segs[1], 320, 'base1.avi'));
+    for (const f of ['mov0', 'mov1', 'base0', 'base1']) expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, f + '.avi'))), 'mpeg4').frames.length).toBe(50);
+    /** how much the burned-in box changed a 20×20 patch at x (box rows), frame n of the segment */
+    const changed = (seg: 0 | 1, n: number, x: number) => {
+      const px = (f: string) => {
+        ff(dir, ['-i', f, '-vf', `select=eq(n\\,${n}),crop=20:20:${x}:110`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', f + '.px']);
+        return fs.readFileSync(path.join(dir, f + '.px'));
+      };
+      const a = px(`mov${seg}.avi`);
+      const b = px(`base${seg}.avi`);
+      return a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+    };
+    // before the title: nothing burned in
+    expect(changed(0, 10, 30)).toBeLessThan(8);
+    // frame 30 (0.2 s into the title): the box is at x 40..80
+    expect(changed(0, 30, 50)).toBeGreaterThan(60);
+    expect(changed(0, 30, 200)).toBeLessThan(8);
+    // frame 70, in the next segment (1.8 s in, so 45 pictures in): the box is at x 200..240
+    expect(changed(1, 20, 210)).toBeGreaterThan(60);
+    expect(changed(1, 20, 50)).toBeLessThan(8);
+    // after the title: nothing
+    expect(changed(1, 40, 210)).toBeLessThan(8);
+  });
+
+  it('starts a moving layer part-way into a segment', () => {
+    const tx = { id: 'm', kind: 'text' as const, row: 'g1', text: 'Hi', start: 0.6, duration: 1, size: 0.1, color: '#fff', font: 'sans' as const, bold: true, x: 0.5, y: 0.5, align: 'center' as const, shadow: false, box: false, fade: 0, moshed: true, anim: 'type' as const };
+    const p: Project = { ...project, layers: [tx] };
+    const seg = segments(p, 25)[0];
+    ff(dir, segmentArgs(p, seg, 320, 'late.avi', undefined, [{ layer: tx, path: 'moving.pngs', frames: { first: 15, count: 25 } }]));
+    ff(dir, segmentArgs(p, seg, 320, 'late0.avi'));
+    const patch = (f: string, n: number) => {
+      ff(dir, ['-i', f, '-vf', `select=eq(n\\,${n}),crop=20:20:30:110`, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'gray', f + '.px']);
+      return fs.readFileSync(path.join(dir, f + '.px'));
+    };
+    const diff = (n: number) => {
+      const a = patch('late.avi', n);
+      const b = patch('late0.avi', n);
+      return a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+    };
+    expect(diff(10)).toBeLessThan(8); // 0.4 s: not yet
+    expect(diff(16)).toBeGreaterThan(60); // 0.64 s: its second picture, the box at x 24..64
   });
 });

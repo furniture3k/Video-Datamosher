@@ -14,7 +14,7 @@ import { COMMANDS, type CommandInfo } from './commandlist';
 import { commandFor, comboOf } from './keymap';
 import type { MediaItem } from '../engine/types';
 
-const hasClips = () => store.project.clips.length > 0 || store.project.texts.length > 0;
+const hasClips = () => store.project.clips.length > 0 || store.project.layers.length > 0;
 
 export function runChaos() {
   if (!store.project.clips.length) return store.toast('Add a clip first.');
@@ -94,7 +94,7 @@ const ACTIONS: Record<string, Action> = {
   copy: { run: () => edit.copySelected() },
   paste: { run: () => edit.paste() },
   cut: { run: () => edit.copySelected() && edit.deleteSelected() },
-  'select-all': { run: () => (store.ui.selectedClips = [...store.project.clips.filter((c) => !edit.lockedTrack(c.track)).map((c) => c.id), ...store.project.texts.map((t) => t.id)]) },
+  'select-all': { run: () => (store.ui.selectedClips = [...store.project.clips.filter((c) => !edit.lockedTrack(c.track)).map((c) => c.id), ...store.project.layers.map((t) => t.id)]) },
   'nudge-left': { run: () => edit.nudgeSelected(-1) },
   'nudge-right': { run: () => edit.nudgeSelected(1) },
   'nudge-left-10': { run: () => edit.nudgeSelected(-10) },

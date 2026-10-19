@@ -6,7 +6,7 @@ import { getFile } from './storage';
 import { lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
-import { regenArgs, generationEncoder, loopPassArgs, type TextOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
@@ -20,8 +20,9 @@ import { aspectRatio, reframePath } from '../engine/reframe';
 import { grayFrames } from './analysis';
 import { bitrateFor } from '../engine/social';
 import { encodeRecipe, findRecipe, gifComments, gifWithComment } from '../engine/recipe';
-import type { Frame, MediaItem, Project, TextClip } from '../engine/types';
-import { drawText } from './text';
+import type { Frame, MediaItem, Project } from '../engine/types';
+import { drawOrder, isEmpty, isStill, layerAlpha, layerEnd, type Layer } from '../engine/layers';
+import { drawLayer } from './layers';
 import { FrameEncoder, encodedSize, hardwareCodec, hardwareProxy } from './webcodecs';
 
 export interface RenderResult {
@@ -113,41 +114,85 @@ let renderId = 0;
 // ---------------------------------------------------------------- prep
 
 const pngCache = new Map<string, Blob>();
-/** Titles that melt with the video, drawn as transparent full-frame PNGs for the prep graph. */
-async function textOverlays(project: Project, w: number, h: number, mounts: Record<string, Blob>): Promise<TextOverlay[]> {
-  const out: TextOverlay[] = [];
-  for (const tx of project.texts ?? []) {
-    if (!tx.moshed || !tx.text.trim()) continue;
-    const key = JSON.stringify({ ...tx, start: 0, duration: 0, fade: 0, w, h });
-    let png = pngCache.get(key);
-    if (!png) {
-      png = await renderTextPng(tx, w, h);
-      if (pngCache.size > 64) pngCache.clear();
-      pngCache.set(key, png);
+/** pictures of moving layers, one per frame (see layerOverlays) */
+const seqCache = new LRU<Blob>(32, 300e6);
+
+/**
+ * Layers that melt with the video, drawn as transparent full-frame pictures for the prep graph:
+ * one picture of a layer that looks the same throughout, or one per frame of a layer that moves.
+ */
+async function layerOverlays(project: Project, w: number, h: number, mounts: Record<string, Blob>, progress?: Progress, signal?: Signal): Promise<LayerOverlay[]> {
+  const fps = project.encoder.fps;
+  const out: LayerOverlay[] = [];
+  for (const l of drawOrder(project.layers ?? [])) {
+    if (!l.moshed || isEmpty(l)) continue;
+    if (isStill(l)) {
+      const key = JSON.stringify({ ...l, start: 0, duration: 0, fade: 0, w, h });
+      let png = pngCache.get(key);
+      if (!png) {
+        png = await layerPng(l, w, h);
+        if (pngCache.size > 64) pngCache.clear();
+        pngCache.set(key, png);
+      }
+      const name = `layer_${l.id}.png`;
+      mounts[name] = png;
+      out.push({ layer: l, path: MOUNT + name });
+      continue;
     }
-    const name = `text_${tx.id}.png`;
-    mounts[name] = png;
-    out.push({ tx, path: MOUNT + name });
+    // the timeline frames it's on screen in
+    const first = Math.ceil(l.start * fps - 1e-6);
+    const count = Math.max(1, Math.ceil(layerEnd(l) * fps - 1e-6) - first);
+    const key = JSON.stringify({ l, w, h, fps });
+    let seq = seqCache.get(key);
+    if (!seq) {
+      seq = await layerFrames(l, w, h, first, count, fps, progress, signal);
+      seqCache.set(key, seq, seq.size);
+    }
+    const name = `layer_${l.id}.pngs`;
+    mounts[name] = seq;
+    out.push({ layer: l, path: MOUNT + name, frames: { first, count } });
   }
   return out;
 }
 
-function renderTextPng(tx: TextClip, w: number, h: number): Promise<Blob> {
+const canvasPng = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('drawing a layer failed'))), 'image/png'));
+
+function layerPng(l: Layer, w: number, h: number): Promise<Blob> {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
-  drawText(c.getContext('2d')!, tx, w, h, 1);
-  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('text render failed'))), 'image/png'));
+  drawLayer(c.getContext('2d')!, l, w, h, 1, l.start);
+  return canvasPng(c);
+}
+
+/** A layer at timeline frames first.. first + count - 1, fades and all: PNGs one after another. */
+async function layerFrames(l: Layer, w: number, h: number, first: number, count: number, fps: number, progress?: Progress, signal?: Signal): Promise<Blob> {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d')!;
+  const pngs: Blob[] = [];
+  for (let k = 0; k < count; k++) {
+    if (k % 8 === 0) {
+      check(signal);
+      progress?.('Drawing titles', k / count);
+    }
+    const t = (first + k) / fps;
+    ctx.clearRect(0, 0, w, h);
+    drawLayer(ctx, l, w, h, layerAlpha(l, t), t);
+    pngs.push(await canvasPng(c));
+  }
+  return new Blob(pngs);
 }
 
 /** `disk` (desktop exports): segments stay on disk as disk-backed frames, see framesFromDisk. */
 export async function prepare(project: Project, width: number, progress?: Progress, signal?: Signal, preview = true, disk = false, eng: Engine = ffmpeg): Promise<Prepared> {
-  if (!project.clips.length && !project.texts?.length) throw new Error('Add a clip first');
+  if (!project.clips.length && !project.layers?.length) throw new Error('Add a clip first');
   const fps = project.encoder.fps;
   const { mounts, path } = await mountsFor(project, preview);
   const inputs = await lutInputs(project);
   const size = outputSize(project, width);
-  const overlays = await textOverlays(project, size.w, size.h, mounts);
+  const overlays = await layerOverlays(project, size.w, size.h, mounts, progress, signal);
   // Without keyframes at cuts the stream must be encoded in one go (cuts become P-frames).
   const whole = !project.encoder.keyAtCuts;
   const segs: (Segment | null)[] = whole ? [null] : segments(project, fps);
@@ -156,7 +201,7 @@ export async function prepare(project: Project, width: number, progress?: Progre
   let done = 0;
   for (const seg of segs) {
     check(signal);
-    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays), t: project.texts.filter((t) => t.moshed) }));
+    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays), t: project.layers.filter((t) => t.moshed) }));
     const n = seg ? seg.f1 - seg.f0 : totalFrames;
     let part = preview ? segCache.get(key) : undefined;
     if (!part) {
@@ -217,7 +262,7 @@ export function cutsOf(project: Project): number[] {
 /** Identity of everything that changes the moshed picture. */
 export const renderKey = (p: Project) => JSON.stringify({
   // effects that follow the music change when the sound does
-  au: audioKeysNeeded(p).length ? { tr: p.tracks.filter((t) => t.kind === 'audio').map((t) => [t.id, t.muted, t.solo, t.volume]), bs: p.beatSource } : 0, c: p.clips.map(({ label: _l, paths: _p, ...c }) => c), tp: p.effects.some((e) => e.type === 'mask' && e.params.source === 'track') ? p.clips.map((c) => c.paths ?? 0) : 0, v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.texts ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
+  au: audioKeysNeeded(p).length ? { tr: p.tracks.filter((t) => t.kind === 'audio').map((t) => [t.id, t.muted, t.solo, t.volume]), bs: p.beatSource } : 0, c: p.clips.map(({ label: _l, paths: _p, ...c }) => c), tp: p.effects.some((e) => e.type === 'mask' && e.params.source === 'track') ? p.clips.map((c) => c.paths ?? 0) : 0, v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.layers ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 

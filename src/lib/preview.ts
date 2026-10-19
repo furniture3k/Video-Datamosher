@@ -4,7 +4,7 @@ import { getFile } from './storage';
 import { mediaState } from './mediastate.svelte';
 import { getPcm } from './media';
 import { proxyKey } from './renderer';
-import { drawTexts } from './text';
+import { drawLayers } from './layers';
 import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
 import { keyedValue } from '../engine/keys';
 import { linearAt } from '../engine/track';
@@ -297,7 +297,7 @@ export class EditPreview {
     }
     for (const v of this.videos.values()) if (!used.has(v) && !v.paused) v.pause();
 
-    drawTexts(ctx, p.texts, t, w, h, 'all');
+    drawLayers(ctx, p.layers, t, w, h, 'all');
     if (waiting || unavailable) {
       const msg = unavailable ? "this browser can't preview this file live (the mosh view works)" : 'preparing preview…';
       ctx.font = '12px sans-serif';

@@ -2,6 +2,7 @@
 // (name, thumbnail, length, which stored files it uses) under `projects` for the home screen.
 // Storage only: no app state here, so the store can use it without an import cycle.
 import { kvGet, kvSet, kvDelete, localGet, localSet } from './storage';
+import { migrate } from '../engine/migrate';
 import { timelineDuration } from '../engine/timeline';
 import { proxyKey } from './renderer';
 import type { Project } from '../engine/types';
@@ -34,7 +35,7 @@ export function filesOf(p: Project): string[] {
 }
 
 /** A project worth keeping in the list: anything on it at all. */
-export const hasContent = (p: Project) => p.clips.length > 0 || p.media.length > 0 || p.texts.length > 0 || p.effects.length > 0;
+export const hasContent = (p: Project) => p.clips.length > 0 || p.media.length > 0 || p.layers.length > 0 || p.effects.length > 0;
 
 export function metaOf(p: Project, id: string, prev?: ProjectMeta): ProjectMeta {
   let seconds = 0;
@@ -107,7 +108,13 @@ export const setCurrentProjectId = (id: string | null) => localSet(CURRENT, id);
  */
 export async function migrateAutosave(): Promise<string | null> {
   if (await kvGet<ProjectMeta[]>(INDEX)) return null;
-  const old = await kvGet<Project>('autosave');
+  const saved = await kvGet<unknown>('autosave');
+  let old: Project | undefined;
+  try {
+    old = saved ? migrate(saved) : undefined;
+  } catch {
+    /* from a format this version can't read: nothing to move */
+  }
   if (!old || !hasContent(old)) {
     await kvSet(INDEX, []);
     return null;

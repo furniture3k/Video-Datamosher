@@ -6,7 +6,8 @@ import { clipLen, layoutVideo, localTime, sourceTime, mediaOf } from '../engine/
 import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
 import { uid } from '../engine/presets';
-import { VIDEO_TRACK, type Clip, type Project, type TextClip } from '../engine/types';
+import { VIDEO_TRACK, type Clip, type Project } from '../engine/types';
+import { FIRST_ROW, type TextLayer } from '../engine/layers';
 import type { TrackJob } from './track.worker';
 
 export const motionJob = $state({ running: false, stage: '' });
@@ -236,8 +237,8 @@ export function titleFollows(clipId: string, pathId: string) {
   if (!c) return;
   const follow = pathOnTimeline(p, c, pathId);
   if (!follow.length) return store.toast('That track is in a part of the clip that has been trimmed off.', 'error');
-  const tx: TextClip = { id: uid(), text: 'Label', start: follow[0][0], duration: Math.max(0.5, follow.at(-1)![0] - follow[0][0]), size: 0.06, color: '#ffffff', font: 'sans', bold: true, x: follow[0][1], y: follow[0][2], align: 'center', shadow: true, box: true, fade: 0.1, moshed: false, follow };
-  store.edit((q) => q.texts.push(tx));
+  const tx: TextLayer = { id: uid(), kind: 'text', row: FIRST_ROW, text: 'Label', start: follow[0][0], duration: Math.max(0.5, follow.at(-1)![0] - follow[0][0]), size: 0.06, color: '#ffffff', font: 'sans', bold: true, x: follow[0][1], y: follow[0][2], align: 'center', shadow: true, box: true, fade: 0.1, moshed: false, follow };
+  store.edit((q) => q.layers.push(tx));
   store.ui.selectedClips = [tx.id];
   store.toast('Added a title that follows it: change its words in the inspector.', 'ok');
 }

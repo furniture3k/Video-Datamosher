@@ -319,7 +319,7 @@ class Store {
   /** Drop selections that point at things that no longer exist (after undo, redo, loading). */
   private pruneSelection() {
     const p = this.project;
-    const ok = (id: string) => p.clips.some((c) => c.id === id) || p.texts.some((t) => t.id === id);
+    const ok = (id: string) => p.clips.some((c) => c.id === id) || p.layers.some((t) => t.id === id);
     if (this.ui.selectedClips.some((id) => !ok(id))) this.ui.selectedClips = this.ui.selectedClips.filter(ok);
     const tr = this.ui.selectedTransition;
     if (tr) {
@@ -437,7 +437,7 @@ class Store {
 
   async doRender(force = false) {
     this.status.pending = false;
-    if (!this.project.clips.length && !this.project.texts.length) {
+    if (!this.project.clips.length && !this.project.layers.length) {
       this.render = null;
       return;
     }
@@ -536,7 +536,7 @@ class Store {
     this.status.error = '';
     Object.assign(this.ui, { selectedClips: [], selectedEffect: null, selectedTransition: null, selectedMedia: null, inPoint: null, outPoint: null, playhead: 0, time: 0, playing: false, compareSnap: null, compare: 'off' });
     this.resetHistory();
-    if (this.ui.autoRender && (this.project.clips.length || this.project.texts.length)) this.scheduleRender(100);
+    if (this.ui.autoRender && (this.project.clips.length || this.project.layers.length)) this.scheduleRender(100);
     const { prepareAll } = await import('./media');
     prepareAll(this.project.media);
   }
@@ -556,7 +556,7 @@ class Store {
         console.warn('autosave not restored', e);
       }
     this.last = this.snapshot();
-    if (render && ok && (this.project.clips.length || this.project.texts.length)) this.scheduleRender(100);
+    if (render && ok && (this.project.clips.length || this.project.layers.length)) this.scheduleRender(100);
     // Media no longer in the saved project is removed on startup only, so undo
     // within a session can always bring a deleted clip back.
     // (media used by snapshots is kept so they can still be restored)

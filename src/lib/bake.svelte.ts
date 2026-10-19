@@ -32,7 +32,7 @@ export async function bakeToClip(replace: boolean, progress: Progress, signal: S
       q.clips = [makeClip(m, VIDEO_TRACK, { muted: false })];
       q.effects = [];
       // every title is in the baked picture already (melting ones in the mosh, the rest drawn on)
-      q.texts = [];
+      q.layers = [];
       q.tracks = q.tracks.filter((t) => t.kind === 'audio' || t.id === VIDEO_TRACK).map((t) => (t.id === CLIP_AUDIO ? { ...t, muted: false } : t));
     });
   }
