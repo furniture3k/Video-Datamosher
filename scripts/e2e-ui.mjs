@@ -506,8 +506,11 @@ await step('words on the beat: one title per word, on the cuts, in the chosen lo
   try {
     await page.locator('textarea[aria-label="Words"]').fill('ONE TWO THREE');
     await page.locator('select[aria-label="On"]').selectOption('cuts');
+    // three words on the cuts from the start: as many as there are pieces of video, at most three
+    const pieces = await S(() => window.__moshpit.timeline.layoutVideo(window.__moshpit.store.project).length);
+    const want = Math.min(3, pieces);
     const note = await page.getByRole('dialog').locator('[aria-live="polite"]').innerText();
-    if (!/2 titles/.test(note) || !/1 don't fit/.test(note)) throw new Error('summary: ' + note);
+    if (!note.startsWith(`${want} title`) || (want < 3) !== /don't fit/.test(note)) throw new Error(`summary (${pieces} pieces): ` + note);
     await page.getByRole('button', { name: 'Add titles' }).click();
   } finally {
     await S(() => (window.__moshpit.store.ui.dialog = null));
@@ -515,8 +518,8 @@ await step('words on the beat: one title per word, on the cuts, in the chosen lo
   const added = await S((before) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.filter((l) => !before.includes(l.id)))), before);
   const cuts = await S(() => window.__moshpit.timeline.layoutVideo(window.__moshpit.store.project).map((p) => p.start));
   await S((ids) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => !ids.includes(l.id)))), added.map((l) => l.id));
-  if (added.map((l) => l.text).join() !== 'ONE,TWO') throw new Error('titles: ' + JSON.stringify(added.map((l) => l.text)));
-  if (added[0].start !== cuts[0] || Math.abs(added[1].start - cuts[1]) > 1e-6) throw new Error('not on the cuts: ' + JSON.stringify([added.map((l) => l.start), cuts]));
+  if (added.map((l) => l.text).join() !== ['ONE', 'TWO', 'THREE'].slice(0, Math.min(3, cuts.length)).join()) throw new Error('titles: ' + JSON.stringify(added.map((l) => l.text)));
+  if (added.some((l, i) => Math.abs(l.start - cuts[i]) > 1e-6)) throw new Error('not on the cuts: ' + JSON.stringify([added.map((l) => l.start), cuts]));
   if (added.some((l) => l.fit !== 'width' || l.row === 'g1')) throw new Error('look or row: ' + JSON.stringify(added[0]));
 });
 
