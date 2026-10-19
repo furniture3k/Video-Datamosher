@@ -26,6 +26,9 @@ export const SHAPES: { value: ShapeKind; label: string; hint: string }[] = [
   { value: 'tunnel', label: 'Tunnel', hint: 'Boxes inside boxes.' },
   { value: 'cursor', label: 'Cursor', hint: 'A mouse pointer (move it with keyframes or a tracked path).' },
   { value: 'progress', label: 'Loading bar', hint: 'Fills up while it is on screen (or over its draw-on time).' },
+  { value: 'heart', label: 'Heart', hint: 'A filled heart (try Particles: Rise).' },
+  { value: 'sparkle', label: 'Sparkle', hint: 'A four-pointed twinkle.' },
+  { value: 'burst', label: 'Starburst', hint: 'A comic-book burst to put words on.' },
   { value: 'pen', label: 'Pen', hint: 'Drawn by hand on the player.' },
 ];
 
@@ -36,6 +39,9 @@ const CURSOR: Pt[] = [[0, 0], [0, 0.82], [0.23, 0.63], [0.38, 0.97], [0.53, 0.9]
 
 /** How full a loading bar is at timeline time t: over its draw-on time if it has one, else while it's on screen. */
 export const progressShare = (s: Pick<ShapeLayer, 'start' | 'duration' | 'drawOn'>, t: number) => Math.max(0, Math.min(1, (t - s.start) / Math.max(0.05, s.drawOn || s.duration * 0.9)));
+
+/** a fixed wobble for the burst's inner points (the same every time) */
+const noiseless = (i: number) => ((i * 7919) % 13) / 13;
 
 const ring = (n: number, f: (a: number) => Pt): Pt[] => Array.from({ length: n }, (_, i) => f((i / n) * Math.PI * 2));
 
@@ -135,6 +141,13 @@ export function shapeStrokes(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' |
       return [{ pts: CURSOR.map(([x, y]) => [(x - 0.5) * w, (y - 0.5) * h] as Pt), closed: true }];
     case 'progress':
       return [{ pts: rounded(w, h, h / 2), closed: true }];
+    case 'heart':
+      return [{ pts: ring(72, (a) => { const x = 16 * Math.sin(a) ** 3; const y = 13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a); return [(x / 34) * w, (-(y + 2.5) / 31) * h]; }), closed: true }];
+    case 'sparkle':
+      // four long points, pinched hard in between
+      return [{ pts: ring(64, (a) => { const k = Math.pow(Math.abs(Math.cos(2 * a)), 6) * 0.82 + 0.18; return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; }), closed: true }];
+    case 'burst':
+      return [{ pts: ring(28, (a) => { const i = Math.round((a / (Math.PI * 2)) * 28); const k = i % 2 ? 0.66 + noiseless(i) * 0.12 : 1; return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; }), closed: true }];
   }
 }
 
@@ -236,6 +249,9 @@ export function newShape(shape: ShapeKind, id: string, row: string, start: numbe
   const s: ShapeLayer = { id, kind: 'shape', row, shape, start, duration: 3, x: 0.5, y: 0.5, fade: 0, moshed: false, w, h, ...look };
   if (shape === 'tunnel') s.count = 6;
   if (shape === 'cursor') Object.assign(s, { w: sq(0.06)[0], h: 0.06 * 1.4, color: '#000000', fill: '#ffffff', width: 0.003, drawOn: undefined });
+  if (shape === 'heart') Object.assign(s, { color: '#ff2d55', fill: '#ff2d55', drawOn: undefined });
+  if (shape === 'sparkle') Object.assign(s, { color: '#fff6c9', fill: '#ffffff', glow: 0.7, drawOn: undefined, w: sq(0.18)[0], h: 0.18 });
+  if (shape === 'burst') Object.assign(s, { color: '#111111', fill: '#ffe23d', width: 0.006, drawOn: undefined, w: sq(0.4)[0] * 1.3, h: 0.4 });
   if (shape === 'progress') Object.assign(s, { w: 0.5, h: 0.035, color: '#ffffff', width: 0.004, drawOn: undefined });
   if (shape === 'arrow') s.head = 0.22;
   if (shape === 'highlight') {

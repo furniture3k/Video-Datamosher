@@ -2,7 +2,7 @@
   // Pick a shape to add at the playhead, draw one with the pen, or mark something that moves (a
   // box, arrow and label that follow it). Each button shows the shape as it will be drawn.
   import { store } from '../lib/store.svelte';
-  import { addShape } from '../lib/edit';
+  import { addEmoji, addShape, EMOJI } from '../lib/edit';
   import { startMark } from '../lib/motion.svelte';
   import { SHAPES, newShape, shapeStrokes } from '../engine/shapes';
   import type { ShapeKind } from '../engine/layers';
@@ -31,6 +31,9 @@
   <button class="kind" class:on={store.ui.pen} title="Draw a line by hand on the player" aria-label="Draw with the pen" onclick={() => ((store.ui.pen = !store.ui.pen), done())}>
     <Icon name="pen" size={20} /><span>Pen</span>
   </button>
+  <div class="emoji" role="group" aria-label="Emoji stickers">
+    {#each EMOJI as e (e)}<button class="em" aria-label={`Add ${e}`} onclick={() => (addEmoji(e), done())}>{e}</button>{/each}
+  </div>
   <button class="kind wide" class:on={store.ui.trackThen === 'mark'} title="Box something that moves: it's tracked, then boxed, arrowed and labelled, and they all follow it" aria-label="Mark something moving" onclick={() => (startMark(), done())}>
     <Icon name="target" size={20} /><span>Mark something moving</span>
   </button>
@@ -50,6 +53,20 @@
     height: auto;
     padding: 6px 4px;
     font-size: 11px;
+  }
+  .emoji {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  .em {
+    font-size: 20px;
+    height: 34px;
+    width: 34px;
+    padding: 0;
+    background: transparent;
+    border-color: transparent;
   }
   .kind.wide {
     grid-column: span 2;

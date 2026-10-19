@@ -9,6 +9,7 @@
   import BeatChips from './BeatChips.svelte';
   import Icon from './Icon.svelte';
   import TrailSettings from './TrailSettings.svelte';
+  import ParticleSettings from './ParticleSettings.svelte';
 
   let { shape }: { shape: ShapeLayer } = $props();
 
@@ -74,6 +75,7 @@
   <Field label="Glow" min={0} max={1} step={0.01} value={shape.glow ?? 0} help="A soft light around the line, in its colour." onchange={(v: number) => set('glow', v)} />
   <Field label="Hand-drawn" min={0} max={1} step={0.01} value={shape.boil ?? 0} help="Wobbles like it was drawn again on every few frames." onchange={(v: number) => set('boil', v)} />
   <TrailSettings layer={shape} />
+  <ParticleSettings layer={shape} />
   <Field label="Fade" unit="s" min={0} max={3} step={0.05} value={shape.fade} help="Fade in and out." onchange={(v: number) => set('fade', v)} />
   {#if shape.follow?.length}
     <div class="row small faint">Follows a tracked object. <button class="small ghost" onclick={() => set('follow', undefined)}>Stop following</button></div>

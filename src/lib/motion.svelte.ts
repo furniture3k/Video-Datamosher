@@ -7,9 +7,11 @@ import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
 import { uid } from '../engine/presets';
 import { VIDEO_TRACK, type Clip, type Project } from '../engine/types';
-import { FIRST_ROW, type TextLayer } from '../engine/layers';
+import { FIRST_ROW, freeRow, type TextLayer } from '../engine/layers';
 import type { TrackJob } from './track.worker';
 import { markLayers } from '../engine/annotate';
+import { linkFaces } from '../engine/faces';
+import { detectFaces } from './faces';
 import { cardScale, offCard, onCard } from '../engine/canvas';
 import { shapeLook } from './edit';
 
@@ -286,6 +288,59 @@ export function startMark() {
   const c = trackableAt(store.ui.time);
   if (!c) return store.toast('Put the playhead on a video clip first: the mark follows something in it.', 'error');
   toggleTrackPick(c.id, 'mark');
+}
+
+/** How often faces are looked for (a second): enough to follow them, quick to find. */
+const FACE_FPS = 6;
+
+/** Find the faces in a clip: one track per face, kept on the clip like tracked objects. */
+export async function findFaces(id: string) {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === id);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !m) return;
+  store.ui.playing = false;
+  const tracks = await busy('Finding faces', async () => {
+    const g = await clipFrames(c, m, FACE_FPS, 320);
+    const cv = document.createElement('canvas');
+    cv.width = g.w;
+    cv.height = g.h;
+    const ctx = cv.getContext('2d')!;
+    const img = ctx.createImageData(g.w, g.h);
+    const found = [];
+    for (const f of g.frames) {
+      for (let i = 0; i < f.length; i++) {
+        img.data[i * 4] = img.data[i * 4 + 1] = img.data[i * 4 + 2] = f[i];
+        img.data[i * 4 + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      found.push(await detectFaces(cv));
+    }
+    return linkFaces(found, FACE_FPS, 3);
+  });
+  if (!tracks.length) return store.toast('No faces found in this clip.', 'info');
+  const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+  store.edit((q) => {
+    const x = q.clips.find((y) => y.id === id);
+    if (!x) return;
+    const n0 = (x.paths ?? []).filter((pp) => pp.name.startsWith('Face')).length;
+    x.paths = [...(x.paths ?? []), ...tracks.map((t, i) => ({ id: uid(), name: `Face ${n0 + i + 1}`, pts: t.pts.map(([f, px, py]) => [r4(c.in + f / FACE_FPS), px, py] as [number, number, number]), size: t.size }))];
+  });
+  store.toast(`Found ${tracks.length} face${tracks.length > 1 ? 's' : ''}: put a sticker on each, or a label, from its row in Motion.`, 'ok', 5000);
+}
+
+/** An emoji over a tracked face (or object), its size, following it. */
+export function emojiFollows(clipId: string, pathId: string, emoji = '😎') {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  if (!c) return;
+  const follow = pathOnTimeline(p, c, pathId);
+  if (!follow.length) return store.toast('That track is in a part of the clip that has been trimmed off.', 'error');
+  const [, bh] = pathSize(p, c, pathId) ?? [0.15, 0.15];
+  const t0 = follow[0][0];
+  const tx: TextLayer = { id: uid(), kind: 'text', row: freeRow(p.layers, t0, follow.at(-1)![0]), text: emoji, start: t0, duration: Math.max(0.5, follow.at(-1)![0] - t0), size: Math.min(0.9, Math.max(0.04, bh * 1.25)), color: '#ffffff', font: 'sans', bold: false, x: follow[0][1], y: follow[0][2], align: 'center', shadow: false, box: false, fade: 0, moshed: false, follow };
+  store.edit((q) => q.layers.push(tx));
+  store.ui.selectedClips = [tx.id];
 }
 
 /** Mark a tracked object: a box round it (`bw`×`bh` of the frame), an arrow at it and a label, all following it. */

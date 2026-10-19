@@ -185,11 +185,11 @@ unlocks, where it goes in the code, and when it counts as done.
   the main track.
 
 ### Stickers
-- [ ] Built-in sticker library: emoji, reactions (generic hearts, thumbs, faces), stars, sparkles,
+- [x] *(M13: 18 emoji as titles, and drawn hearts, sparkles and starbursts next to the shapes; ornaments, tape and paper scraps are still to do)* Built-in sticker library: emoji, reactions (generic hearts, thumbs, faces), stars, sparkles,
   ornaments/mandalas, line-art drawings, scribbles, arrows, tape, paper scraps.
-- [ ] **Face pin**: detect faces on device and pin a sticker or blur to each face automatically
+- [x] **Face pin** *(M13: Find faces (MediaPipe on the device) makes a track per face; a sticker, label or mark follows it; blur is still to do)*: detect faces on device and pin a sticker or blur to each face automatically
   (R3's censor star).
-- [ ] **Floating particles**: emojis/stickers that rise, fall or burst on beats (R6 reactions).
+- [x] **Floating particles** *(M13: on any title or shape: rise, fall or burst; on beats is still to do)*: emojis/stickers that rise, fall or burst on beats (R6 reactions).
 
 ### Built-in looks
 - [ ] One-click film looks built from R5 and R6 (grade + halation + grain + vignette + frame rate),

@@ -94,6 +94,8 @@ Object.assign((window as unknown as { __moshpit: object }).__moshpit, { text, pr
 import * as fonts from './lib/fonts.svelte';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { fonts });
 import * as canvasMod from './engine/canvas';
+import * as facesMod from './lib/faces';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { faces: facesMod });
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { canvas: canvasMod });
 import * as commands from './lib/commands.svelte';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { commands });
