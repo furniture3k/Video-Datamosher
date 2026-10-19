@@ -5,7 +5,13 @@ import { addFiles, addToTimeline } from './media';
 import { renderGenerator, cutsOf } from './renderer';
 import { startProject } from './projects.svelte';
 import { refreshBeats } from './beatinfo.svelte';
-import { newText } from './edit';
+import { addShape, arrangeGrid, newText } from './edit';
+import { beatInfo } from './beatinfo.svelte';
+import { BUILTIN_STYLES, applyStyle } from '../engine/styles';
+import { CANVAS_PRESETS } from '../engine/canvas';
+import { beatPoints, splitWords, wordSlots, wordTitles } from '../engine/wordbeats';
+import { nextRow, type TextLayer } from '../engine/layers';
+import { layoutVideo, uid } from '../engine/timeline';
 import { GENERATORS, even } from '../engine/args';
 import { PRESETS, applyPreset } from '../engine/presets';
 import { beatEdit, defaultBeatEdit } from '../engine/beatedit';
@@ -79,9 +85,156 @@ async function toTheBeat(media: MediaItem[]) {
   return true;
 }
 
+/** A title in one of the built-in styles. */
+function styled(styleId: string, text: string, start: number, duration: number, extra: Partial<TextLayer> = {}): TextLayer {
+  const l = newText(start);
+  const st = BUILTIN_STYLES.find((x) => x.id === styleId);
+  if (st) applyStyle(l, st);
+  Object.assign(l, { text, duration }, extra);
+  return l;
+}
+
+/** One of the built-in canvases on the whole timeline. */
+function canvas(id: string) {
+  const c = CANVAS_PRESETS.find((x) => x.id === id)?.canvas;
+  if (c) store.edit((p) => (p.canvas = { ...c }));
+}
+
+/** Words one after another on the beat (or on the cuts), in a style, on a row of their own. */
+function wordsOnBeats(text: string, styleId: string, beats: number[] | null) {
+  const p = store.project;
+  const pieces = splitWords(text, 'word');
+  const points = beats?.length ? beats : [...layoutVideo(p).map((pl) => pl.start), layoutVideo(p).at(-1)?.end ?? 0];
+  const slots = wordSlots(pieces.length, points, 0);
+  const base = styled(styleId, '', 0, 1);
+  const { id: _i, text: _t, start: _s, duration: _d, row: _r, ...like } = base;
+  const titles = wordTitles(pieces, slots, like, nextRow(p.layers), uid);
+  store.edit((q) => q.layers.push(...titles));
+}
+
 // ---------------------------------------------------------------- templates
 
 export const TEMPLATES: Template[] = [
+  {
+    id: 'kinetic',
+    name: 'Kinetic lyrics',
+    description: 'Big pink words slam in one per beat over quick cuts, 9:16. Change the words after (Words on the beat).',
+    thumb: 'beat',
+    aspect: '9:16',
+    clips: [2, 12],
+    music: true,
+    hint: 'A few clips and a song. The words are placeholders.',
+    sample: [['gradients', 3], ['mandelbrot', 3]],
+    build: async (media) => {
+      const cut = await toTheBeat(media);
+      const beats = cut ? beatPoints(beatInfo.beats, 1) : null;
+      wordsOnBeats('EVERYTHING WORKS IN MY FAVOR BECAUSE I WORK FOR EVERYTHING', 'slam', beats);
+    },
+  },
+  {
+    id: 'scrapbook',
+    name: 'Scrapbook',
+    description: 'Your clips as a paper card on cream, a title stamped across on the beat, film grain.',
+    thumb: 'melt',
+    aspect: '9:16',
+    clips: [1, 8],
+    hint: 'Holiday clips, pets, friends.',
+    sample: [['gradients', 3], ['testsrc2', 3]],
+    build: () => {
+      canvas('card');
+      onCuts('dissolve', 0.3);
+      store.edit((p) => p.layers.push(styled('story', 'summer', 0.3, 3, { x: 0.25, y: 0.12, trail: { every: 0.4, count: 4, dx: 0.13, dy: 0.02 } })));
+      preset('eightmm');
+    },
+  },
+  {
+    id: 'productdemo',
+    name: 'Product demo',
+    description: 'Your screen recording plays in a browser window, with a cursor and a title.',
+    thumb: 'swap',
+    clips: [1, 4],
+    hint: 'A screen recording or app footage.',
+    sample: [['testsrc2', 4]],
+    build: () => {
+      canvas('browser');
+      store.edit((p) => p.layers.push(styled('poster', 'Meet the new thing', 0.2, 2.5, { y: 0.07, size: 0.06 })));
+      store.seek(0.3);
+      const c = addShape('cursor');
+      store.edit((p) => Object.assign(p.layers.find((l) => l.id === c.id)!, { x: 0.62, y: 0.6, duration: 3.5 }));
+      store.seek(0);
+    },
+  },
+  {
+    id: 'rednotes',
+    name: 'Red notes',
+    description: 'Hand-drawn red boxes, arrows and notes on your footage. Mark more with Shape → Mark something moving.',
+    thumb: 'glitch',
+    clips: [1, 4],
+    hint: 'Footage with something to point at.',
+    sample: [['testsrc2', 4]],
+    build: () => {
+      store.seek(0.2);
+      const b = addShape('rect');
+      const a = addShape('arrow');
+      store.edit((p) => {
+        Object.assign(p.layers.find((l) => l.id === b.id)!, { x: 0.45, y: 0.5, boil: 0.5 });
+        Object.assign(p.layers.find((l) => l.id === a.id)!, { x: 0.7, y: 0.3, rotate: 90, boil: 0.5, start: 0.5 });
+        p.layers.push(styled('notes', 'look at this', 0.8, 2.5, { x: 0.78, y: 0.18 }));
+      });
+      store.seek(0);
+    },
+  },
+  {
+    id: 'cinematic',
+    name: 'Cinematic',
+    description: 'Halation, grain and gate weave, with whip pans between the shots.',
+    thumb: 'melt',
+    clips: [2, 10],
+    hint: 'Nature, travel, slow movement.',
+    sample: [['gradients', 3], ['mandelbrot', 3]],
+    build: () => {
+      onCuts('whipleft', 0.3);
+      preset('cinefilm');
+    },
+  },
+  {
+    id: 'degraded',
+    name: 'Degraded film',
+    description: 'Held, choppy motion, heavy grain, dust and light leaks, with a lyric that strobes.',
+    thumb: 'vhs',
+    aspect: '9:16',
+    clips: [1, 8],
+    hint: 'Concert clips, night drives, home videos.',
+    sample: [['gradients', 3], ['testsrc2', 3]],
+    build: () => {
+      preset('eightmm');
+      store.edit((p) => p.layers.push(styled('bleed', 'I CANT FEEL MY FACE', 0.3, 3)));
+    },
+  },
+  {
+    id: 'splitscreen',
+    name: 'Split screen',
+    description: 'Two clips stacked, one above the other, with a gap.',
+    thumb: 'swap',
+    aspect: '9:16',
+    clips: [2, 2],
+    hint: 'Two clips to compare or pair.',
+    sample: [['testsrc2', 3], ['mandelbrot', 3]],
+    build: () => {
+      // the second clip goes on a track above, at the same time as the first
+      const [, second] = mainClips();
+      if (!second) return;
+      store.edit((p) => {
+        const c = p.clips.find((x) => x.id === second.id)!;
+        c.track = 'v2';
+        c.start = 0;
+        if (!p.tracks.some((t) => t.id === 'v2')) p.tracks.push({ id: 'v2', kind: 'video', name: 'Video 2', muted: false, solo: false, volume: 1, mosh: true });
+      });
+      store.seek(0.1);
+      arrangeGrid('stack', 0.02);
+      store.seek(0);
+    },
+  },
   {
     id: 'meltcuts',
     name: 'Melt transitions',
