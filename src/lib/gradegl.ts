@@ -10,16 +10,17 @@ precision highp float; precision highp sampler3D;
 in vec2 uv; out vec4 o;
 uniform sampler2D src; uniform sampler2D curve; uniform sampler3D lut;
 uniform float colour; uniform float ident; uniform vec3 m0; uniform vec3 m1; uniform vec3 m2;
-uniform float keyed; uniform vec3 keyc; uniform float sim; uniform float soft; uniform float spill; uniform float green;
+uniform float keyed; uniform float luma; uniform vec3 keyc; uniform float sim; uniform float soft; uniform float spill; uniform float green;
 uniform float hasLut; uniform float lutAmt; uniform float lutSize;
 void main(){
   vec4 c = texture(src, uv);
   float a = c.a;
   if (keyed > 0.5) {
-    float d = distance(c.rgb, keyc) / 1.7320508;
+    float l = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+    float d = luma > 1.5 ? 1. - l : luma > 0.5 ? l : distance(c.rgb, keyc) / 1.7320508;
     float k = d < sim ? 0. : (soft > 0. && d < sim + soft ? (d - sim) / soft : 1.);
     a *= k;
-    if (spill > 0.5 && k > 0.) {
+    if (spill > 0.5 && luma < 0.5 && k > 0.) {
       if (green > 0.5) c.g = min(c.g, (c.r + c.b) / 2. + 8. / 255.);
       else c.b = min(c.b, (c.r + c.g) / 2. + 8. / 255.);
     }
@@ -139,6 +140,7 @@ export class GradeGL {
       m1: m.slice(3, 6),
       m2: m.slice(6, 9),
       keyed: key ? 1 : 0,
+      luma: key?.luma === 'light' ? 2 : key?.luma === 'dark' ? 1 : 0,
       keyc: kc,
       sim: Math.max(0.01, key?.similarity ?? 0),
       soft: Math.max(0, key?.blend ?? 0),

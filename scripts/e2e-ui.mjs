@@ -754,6 +754,60 @@ await step('collage: split screen side by side, a stamp trail, an image backdrop
   }
 });
 
+await step('blends, luma key and a phone mockup render, in the preview and the mosh', async () => {
+  if (!(await S(() => window.__moshpit.store.project.clips.length))) {
+    await S(async () => {
+      const m = window.__moshpit;
+      await m.media.addFiles([new File([await m.renderer.renderGenerator('testsrc2', 2, 320, 180, 24)], 'testsrc2.mp4', { type: 'video/mp4' })]);
+    });
+    await idle();
+  }
+  const id = await S(() => {
+    const { store: st, edit, timeline } = window.__moshpit;
+    st.setPref('view', 'edit');
+    st.ui.playing = false;
+    const track = edit.addVideoTrack();
+    const c = timeline.makeClip(st.project.media[0], track, { start: 0 });
+    c.blend = 'overlay';
+    c.key = { color: '#000000', similarity: 0.2, blend: 0.05, spill: false, luma: 'dark' };
+    st.edit((p) => {
+      p.clips.push(c);
+      p.canvas = { bg: 'color', color: '#ff00ff', inset: 0.12, radius: 0.08, device: 'phone' };
+    });
+    st.seek(0.5);
+    st.selectClip(c.id);
+    return c.id;
+  });
+  try {
+    await page.locator('.tabs button', { hasText: 'Clip' }).click();
+    await page.locator('.field', { hasText: 'Key by' }).waitFor({ timeout: 3000 });
+    await page.waitForTimeout(500);
+    // the phone's bezel is dark, just outside the card's left edge, half way down
+    const px = await S(() => {
+      const { store: st, canvas } = window.__moshpit;
+      const cv = document.querySelector('.stage canvas.edit');
+      const R = canvas.cardRect(st.project.canvas, cv.width, cv.height);
+      const at = (x, y) => [...cv.getContext('2d').getImageData(Math.round(x), Math.round(y), 1, 1).data];
+      return { bezel: at(R.x - Math.min(cv.width, cv.height) * 0.012, R.y + R.h / 2), back: at(3, 3) };
+    });
+    if (!(px.bezel[0] < 60 && px.bezel[2] < 60)) throw new Error('no phone bezel: ' + px.bezel.join());
+    if (!(px.back[0] > 200 && px.back[2] > 200 && px.back[1] < 60)) throw new Error('no backdrop: ' + px.back.join());
+    await S(() => window.__moshpit.store.doRender(true));
+    await settle();
+    if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error('no frames');
+  } finally {
+    await S((id) => {
+      const st = window.__moshpit.store;
+      st.edit((p) => {
+        delete p.canvas;
+        p.clips = p.clips.filter((c) => c.id !== id);
+      });
+      st.setPref('view', 'auto');
+    }, id);
+    await settle();
+  }
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
@@ -1032,7 +1086,7 @@ await step('NLE: adjustment layer, chroma key with eyedropper, LUT import', asyn
     const gen = st.project.media.find((x) => x.source.kind === 'file' && !x.source.compound && x.hasVideo && x.source.kind !== 'adjust');
     window.__moshpit.edit.placeOnTop(gen);
   });
-  await page.locator('.field', { hasText: 'Key out a colour' }).locator('input').click();
+  await page.locator('.field', { hasText: 'Key it out' }).locator('input').click();
   await page.getByRole('button', { name: 'Pick from player' }).click();
   const stage = await page.locator('.player .stage').boundingBox();
   await page.mouse.click(stage.x + stage.width * 0.3, stage.y + stage.height * 0.5);

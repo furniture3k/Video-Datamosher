@@ -1,7 +1,7 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
 import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project } from './types';
 import { layerEnd, type Layer } from './layers';
-import { blurRadius, cardRect, hasCanvas, type Canvas } from './canvas';
+import { blurRadius, cardRect, hasCanvas, hasChrome, type Canvas } from './canvas';
 import { findRecipe } from './recipe';
 import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
@@ -140,6 +140,8 @@ function stabFilters(s: NonNullable<Clip['stab']>, inPoint: number): string[] {
 
 /** Chroma key on an RGBA picture: the colour goes transparent, its spill is pulled from the edges. */
 function keyFilters(k: ChromaKey): string[] {
+  // luma key: brightness near black (or white) goes transparent
+  if (k.luma) return ['format=yuva444p', `lumakey=threshold=${k.luma === 'light' ? 1 : 0}:tolerance=${r3(Math.max(0.01, k.similarity))}:softness=${r3(k.blend)}`, 'format=rgba'];
   const hex = k.color.replace('#', '').padEnd(6, '0').slice(0, 6);
   const f = [`colorkey=0x${hex}:${r3(Math.max(0.01, k.similarity))}:${r3(k.blend)}`];
   if (k.spill) {
@@ -279,6 +281,15 @@ const BLEND: Record<string, { mode: string; neutral: string }> = {
   add: { mode: 'addition', neutral: 'black' },
   multiply: { mode: 'multiply', neutral: 'white' },
   difference: { mode: 'difference', neutral: 'black' },
+  // (where the clip isn't, the colour that leaves the picture below as it is)
+  overlay: { mode: 'overlay', neutral: 'gray' },
+  softlight: { mode: 'softlight', neutral: 'gray' },
+  hardlight: { mode: 'hardlight', neutral: 'gray' },
+  lighten: { mode: 'lighten', neutral: 'black' },
+  darken: { mode: 'darken', neutral: 'white' },
+  dodge: { mode: 'dodge', neutral: 'black' },
+  burn: { mode: 'burn', neutral: 'white' },
+  exclusion: { mode: 'exclusion', neutral: 'black' },
 };
 
 /**
@@ -392,7 +403,7 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     }
     filter.push(`[${tag}cvg][${card}]overlay=${R.x}:${R.y}:format=auto,format=yuv420p[${tag}cvc]`);
     acc = `${tag}cvc`;
-    if ((c.border ?? 0) > 0 && plates.border) {
+    if (hasChrome(c) && plates.border) {
       filter.push(`[${still(plates.border)}]format=rgba[${tag}cvo]`);
       filter.push(`[${acc}][${tag}cvo]overlay=0:0:shortest=1:format=auto,format=yuv420p[${tag}cvd]`);
       acc = `${tag}cvd`;

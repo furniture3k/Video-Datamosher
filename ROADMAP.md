@@ -124,16 +124,16 @@ unlocks, where it goes in the code, and when it counts as done.
   shape wipe transitions using the kit colour (R4).
 - [x] **Split/grid layouts** *(M6b: `src/engine/grid.ts`, seven layouts with a gap, for the clips under the playhead or the selected ones; swapping cells on beats is still to do)*: 2-up, 3-up, 2×2, 3×3, filled by dropping clips; cells can swap on
   beats.
-- [ ] **Device and window mockups**: phone, laptop, generic browser window, generic music player,
+- [x] **Device and window mockups** *(M7: phone, browser window, app window and laptop drawn round the canvas card; the music player, chat bubble and zoom into the screen are still to do)*: phone, laptop, generic browser window, generic music player,
   desktop window with title bar, chat bubble. Drop a clip in and it plays on the "screen";
   **zoom into screen** transition (R4). Draw generic ones; don't copy real brands' interfaces.
-- [ ] **Fake UI animation kit**: text-selection handles and menu, cursor moving and clicking, a
+- [x] **Fake UI animation kit** *(M7: a cursor shape and a loading bar that fills; selection handles, menus and notifications are still to do)*: text-selection handles and menu, cursor moving and clicking, a
   loading bar, notification banners (R4 "ZO" selection).
 
 ### Keys and blends
-- [ ] **Luma key**: drop the white or the black (with threshold and softness) so line art and
+- [x] **Luma key** *(M7: Key by darkness or lightness, with threshold and softness, in FFmpeg and the preview)*: drop the white or the black (with threshold and softness) so line art and
   scans layer straight over footage (R2). Today chroma key only.
-- [ ] More blend modes: overlay, soft light, hard light, lighten, darken, colour, hue,
+- [x] More blend modes *(M7: overlay, soft light, hard light, lighten, darken, colour dodge, colour burn, exclusion; colour and hue aren't in FFmpeg's blend filter)*: overlay, soft light, hard light, lighten, darken, colour, hue,
   colour-dodge, exclusion. Today: normal, screen, add, multiply, difference.
 
 ## Phase 2: Cut out any subject (R1, R2, R9's car, R3's stickers)

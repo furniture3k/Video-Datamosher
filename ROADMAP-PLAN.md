@@ -272,6 +272,14 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - **Grid layouts** (2-up, 3-up, 2×2, 3×3) whose cells can swap on beats.
 
 ### M7: Mockups, fake UI, keys and blends. Unlocks R4 mockups and R2 line art
+
+> **Done (PR for `feat/m7-blends`).** Eight more blend modes on upper-track clips (FFmpeg `blend`
+> over a neutral colour, Canvas composite operations in the preview). A luma key (darkness or
+> lightness: `lumakey` in FFmpeg, the same test in the GPU and CPU preview keys). Mockups as a
+> canvas option (`Canvas.device`: phone, browser window, app window, laptop, drawn on the
+> border picture, with presets), so a clip plays on the screen through the same card path. A
+> cursor shape and a loading bar that fills. Still to do: music player and chat bubble mockups,
+> zoom into the screen, selection handles and menus, notifications.
 - **Mockup layer**: phone, laptop, browser window, music player, desktop window, chat bubble, all
   drawn by us (no brand interfaces). A clip plays on the screen, plus a zoom-into-screen move.
 - **Fake UI kit**: selection handles and menu, cursor and click, loading bar, notification banner.

@@ -86,17 +86,89 @@ export function maskPlate(R: CardRect): HTMLCanvasElement {
 /** The border round the card, all outside it (clear elsewhere). */
 export function borderPlate(c: Canvas, W: number, H: number): HTMLCanvasElement {
   const out = sheet(W, H);
-  const b = (c.border ?? 0) * H;
-  if (b <= 0) return out;
   const R = cardRect(c, W, H);
   const ctx = out.getContext('2d')!;
-  ctx.fillStyle = c.borderColor ?? '#ffffff';
-  roundRect(ctx, R.x - b, R.y - b, R.w + 2 * b, R.h + 2 * b, R.r ? R.r + b : 0);
-  ctx.fill();
-  ctx.globalCompositeOperation = 'destination-out';
-  roundRect(ctx, R.x, R.y, R.w, R.h, R.r);
-  ctx.fill();
+  const b = (c.border ?? 0) * H;
+  if (b > 0) {
+    ctx.fillStyle = c.borderColor ?? '#ffffff';
+    roundRect(ctx, R.x - b, R.y - b, R.w + 2 * b, R.h + 2 * b, R.r ? R.r + b : 0);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'destination-out';
+    roundRect(ctx, R.x, R.y, R.w, R.h, R.r);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (c.device) drawDevice(ctx, c.device, R, W, H, b);
   return out;
+}
+
+/** A generic device round the card (`b`: the border already drawn round it). */
+function drawDevice(ctx: CanvasRenderingContext2D, device: NonNullable<Canvas['device']>, R: CardRect, W: number, H: number, b: number) {
+  const u = Math.min(W, H);
+  /** a frame of width `f` round the card, all outside it */
+  const bezel = (f: number, colour: string, r: number) => {
+    const s = document.createElement('canvas');
+    s.width = W;
+    s.height = H;
+    const g = s.getContext('2d')!;
+    g.fillStyle = colour;
+    roundRect(g, R.x - b - f, R.y - b - f, R.w + 2 * (b + f), R.h + 2 * (b + f), r);
+    g.fill();
+    g.globalCompositeOperation = 'destination-out';
+    roundRect(g, R.x - b, R.y - b, R.w + 2 * b, R.h + 2 * b, R.r ? R.r + b : 0);
+    g.fill();
+    ctx.drawImage(s, 0, 0);
+  };
+  if (device === 'phone') {
+    const f = u * 0.022;
+    bezel(f, '#111114', (R.r || u * 0.05) + b + f);
+    // the camera pill at the top of the screen
+    ctx.fillStyle = '#000';
+    const pw = Math.min(R.w * 0.3, u * 0.2);
+    roundRect(ctx, R.x + (R.w - pw) / 2, R.y + u * 0.018, pw, u * 0.04, u * 0.02);
+    ctx.fill();
+  } else if (device === 'browser' || device === 'window') {
+    // a title bar above the card, with the three window dots (and an address bar in a browser)
+    const bar = u * 0.055;
+    const dark = device === 'window';
+    ctx.fillStyle = dark ? '#2b2b31' : '#e9e9ec';
+    const top = R.y - b - bar;
+    const rr = Math.max(R.r, u * 0.012);
+    ctx.beginPath();
+    ctx.roundRect(R.x - b, top, R.w + 2 * b, bar, [rr, rr, 0, 0]);
+    ctx.fill();
+    const d = bar * 0.22;
+    ['#ff5f57', '#febc2e', '#28c840'].forEach((col, i) => {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(R.x + bar * 0.5 + i * d * 2.8, top + bar / 2, d, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    if (!dark) {
+      ctx.fillStyle = '#ffffff';
+      const aw = R.w * 0.5;
+      roundRect(ctx, R.x + (R.w - aw) / 2, top + bar * 0.22, aw, bar * 0.56, bar * 0.28);
+      ctx.fill();
+    }
+  } else if (device === 'laptop') {
+    const f = u * 0.02;
+    bezel(f, '#1b1b1f', (R.r || u * 0.01) + b + f);
+    // the base: a flat slab a little wider than the screen, with a thumb notch
+    const y = R.y + R.h + b + f;
+    const over = R.w * 0.08;
+    const h = u * 0.028;
+    ctx.fillStyle = '#c9cbd1';
+    ctx.beginPath();
+    ctx.moveTo(R.x - b - f - over * 0.4, y);
+    ctx.lineTo(R.x + R.w + b + f + over * 0.4, y);
+    ctx.lineTo(R.x + R.w + b + f + over, y + h);
+    ctx.lineTo(R.x - b - f - over, y + h);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#9fa2aa';
+    roundRect(ctx, R.x + R.w / 2 - R.w * 0.07, y, R.w * 0.14, h * 0.35, h * 0.15);
+    ctx.fill();
+  }
 }
 
 const cache = new Map<string, { bg: HTMLCanvasElement; border: HTMLCanvasElement }>();
