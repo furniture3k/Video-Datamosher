@@ -91,7 +91,7 @@ class Store {
     /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
     // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
     previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'wordBeats' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history' | 'batch',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'wordBeats' | 'fonts' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history' | 'batch',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
@@ -574,7 +574,7 @@ class Store {
     const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
     // preview copies are kept under the media item's id, not its file's
     const snapProxies = snapshots.list.flatMap((s) => s.project.media.filter((m) => m.source.kind === 'file').map((m) => proxyKey(m.id)));
-    const lutFiles = (this.project.luts ?? []).map((l) => 'lut:' + l.id);
+    const lutFiles = [...(this.project.luts ?? []).map((l) => 'lut:' + l.id), ...(this.project.fonts ?? []).map((f) => 'font:' + f.id)];
     // every saved project's media too, not just the open one's
     const others = (await loadIndex().catch(() => [])).flatMap((m) => m.files);
     return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapProxies];

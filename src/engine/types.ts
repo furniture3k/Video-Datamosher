@@ -91,6 +91,14 @@ export interface ChromaKey {
   spill: boolean;
 }
 
+/** A font added to the project: a file (kept with the media) and the name it's shown as. */
+export interface FontRef {
+  id: string;
+  name: string;
+  /** from Google Fonts: its family, so it can be fetched again where the file is missing */
+  google?: string;
+}
+
 /** An imported look-up table. */
 export interface LutRef {
   id: string;
@@ -329,6 +337,8 @@ export interface Project {
   beatSource?: string;
   /** imported LUTs (the files are kept with the media) */
   luts?: LutRef[];
+  /** added fonts (the files are kept with the media) */
+  fonts?: FontRef[];
 }
 
 export const defaultEncoder = (): EncoderSettings => ({

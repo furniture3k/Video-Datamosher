@@ -91,6 +91,8 @@ import * as previewMod from './lib/preview';
 import * as gradegl from './lib/gradegl';
 import * as lutMod from './engine/lut';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { text, preview: previewMod, gradegl, lut: lutMod });
+import * as fonts from './lib/fonts.svelte';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { fonts });
 import * as commands from './lib/commands.svelte';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { commands });
 import * as controlsMod from './lib/controls.svelte';

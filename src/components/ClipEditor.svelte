@@ -211,9 +211,11 @@ import { store } from '../lib/store.svelte';
         { value: 'serif', label: 'Serif' },
         { value: 'mono', label: 'Mono' },
         { value: 'impact', label: 'Impact' },
+        ...(store.project.fonts ?? []).map((f) => ({ value: `font:${f.id}`, label: f.name })),
+        { value: 'add', label: 'Add a font…' },
       ]}
-      help="Typeface."
-      onchange={setT('font')}
+      help="Typeface. Add a font for any Google Font or a font file of your own."
+      onchange={(v: string) => (v === 'add' ? (store.ui.dialog = 'fonts') : setT('font')(v as TextLayer['font']))}
     />
     <div class="row">
       <label class="row small grow">Colour <input type="color" value={text.color} oninput={(e) => setT('color')((e.target as HTMLInputElement).value)} /></label>

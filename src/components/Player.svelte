@@ -17,6 +17,7 @@
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawLayers } from '../lib/layers';
   import Gizmo from './Gizmo.svelte';
+  import { fontState } from '../lib/fonts.svelte';
   import { audioCtx } from '../lib/audioctx';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
@@ -159,6 +160,7 @@
     void store.project.media.length;
     void store.project.encoder.aspect;
     void lutState.loaded;
+    void fontState.loaded;
     if (!mosh && !store.ui.playing) untrack(drawEdit);
   });
   $effect(() => {

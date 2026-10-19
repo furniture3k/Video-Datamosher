@@ -19,6 +19,7 @@ import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project } from '../engine/types';
 import type { TextLayer } from '../engine/layers';
 import { anyLayerAt, drawLayers } from './layers';
+import { ensureFonts } from './fonts.svelte';
 import { Cancelled } from './ffmpeg';
 
 /** Pixel effects in the order they run: Subject Guards last, so what they keep clean stays clean. */
@@ -409,6 +410,7 @@ export class PostRunner {
   /** jpegs[i] is output frame offset + i */
   async run(jpegs: Uint8Array[], frames: Pick<Frame, 'src' | 'at'>[], offset: number, onProgress?: (p: number) => void, signal?: { cancelled: boolean }): Promise<Uint8Array[]> {
     if (!this.active || !jpegs.length) return jpegs;
+    if (this.layers.length) await ensureFonts(this.project);
     const out: Uint8Array[] = [];
     for (let i = 0; i < jpegs.length; i++) {
       if (signal?.cancelled) throw new Cancelled();

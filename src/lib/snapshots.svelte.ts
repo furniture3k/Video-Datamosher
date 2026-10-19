@@ -70,7 +70,7 @@ export async function deleteProjectSnapshots(projectId: string) {
 /** Media and LUT files referenced by snapshots (kept when unused files are cleaned up). */
 export async function snapshotFileIds(): Promise<string[]> {
   await loadSnapshots();
-  return snapshots.list.flatMap((s) => [...s.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId] : [])), ...(s.project.luts ?? []).map((l) => 'lut:' + l.id)]);
+  return snapshots.list.flatMap((s) => [...s.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId] : [])), ...(s.project.luts ?? []).map((l) => 'lut:' + l.id), ...(s.project.fonts ?? []).map((f) => 'font:' + f.id)]);
 }
 
 export async function takeSnapshot(name?: string, auto = false): Promise<Snapshot | null> {
