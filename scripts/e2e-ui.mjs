@@ -808,6 +808,50 @@ await step('blends, luma key and a phone mockup render, in the preview and the m
   }
 });
 
+await step('flipbook every 3 frames on a new track, and a whip pan at a cut', async () => {
+  if ((await S(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length)) < 2) {
+    await S(async () => {
+      const m = window.__moshpit;
+      const files = [];
+      for (const g of ['testsrc2', 'mandelbrot']) files.push(new File([await m.renderer.renderGenerator(g, 2, 320, 180, 24)], g + '.mp4', { type: 'video/mp4' }));
+      await m.media.addFiles(files);
+    });
+    await idle();
+  }
+  const before = await S(() => window.__moshpit.store.project.clips.map((c) => c.id));
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.seek(0);
+    st.ui.dialog = 'flipbook';
+  });
+  try {
+    // pick two pictures
+    const pics = page.locator('.modal .pic');
+    for (const i of [0, 1]) if ((await pics.nth(i).getAttribute('aria-pressed')) !== 'true') await pics.nth(i).click();
+    await page.locator('select[aria-label="Swap"]').selectOption('frames');
+    await page.locator('select[aria-label="Frames"]').selectOption('3');
+    await page.locator('select[aria-label="For"]').selectOption('1');
+    await page.getByRole('button', { name: 'Add flipbook' }).click();
+  } finally {
+    await S(() => (window.__moshpit.store.ui.dialog = null));
+  }
+  const added = await S((before) => JSON.parse(JSON.stringify(window.__moshpit.store.project.clips.filter((c) => !before.includes(c.id)))), before);
+  // 1 s at 24 fps, a new picture every 3 frames: 8 clips on one new track, end to end
+  if (added.length !== 8 || new Set(added.map((c) => c.track)).size !== 1 || added[0].track === 'v1') throw new Error('flipbook: ' + JSON.stringify(added.map((c) => [c.track, c.start])));
+  if (Math.abs(added[1].start - 0.125) > 1e-6 || new Set(added.map((c) => c.mediaId)).size !== 2) throw new Error('timing or pictures: ' + JSON.stringify(added.map((c) => [c.mediaId, c.start])));
+  await S((ids) => window.__moshpit.store.edit((p) => {
+    const track = p.clips.find((c) => c.id === ids[0]).track;
+    p.clips = p.clips.filter((c) => !ids.includes(c.id));
+    p.tracks = p.tracks.filter((t) => t.id !== track);
+  }), added.map((c) => c.id));
+  // a whip pan at the first cut renders
+  await S(() => window.__moshpit.edit.setTransition(window.__moshpit.timeline.layoutVideo(window.__moshpit.store.project)[1].clip.id, 'whipleft', { duration: 0.3 }));
+  await settle();
+  if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error('no frames with a whip pan');
+  await S(() => window.__moshpit.edit.setTransition(window.__moshpit.timeline.layoutVideo(window.__moshpit.store.project)[1].clip.id, null));
+  await settle();
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));

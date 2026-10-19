@@ -21,6 +21,14 @@ export const BLEND_TRANSITIONS: Record<string, { name: string; xfade: string; de
   slideright: { name: 'Slide right', xfade: 'slideright', description: 'Both shots slide right together.' },
   circleopen: { name: 'Circle open', xfade: 'circleopen', description: 'The next shot opens out from a growing circle in the middle.' },
   pixelize: { name: 'Pixelize', xfade: 'pixelize', description: 'The picture breaks into big pixels and re-forms as the next shot.' },
+  whipleft: { name: 'Whip left', xfade: 'smoothleft', description: 'A fast pan: both shots blur past to the left. Keep it short (0.2–0.4 s).' },
+  whipright: { name: 'Whip right', xfade: 'smoothright', description: 'A fast pan to the right.' },
+  zoomin: { name: 'Zoom through', xfade: 'zoomin', description: 'Rushes into the first shot and out into the next.' },
+  blurdissolve: { name: 'Blur dissolve', xfade: 'hblur', description: 'Both shots blur as they cross, then the next one sharpens.' },
+  clock: { name: 'Clock wipe', xfade: 'radial', description: 'The next shot sweeps round like a clock hand.' },
+  diagonal: { name: 'Diagonal wipe', xfade: 'diagtl', description: 'The next shot comes in from the top-left corner.' },
+  squeeze: { name: 'Squeeze', xfade: 'squeezeh', description: 'The first shot squeezes to a line, the next springs out of it.' },
+  circleclose: { name: 'Circle close', xfade: 'circleclose', description: 'The first shot shrinks away into a circle in the middle.' },
 };
 
 /** Transitions made by the mosh engine at a hard cut. */
