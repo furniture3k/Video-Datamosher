@@ -195,8 +195,11 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 > browser); letter and line spacing, outline and hollow letters, fit to width, copies and
 > ticker scroll, exits, strobe, boil, and the slam, stamp, drop and word-by-word entrances;
 > lengths in beats (chips that set seconds from the tempo); styles carry all of it; Words on
-> the beat. **M4b**: importing fonts and a Google Fonts picker, then gradient fills, mixed
-> styles per line and text on a path. Perspective tilt waits for the GPU compositor (M10).
+> the beat. **M4b (PR for `feat/m4b-fonts`)**: fonts kept with the project like LUTs (`font:` files,
+> `Project.fonts`), loaded with `FontFace` and awaited before exports and burned-in titles; a
+> Google Fonts picker (Google families are remembered by name and fetched again where the file
+> is missing) and font-file import. Gradient fills, mixed styles per line and text on a path
+> are still to do. Perspective tilt waits for the GPU compositor (M10).
 - **Fonts**: import .ttf/.otf/.woff2 as media items (`mime font/*`, kept like other media and
   loaded with the `FontFace` API), plus a Google Fonts picker (OFL) that downloads and stores the
   file with the project.
