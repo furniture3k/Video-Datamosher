@@ -8,7 +8,7 @@ import { store } from '../lib/store.svelte';
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
   import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead } from '../lib/edit';
-  import { hasKeys, keyedValue, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
+  import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
   import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick } from '../lib/motion.svelte';
@@ -81,10 +81,7 @@ import { store } from '../lib/store.svelte';
   const setKeyed = (k: KeyProp) => (v: number) => {
     if (!keyed(k)) return k === 'opacity' ? setC('opacity')(v) : setTf(k)(v);
     const t = local;
-    editKeys((x) => {
-      const pts = (x.keys![k] ?? []).filter(([kt]) => !near(kt));
-      x.keys = { ...x.keys, [k]: [...pts, [t, v]].sort((a, b) => a[0] - b[0]) as KeyPoint[] };
-    }, 'kf' + k + c!.id + Math.round(t * 1000));
+    editKeys((x) => (x.keys = { ...x.keys, [k]: withKeyAt(x.keys![k] ?? [], t, v, 0.5 / store.fps) }), 'kf' + k + c!.id + Math.round(t * 1000));
   };
   function toggleKey(k: KeyProp) {
     const t = local;
@@ -218,6 +215,7 @@ import { store } from '../lib/store.svelte';
     </div>
     <Field label="Horizontal" min={0} max={1} step={0.01} value={text.x} help="0 = left edge, 1 = right edge." onchange={setT('x')} />
     <Field label="Vertical" min={0} max={1} step={0.01} value={text.y} help="0 = top, 1 = bottom." onchange={setT('y')} />
+    <Field label="Rotation" unit="°" min={-180} max={180} step={0.5} value={text.rotate ?? 0} help="Turns the title clockwise (+) or anticlockwise (−) about its position. You can also drag the round handle above it on the player." onchange={setT('rotate')} />
     <Field
       type="select"
       label="Align"

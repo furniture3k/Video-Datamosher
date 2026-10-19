@@ -43,6 +43,9 @@ export function keysExpr(pts: KeyPoint[], T: string): string {
   return `if(lt(${T},${n6(p[0][0])}),${n6(p[0][1])},${e})`;
 }
 
+/** The keys with the one at time t set to v: a key within `tol` seconds of t is replaced. */
+export const withKeyAt = (pts: KeyPoint[], t: number, v: number, tol: number): KeyPoint[] => [...pts.filter(([kt]) => Math.abs(kt - t) >= tol), [t, v] as KeyPoint].sort((a, b) => a[0] - b[0]);
+
 /** A property's value at local time t: its keys if it has any, else `fallback`. */
 export const keyedValue = (keys: Keys | undefined, prop: KeyProp, t: number, fallback: number) => (keys?.[prop]?.length ? evalKeys(keys[prop]!, t) : fallback);
 export const hasKeys = (keys: Keys | undefined, props: readonly KeyProp[] = KEY_PROPS) => !!keys && props.some((k) => (keys[k]?.length ?? 0) > 0);
