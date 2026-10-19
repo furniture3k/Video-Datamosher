@@ -26,7 +26,8 @@
     (e) => (error = 'Could not listen to the music: ' + (e as Error).message),
   );
 
-  const cuts = $derived(f ? Math.max(1, Math.ceil((o.onBars ? f.downbeats : f.beats).length / Math.max(1, o.every))) : 0);
+  const cuts = $derived(f ? Math.max(1, Math.ceil((o.onBars ? f.downbeats.length : f.beats.length / Math.min(1, o.every)) / Math.max(1, o.every))) : 0);
+  const everyLabel = (n: number) => (n === 0.25 ? '¼ beat' : n === 0.5 ? '½ beat' : `${n} ${o.onBars ? (n === 1 ? 'bar' : 'bars') : n === 1 ? 'beat' : 'beats'}`);
   const drops = $derived(f && o.blooms ? findDrops(f).length : 0);
 
   function toggle(id: string) {
@@ -74,10 +75,14 @@
 
     <div class="grid">
       <label>Cut every
-        <select bind:value={o.every}>{#each [1, 2, 4, 8, 16] as n}<option value={n}>{n} {o.onBars ? (n === 1 ? 'bar' : 'bars') : n === 1 ? 'beat' : 'beats'}</option>{/each}</select>
+        <select bind:value={o.every}>{#each o.onBars ? [1, 2, 4, 8, 16] : [0.25, 0.5, 1, 2, 4, 8, 16] as n}<option value={n}>{everyLabel(n)}</option>{/each}</select>
       </label>
       <label>Count
-        <select value={o.onBars ? 'bars' : 'beats'} onchange={(e) => (o.onBars = (e.target as HTMLSelectElement).value === 'bars')}>
+        <select value={o.onBars ? 'bars' : 'beats'} onchange={(e) => {
+            o.onBars = (e.target as HTMLSelectElement).value === 'bars';
+            // there are no half bars
+            if (o.onBars && o.every < 1) o.every = 1;
+          }}>
           <option value="beats">Beats</option>
           <option value="bars">Bars</option>
         </select>
