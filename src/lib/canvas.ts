@@ -85,6 +85,8 @@ export function borderPlate(c: Canvas, W: number, H: number): HTMLCanvasElement 
 }
 
 const cache = new Map<string, { bg: HTMLCanvasElement; border: HTMLCanvasElement }>();
+/** the picture, copied aside while the card is drawn (kept: a new one every frame is slow) */
+let scratch: HTMLCanvasElement | null = null;
 
 /**
  * Turn the picture drawn on `ctx` (W×H) into the card on its backdrop, as exports draw it
@@ -98,8 +100,11 @@ export function drawCanvas(ctx: CanvasRenderingContext2D, c: Canvas, W: number, 
     plates = { bg: backdropPlate(c, W, H), border: borderPlate(c, W, H) };
     cache.set(key, plates);
   }
-  const pic = sheet(W, H);
-  pic.getContext('2d')!.drawImage(ctx.canvas, 0, 0);
+  if (!scratch || scratch.width !== W || scratch.height !== H) scratch = sheet(W, H);
+  const pic = scratch;
+  const px = pic.getContext('2d')!;
+  px.clearRect(0, 0, W, H);
+  px.drawImage(ctx.canvas, 0, 0);
   const R = cardRect(c, W, H);
   ctx.save();
   ctx.globalAlpha = 1;
