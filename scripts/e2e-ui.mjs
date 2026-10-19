@@ -623,6 +623,8 @@ await step('shapes: add a box from the toolbar, it is drawn and scales with the 
 });
 
 await step('canvas: set the picture in as a card, in the preview and the render, on desktop and a phone', async () => {
+  // something on the timeline, so there's a picture (when this step runs on its own)
+  await handleTitle('cvbg', { y: 0.5, size: 0.05 });
   await S(() => {
     const st = window.__moshpit.store;
     st.setPref('view', 'edit');
@@ -659,6 +661,7 @@ await step('canvas: set the picture in as a card, in the preview and the render,
     await page.locator('.sheet .done').click();
   } finally {
     await S(() => window.__moshpit.store.edit((p) => delete p.canvas));
+    await dropLayer('cvbg');
     await page.setViewportSize({ width: 1440, height: 900 });
     await S(() => window.__moshpit.store.setPref('view', 'auto'));
     await settle();
