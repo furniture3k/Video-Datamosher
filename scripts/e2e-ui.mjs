@@ -479,7 +479,7 @@ await step('styles: put a built-in look on a title, save your own, new titles ge
   });
   await page.locator('.chip', { hasText: 'Word slam' }).click();
   const l = await S(() => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.find((x) => x.id === 'sty'))));
-  if (l.font !== 'impact' || l.size !== 0.32 || l.color !== '#f3a8f0' || l.text !== 'STYLE') throw new Error('Word slam: ' + JSON.stringify(l));
+  if (l.font !== 'impact' || l.fit !== 'width' || l.color !== '#f3a8f0' || l.text !== 'STYLE') throw new Error('Word slam: ' + JSON.stringify(l));
   // a look of your own (the prompt answers "Test preset")
   await S(() => window.__moshpit.store.edit((p) => (p.layers.find((x) => x.id === 'sty').color = '#00ff88')));
   await page.getByRole('button', { name: 'Save style' }).click();

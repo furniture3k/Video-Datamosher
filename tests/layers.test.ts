@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { animProgress, drawOrder, isStill, layerAlpha, layerPos, layerRows, layersIn, nextRow, type TextLayer } from '../src/engine/layers';
+import { drawOrder, isStill, layerAlpha, layerPos, layerRows, layersIn, nextRow, type TextLayer } from '../src/engine/layers';
 import { migrate } from '../src/engine/migrate';
 
 const text = (o: Partial<TextLayer> = {}): TextLayer => ({ id: 't', kind: 'text', row: 'g1', text: 'Hi', start: 2, duration: 4, size: 0.1, color: '#fff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 1, moshed: false, ...o });
@@ -14,14 +14,6 @@ describe('layer timing', () => {
     expect(layerAlpha(l, 6)).toBe(0);
     // a fade longer than half the layer is capped
     expect(layerAlpha(text({ fade: 9 }), 4)).toBeCloseTo(1);
-  });
-
-  it('comes in over its animation time', () => {
-    expect(animProgress(text(), 2)).toBe(1);
-    const l = text({ anim: 'pop', animIn: 1 });
-    expect(animProgress(l, 2)).toBe(0);
-    expect(animProgress(l, 2.25)).toBeCloseTo(0.25);
-    expect(animProgress(l, 9)).toBe(1);
   });
 
   it('follows a tracked path, held at its ends', () => {

@@ -4,6 +4,8 @@ import { store } from '../lib/store.svelte';
   import Field from './Field.svelte';
   import { TEXT_ANIMS } from '../lib/text';
   import StylePicker from './StylePicker.svelte';
+  import TitleSettings from './TitleSettings.svelte';
+  import BeatChips from './BeatChips.svelte';
   ;
   import Icon from './Icon.svelte';
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
@@ -196,7 +198,9 @@ import { store } from '../lib/store.svelte';
     <textarea rows="3" value={text.text} oninput={(e) => setT('text')((e.target as HTMLTextAreaElement).value)} aria-label="Text"></textarea>
     <StylePicker title={text} />
     <Field label="Start" unit="s" min={0} max={Math.max(1, store.duration)} step={0.05} value={text.start} help="When the text appears." onchange={setT('start')} />
-    <Field label="Duration" unit="s" min={0.2} max={60} step={0.05} value={text.duration} help="How long it stays." onchange={setT('duration')} />
+    <Field label="Duration" unit="s" min={0.05} max={60} step={0.05} value={text.duration} help="How long it stays." onchange={setT('duration')}>
+      <BeatChips counts={[0.25, 0.5, 1, 2, 4]} onpick={setT('duration')} />
+    </Field>
     <Field label="Size" min={0.02} max={0.5} step={0.005} value={text.size} help="Letter height as a share of the frame height." onchange={setT('size')} />
     <Field
       type="select"
@@ -242,8 +246,11 @@ import { store } from '../lib/store.svelte';
       onchange={(v: TextAnim) => store.edit(() => (text.anim = v))}
     />
     {#if text.anim && text.anim !== 'none'}
-      <Field label="Takes" unit="s" min={0.1} max={4} step={0.05} value={text.animIn ?? 0.6} help="How long it takes to come in." onchange={(v: number) => store.edit(() => (text.animIn = v), 'animIn' + text.id)} />
+      <Field label="Takes" unit="s" min={0.05} max={4} step={0.05} value={text.animIn ?? 0.6} help="How long it takes to come in." onchange={(v: number) => store.edit(() => (text.animIn = v), 'animIn' + text.id)}>
+        <BeatChips onpick={(v) => store.edit(() => (text.animIn = v))} />
+      </Field>
     {/if}
+    <TitleSettings title={text} />
     <Field type="bool" label="Melt with the video" value={text.moshed} help="Burn the text into the footage before moshing, so it smears and melts with everything else. Off = clean text on top." onchange={(v: boolean) => store.edit(() => (text.moshed = v))} />
     <button class="ghost" onclick={() => deleteSelected()}><Icon name="trash" />Delete text</button>
   </div>

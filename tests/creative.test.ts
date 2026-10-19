@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { recipeFile, parseRecipeFile, applyRecipe, batchProject, recipePayload } from '../src/engine/recipe';
-import { TEXT_ANIMS } from '../src/lib/text';
 import { EFFECTS } from '../src/engine/effects';
 import { guideOf } from '../src/lib/effectguide';
 import { makeEffect } from '../src/engine/presets';
 import { newProject, type MediaItem, type Project } from '../src/engine/types';
-import { animProgress, type TextLayer } from '../src/engine/layers';
 import { makeClip, timelineDuration } from '../src/engine/timeline';
 
 const media = (id: string, duration: number, w = 1280, h = 720): MediaItem => ({ id, source: { kind: 'file', fileId: id, name: `${id}.mp4`, mime: 'video/mp4', isImage: false, ext: 'mp4' }, duration, width: w, height: h, fps: 24, hasAudio: false, hasVideo: true });
@@ -42,17 +40,6 @@ describe('recipe files', () => {
   });
 });
 
-describe('text animations', () => {
-  const tx = (o: Partial<TextLayer> = {}): TextLayer => ({ id: 't', kind: 'text', row: 'g1', text: 'Hi', start: 2, duration: 3, size: 0.1, color: '#fff', font: 'sans', bold: false, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, ...o });
-  it('comes in over animIn seconds (titles that melt too); titles without one are always in', () => {
-    expect(animProgress(tx({ anim: 'type', animIn: 1 }), 2.5)).toBeCloseTo(0.5, 5);
-    expect(animProgress(tx({ anim: 'type', animIn: 1 }), 1)).toBe(0);
-    expect(animProgress(tx({ anim: 'pop' }), 4)).toBe(1);
-    expect(animProgress(tx({ anim: 'glitch', moshed: true, animIn: 1 }), 2.1)).toBeCloseTo(0.1, 5);
-    expect(animProgress(tx(), 2)).toBe(1);
-    expect(TEXT_ANIMS.map((a) => a.value)).toEqual(['none', 'type', 'glitch', 'slide', 'pop']);
-  });
-});
 
 describe('new effects', () => {
   it('the retro looks and the map sources are listed, with a family and words for the picker', () => {

@@ -9,7 +9,7 @@ describe('title styles', () => {
     const l = title();
     const slam = BUILTIN_STYLES.find((s) => s.id === 'slam')!;
     applyStyle(l, slam);
-    expect([l.font, l.size, l.color, l.shadow, l.anim, l.animIn]).toEqual(['impact', 0.32, '#f3a8f0', false, 'pop', 0.12]);
+    expect([l.font, l.size, l.color, l.shadow, l.fit, l.anim]).toEqual(['impact', 0.32, '#f3a8f0', false, 'width', undefined]);
     expect([l.text, l.x, l.y, l.start, l.duration, l.fade, l.moshed]).toEqual(['Hi', 0.3, 0.7, 1, 2, 0.2, true]);
     expect(hasStyle(l, slam)).toBe(true);
   });
@@ -18,7 +18,7 @@ describe('title styles', () => {
     const l = title({ anim: 'glitch', animIn: 2, highlight: '#ff0' });
     const clean = BUILTIN_STYLES.find((s) => s.id === 'clean')!;
     applyStyle(l, clean);
-    expect(l.anim).toBe('none');
+    expect('anim' in l).toBe(false);
     expect('animIn' in l).toBe(false);
     expect('highlight' in l).toBe(false);
   });
@@ -38,6 +38,16 @@ describe('title styles', () => {
     expect(hasStyle(other, s)).toBe(true);
     expect(other.text).toBe('Other');
     expect(BUILTIN_STYLES.filter((b) => hasStyle(other, b))).toEqual([]);
+  });
+
+  it('carry outlines, strobes, copies and the rest, and take them off again', () => {
+    const l = title();
+    applyStyle(l, BUILTIN_STYLES.find((s) => s.id === 'ticker')!);
+    expect([l.repeat, l.scroll]).toEqual(['across', 0.25]);
+    applyStyle(l, BUILTIN_STYLES.find((s) => s.id === 'hollow')!);
+    expect([l.strokeOnly, l.repeat, l.scroll]).toEqual([true, undefined, undefined]);
+    const mine = styleOf({ ...l, strobe: 3 }, 'm', 'Mine');
+    expect(mine.strobe).toBe(3);
   });
 
   it('built-in styles have distinct ids and names', () => {

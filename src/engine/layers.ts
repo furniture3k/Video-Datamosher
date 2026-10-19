@@ -1,7 +1,7 @@
 // Layers: everything drawn over the picture. Titles today; shapes, stickers and more join as new
 // kinds. This file is the model and its timing (pure: no canvas), so it runs in tests and workers.
 
-export type TextAnim = 'none' | 'type' | 'glitch' | 'slide' | 'pop';
+export type TextAnim = 'none' | 'type' | 'words' | 'glitch' | 'slide' | 'pop' | 'slam' | 'stamp' | 'drop';
 
 export type LayerKind = 'text';
 
@@ -45,6 +45,29 @@ export interface TextLayer extends LayerBase {
   anim?: TextAnim;
   /** how long it takes to come in (s) */
   animIn?: number;
+  /** how it goes out (the entrance played backwards), and how long that takes (s) */
+  exit?: TextAnim;
+  animOut?: number;
+  /** extra space between letters, as a share of the letter size */
+  spacing?: number;
+  /** line spacing, as a multiple of the letter size (1.2 when missing) */
+  lineHeight?: number;
+  /** an outline: its width as a share of the letter size, its colour, and whether the letters are only outlined */
+  stroke?: number;
+  strokeColor?: string;
+  strokeOnly?: boolean;
+  /** 'width': as big as fits across the frame (`size` is then ignored) */
+  fit?: 'width';
+  /** copies side by side, one above another, or both, filling the frame */
+  repeat?: 'across' | 'down' | 'both';
+  /** space between copies, as a share of the letter size */
+  repeatGap?: number;
+  /** the copies scroll (a marquee): frame widths (or heights) a second, negative the other way */
+  scroll?: number;
+  /** blinks on and off this many times a second */
+  strobe?: number;
+  /** a hand-drawn wobble, 0..1 */
+  boil?: number;
 }
 
 export type Layer = TextLayer;
@@ -78,13 +101,6 @@ export function layerAlpha(l: Layer, t: number): number {
   return Math.max(0, Math.min(1, (t - l.start) / f, (layerEnd(l) - t) / f));
 }
 
-/** How far a layer is through coming in (0..1) at timeline time t. */
-export function animProgress(l: Layer, t: number): number {
-  if (!l.anim || l.anim === 'none') return 1;
-  const d = Math.max(0.05, l.animIn ?? 0.6);
-  return Math.max(0, Math.min(1, (t - l.start) / d));
-}
-
 /** Where a layer sits at timeline time t (following a tracked object if it has one). */
 export function layerPos(l: Layer, t: number): [number, number] {
   if (!l.follow?.length) return [l.x, l.y];
@@ -109,7 +125,8 @@ export const isEmpty = (l: Layer) => !l.text.trim();
  * True when the layer looks the same at every moment it's on screen apart from its fades, so a
  * single picture of it can stand in for every frame (fades are applied on top of that picture).
  */
-export const isStill = (l: Layer) => !l.follow?.length && (!l.anim || l.anim === 'none') && !(l.words?.length && l.highlight);
+export const isStill = (l: Layer) =>
+  !l.follow?.length && (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 
 /** Layers on screen at some point in [t0, t1). */
 export const layersIn = <L extends Pick<Layer, 'start' | 'duration'>>(layers: L[], t0: number, t1: number) => layers.filter((l) => l.start < t1 && layerEnd(l) > t0);
