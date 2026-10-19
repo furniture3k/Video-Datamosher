@@ -155,6 +155,15 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - **Done when** existing projects look identical and an animated title melts.
 
 ### M2: On-player manipulation (F3)
+
+> **Done (PR for `feat/m2-gizmo`).** Changes from this plan:
+> - Geometry and poses live in `src/engine/gizmo.ts` (one pure, tested module); the overlay is
+>   `src/components/Gizmo.svelte`.
+> - A main-track clip gets handles only once it's selected on the timeline, so clicks on the
+>   picture don't keep grabbing the background.
+> - Arrow-key nudging is left out: the arrow keys already step frames.
+> - Snapping covers the middle of the frame and the other things' anchors; safe-zone and edge
+>   snapping are left for later.
 - `Gizmo.svelte` as above, click-to-select on the picture, and in-place text editing. Also works
   for upper-track clips (writes `Clip.transform`/`keys`).
 - Phone: drag, pinch and twist on the picture; a double tap edits text.

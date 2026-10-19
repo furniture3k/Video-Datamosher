@@ -58,7 +58,7 @@ unlocks, where it goes in the code, and when it counts as done.
   `annotation`, `sticker`, `flipbook`, `mockup`, `group`. Shared fields: start/duration, transform
   + keys, opacity, blend, depth (F5), pin/follow (F4), style ref, `moshed`, enter/exit animation,
   beat timing. Migrate old projects (`src/engine/migrate.ts`).
-- [ ] **F3. On-player direct manipulation.** Selection box with handles: drag to move, corner to
+- [x] **F3. On-player direct manipulation.** *(M2: `src/components/Gizmo.svelte`, geometry and poses in `src/engine/gizmo.ts`. Arrow-key nudging is left for later: the arrow keys step frames.)* Selection box with handles: drag to move, corner to
   scale, top handle to rotate; pinch/twist on touch; snapping guides (centre, thirds, safe zones,
   other layers); double-tap text to edit in place. Applies to layers *and* upper-track clips
   (`Clip.transform`). Lives in `src/components/Player.svelte` (which today only has split-compare,
