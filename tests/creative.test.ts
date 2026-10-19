@@ -42,6 +42,15 @@ describe('recipe files', () => {
 
 
 describe('new effects', () => {
+  it('the film and print looks are listed, each with words for the picker and something for the Chaos dial', () => {
+    for (const t of ['threshold', 'halftone', 'lineArt', 'glow', 'vignette', 'lightLeak', 'gateWeave', 'dvTape', 'trails', 'hold']) {
+      expect(EFFECTS[t]?.kind, t).toBe('pixel');
+      expect(guideOf(t).family, t).toBe('film');
+      expect(guideOf(t).looks.length, t).toBeGreaterThan(10);
+      expect(EFFECTS[t].params.some((p) => 'intensity' in p && p.intensity), t).toBe(true);
+    }
+  });
+
   it('the retro looks and the map sources are listed, with a family and words for the picker', () => {
     for (const t of ['vhs', 'crt', 'grain', 'posterize']) {
       expect(EFFECTS[t]?.kind).toBe('pixel');

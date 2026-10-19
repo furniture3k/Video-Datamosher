@@ -225,6 +225,59 @@ export const PRESETS: Preset[] = [
       { type: 'pixelSort', start: 0, end: 1, params: { low: 0.3, high: 0.9 } },
     ],
   },
+  {
+    id: 'cinefilm',
+    name: 'Cinematic Film',
+    description: 'A clean melt with a film look on top: halation round the highlights, a soft vignette, grain and a little gate weave.',
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'glow', start: 0, end: 1, params: { thr: 0.65, radius: 22, amount: 0.8, halation: 0.7 } },
+      { type: 'vignette', start: 0, end: 1, params: { amount: 0.5, reach: 0.4, soft: 0.6 } },
+      { type: 'grain', start: 0, end: 1, params: { amount: 0.25, grain: 1.5, fade: 0.25 } },
+      { type: 'gateWeave', start: 0, end: 1, params: { amount: 0.6, flicker: 0.2, dust: 0.1 } },
+    ],
+  },
+  {
+    id: 'eightmm',
+    name: 'Degraded 8 mm',
+    description: 'Choppy, held motion (each picture held for two frames), heavy grain, flicker, dust and light leaks.',
+    effects: [
+      { type: 'hold', start: 0, end: 1, params: { every: 2 } },
+      { type: 'grain', start: 0, end: 1, params: { amount: 0.55, grain: 2.2, colour: true, fade: 0.4 } },
+      { type: 'gateWeave', start: 0, end: 1, params: { amount: 1.6, flicker: 0.7, dust: 0.6 } },
+      { type: 'lightLeak', start: 0, end: 1, params: { amount: 0.7, speed: 1.2, hue: 0.15 } },
+      { type: 'vignette', start: 0, end: 1, params: { amount: 0.7, reach: 0.5, soft: 0.5 } },
+    ],
+  },
+  {
+    id: 'riso',
+    name: 'Risograph',
+    description: 'A melt printed in red ink on cream paper, dithered.',
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'threshold', start: 0, end: 1, params: { level: 0.5, soft: 0.02, dither: true, ink: 'red' } },
+    ],
+  },
+  {
+    id: 'neonlines',
+    name: 'Neon Lines',
+    description: 'Only the outlines, glowing lime on black, with light trails as things move.',
+    effects: [
+      { type: 'lineArt', start: 0, end: 1, params: { mode: 'neon', ink: 'lime', strength: 4 } },
+      { type: 'trails', start: 0, end: 1, params: { decay: 0.85 } },
+      { type: 'glow', start: 0, end: 1, params: { thr: 0.3, radius: 14, amount: 1.2 } },
+    ],
+  },
+  {
+    id: 'dvcam',
+    name: '2000s Camcorder',
+    description: 'DV tape colour and edges, a gentle bloom and a melt.',
+    effects: [
+      { type: 'kill', start: 0, end: 1 },
+      { type: 'dvTape', start: 0, end: 1, params: { amount: 0.8, res: 1.5, lines: true } },
+      { type: 'glow', start: 0, end: 1, params: { thr: 0.75, radius: 10, amount: 0.6 } },
+    ],
+  },
 ];
 
 function resolvePos(p: Pos, total: number, cuts: number[]): number {

@@ -76,12 +76,12 @@ await step('demo', async () => {
   await settle();
 });
 
-const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'mvedit', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend', 'flowPaint', 'script', 'vhs', 'crt', 'grain', 'posterize', 'mask']);
+const effectTypes = await S(() => ['kill', 'bloom', 'splice', 'stutter', 'shuffle', 'reverse', 'echo', 'drop', 'glitch', 'sequence', 'databend', 'mvedit', 'vectorWarp', 'chroma', 'pixelSort', 'rawbend', 'flowPaint', 'script', 'vhs', 'crt', 'grain', 'posterize', 'threshold', 'halftone', 'lineArt', 'glow', 'vignette', 'lightLeak', 'gateWeave', 'dvTape', 'trails', 'hold', 'mask']);
 for (const t of effectTypes)
   await step(`effect ${t} renders (UI add + delete)`, async () => {
     await S(() => window.__moshpit.store.set({ ...JSON.parse(JSON.stringify(window.__moshpit.store.project)), effects: [] }));
     await page.keyboard.press('Shift+A');
-    const name = { kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', script: 'Script', vhs: 'VHS', crt: 'CRT', grain: 'Film Grain', posterize: 'Posterise', mask: 'Subject Guard' }[t];
+    const name = { kill: 'Keyframe Killer', bloom: 'Bloom', splice: 'Motion Transfer', stutter: 'Stutter Loop', shuffle: 'Shuffle', reverse: 'Reverse Motion', echo: 'Echo', drop: 'Frame Drop', glitch: 'Byte Glitch', vectorWarp: 'Vector Warp', chroma: 'Chroma Drift', pixelSort: 'Pixel Sort', sequence: 'Frame Sequencer', databend: 'Databend', rawbend: 'Raw Bend', mvedit: 'Vector Edit', flowPaint: 'Flow Paint', script: 'Script', vhs: 'VHS', crt: 'CRT', grain: 'Film Grain', posterize: 'Posterise', threshold: '1-bit', halftone: 'Halftone', lineArt: 'Line Art', glow: 'Glow', vignette: 'Vignette', lightLeak: 'Light Leak', gateWeave: 'Gate Weave', dvTape: 'DV Tape', trails: 'Light Trails', hold: 'Step Print', mask: 'Subject Guard' }[t];
     // Simple mode lists the essentials; searching finds every effect
     await page.locator('.modal input[aria-label="Search effects"]').fill(name);
     await page.locator('.modal .item').filter({ hasText: name }).first().click();

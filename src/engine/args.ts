@@ -222,6 +222,8 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   if (c.freeze) f.push('trim=end_frame=1', 'loop=loop=-1:size=1', `setpts=N/${fps}/TB`);
   else if (ramp) f.push(`setpts='${rampSetpts(ramp, c.out - c.in)}'`);
   else if (c.speed !== 1) f.push(`setpts=PTS/${r3(c.speed)}`);
+  // step print: drop to a few pictures a second, each held until the next
+  if (c.stepFps && c.stepFps < fps && !c.freeze) f.push(`fps=${c.stepFps}`);
   f.push(`fps=${fps}`);
   if (rgba) f.push('format=rgba');
   if (layer && c.key) f.push(...keyFilters(c.key));
@@ -547,7 +549,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
 /** Everything about a clip's picture besides its timing. */
 function clipLook(c: Clip) {
   // everything clipGraph draws from, so a change re-prepares the segment
-  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab };
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab, sp: c.stepFps };
 }
 
 /**

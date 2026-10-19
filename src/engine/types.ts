@@ -182,6 +182,8 @@ export interface Clip {
   label?: string;
   /** freeze frame: shows the picture at `in` for out - in seconds */
   freeze?: boolean;
+  /** step print: the picture changes only this many times a second (choppy, like 8 or 12 fps film) */
+  stepFps?: number;
   /** picture */
   opacity?: number;
   blend?: BlendMode;

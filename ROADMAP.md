@@ -164,14 +164,14 @@ unlocks, where it goes in the code, and when it counts as done.
 ## Phase 4: Looks, motion and stickers (R1, R5, R6, R2)
 
 ### New picture effects (WebGL, alongside `src/lib/post.ts` effects)
-- [ ] **Threshold / 1-bit** with dither choice; **halftone** (dots, lines, size, angle, two-colour
+- [x] **Threshold / 1-bit** *(M11: 1-bit with six inks, Halftone in black or colour; line and two-colour halftone screens are still to do)* with dither choice; **halftone** (dots, lines, size, angle, two-colour
   print) (R1, R2).
-- [ ] **Line art / edges** (ink outline of the picture), which pairs with luma key (R2).
-- [ ] **Light trails / long exposure** (frame blending with decay) (R6).
-- [ ] **Halation, bloom glow, vignette, light leaks, gate weave** (R5, R6).
-- [ ] **DV / camcorder crush**: crushed blacks, clipped highlights, oversaturated reds, low-res
+- [x] **Line art / edges** *(M11)* (ink outline of the picture), which pairs with luma key (R2).
+- [x] **Light trails / long exposure** *(M11)* (frame blending with decay) (R6).
+- [x] **Halation, bloom glow, vignette, light leaks, gate weave** *(M11: Glow with halation, Vignette, Light Leak, Gate Weave with flicker and dust)* (R5, R6).
+- [x] **DV / camcorder crush** *(M11: DV Tape)*: crushed blacks, clipped highlights, oversaturated reds, low-res
   softness, interlace (R6). The existing VHS effect is a different texture.
-- [ ] **Frame-rate look (step print)**: hold frames to 8 / 12 / 15 / 18 fps per clip, track or
+- [x] **Frame-rate look (step print)** *(M11: per clip in FFmpeg and the preview, and a Step Print effect on the finished mosh; per track is still to do)*: hold frames to 8 / 12 / 15 / 18 fps per clip, track or
   adjustment layer, optionally on twos with jitter (R6 ~12 fps, R4 ~16 fps).
 
 ### Transitions

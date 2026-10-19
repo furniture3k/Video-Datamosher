@@ -246,4 +246,189 @@ export const posterize: PixelEffectDef = {
   ],
 };
 
-export const pixelEffects: PixelEffectDef[] = [vectorWarp, chromaDrift, pixelSort, rawBend, flowPaint, vhs, crt, grain, posterize, subjectGuard];
+
+// ---------- film and print looks (shaders in src/lib/looks.ts) ----------
+
+const MIX = { key: 'mix', label: 'Mix', type: 'number' as const, min: 0, max: 1, step: 0.01, default: 1, help: 'Dry/wet mix.' };
+
+export const threshold: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'threshold',
+  name: '1-bit',
+  icon: '1BT',
+  color: '#e8e8e8',
+  description: 'Every pixel becomes ink or paper: a hard photocopy or risograph look, in black and white or a coloured ink.',
+  params: [
+    { key: 'level', label: 'Level', type: 'number', min: 0.05, max: 0.95, step: 0.01, default: 0.5, intensity: 'up', help: 'How bright a pixel must be to be paper (higher: more ink).' },
+    { key: 'soft', label: 'Softness', type: 'number', min: 0, max: 0.3, step: 0.005, default: 0.02, help: 'A soft edge between ink and paper.' },
+    { key: 'dither', label: 'Dither', type: 'bool', default: false, help: 'A crosshatch pattern for the in-between greys.' },
+    {
+      key: 'ink',
+      label: 'Ink',
+      type: 'select',
+      default: 'bw',
+      options: [
+        { value: 'bw', label: 'Black on paper' },
+        { value: 'red', label: 'Red ink' },
+        { value: 'blue', label: 'Blue ink' },
+        { value: 'lime', label: 'Black on lime' },
+        { value: 'pink', label: 'Plum on pink' },
+        { value: 'night', label: 'White on black' },
+      ],
+      help: 'The two colours.',
+    },
+    MIX,
+  ],
+};
+
+export const halftone: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'halftone',
+  name: 'Halftone',
+  icon: 'HTN',
+  color: '#f0c0d0',
+  description: 'The picture printed as dots on a turned grid, bigger where it is darker: newspaper print or pop art.',
+  params: [
+    { key: 'cell', label: 'Dot size', type: 'number', min: 3, max: 40, step: 0.5, default: 9, unit: 'px', intensity: 'up', help: 'Spacing of the dots.' },
+    { key: 'angle', label: 'Angle', type: 'number', min: 0, max: 90, step: 1, default: 45, unit: '°', help: 'How the grid of dots is turned.' },
+    { key: 'mono', label: 'Black dots', type: 'bool', default: false, help: 'Black dots (newspaper) instead of dots in the picture\'s colours (pop art).' },
+    MIX,
+  ],
+};
+
+export const lineArt: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'lineArt',
+  name: 'Line Art',
+  icon: 'LIN',
+  color: '#c8d8f0',
+  description: 'Only the edges are left, as ink lines on paper, glowing lines on black, or lines drawn over the picture.',
+  params: [
+    { key: 'thick', label: 'Line width', type: 'number', min: 0.5, max: 4, step: 0.1, default: 1, unit: 'px', help: 'How thick the lines are.' },
+    { key: 'strength', label: 'Strength', type: 'number', min: 0.5, max: 10, step: 0.1, default: 3, intensity: 'up', help: 'How faint an edge still makes a line.' },
+    {
+      key: 'mode',
+      label: 'Style',
+      type: 'select',
+      default: 'paper',
+      options: [
+        { value: 'paper', label: 'Ink on paper' },
+        { value: 'neon', label: 'Light on black' },
+        { value: 'over', label: 'Over the picture' },
+      ],
+      help: 'Where the lines go.',
+    },
+    {
+      key: 'ink',
+      label: 'Colour',
+      type: 'select',
+      default: 'black',
+      options: [
+        { value: 'black', label: 'Black' },
+        { value: 'white', label: 'White' },
+        { value: 'red', label: 'Red' },
+        { value: 'blue', label: 'Blue' },
+        { value: 'lime', label: 'Lime' },
+      ],
+      help: 'Colour of the lines (light on black looks best in white or lime).',
+    },
+    MIX,
+  ],
+};
+
+export const glow: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'glow',
+  name: 'Glow',
+  icon: 'GLW',
+  color: '#ffd59a',
+  description: 'Bright parts bloom into soft light. Halation tints the bloom red, like light bouncing inside old film.',
+  params: [
+    { key: 'thr', label: 'Threshold', type: 'number', min: 0, max: 0.95, step: 0.01, default: 0.6, intensity: 'down', help: 'How bright a part must be to glow.' },
+    { key: 'radius', label: 'Radius', type: 'number', min: 2, max: 80, step: 1, default: 18, unit: 'px', intensity: 'up', help: 'How far the glow spreads.' },
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 3, step: 0.05, default: 1, intensity: 'up', help: 'How strong the glow is.' },
+    { key: 'halation', label: 'Halation', type: 'number', min: 0, max: 1, step: 0.01, default: 0, help: 'Tints the glow red-orange, like film.' },
+  ],
+};
+
+export const vignette: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'vignette',
+  name: 'Vignette',
+  icon: 'VIG',
+  color: '#9a9aa8',
+  description: 'The corners darken (or fade to white), drawing the eye to the middle.',
+  params: [
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 0.6, intensity: 'up', help: 'How dark the corners get.' },
+    { key: 'reach', label: 'Reach', type: 'number', min: 0, max: 1, step: 0.01, default: 0.45, help: 'How far in from the corners it starts.' },
+    { key: 'soft', label: 'Softness', type: 'number', min: 0, max: 1, step: 0.01, default: 0.5, help: 'How gradual it is.' },
+    { key: 'white', label: 'White', type: 'bool', default: false, help: 'Fade to white instead of black (a dreamy look).' },
+  ],
+};
+
+export const lightLeak: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'lightLeak',
+  name: 'Light Leak',
+  icon: 'LKS',
+  color: '#ffab6b',
+  description: 'Warm glows drift in from the edges, like light getting into an old camera.',
+  params: [
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1.5, step: 0.01, default: 0.6, intensity: 'up', help: 'How bright the leaks are.' },
+    { key: 'speed', label: 'Drift', type: 'number', min: 0, max: 4, step: 0.05, default: 1, intensity: 'up', help: 'How fast they move.' },
+    { key: 'hue', label: 'Colour', type: 'number', min: 0, max: 1, step: 0.01, default: 0.2, help: 'From red-orange to golden (and cool blue at the top).' },
+  ],
+};
+
+export const gateWeave: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'gateWeave',
+  name: 'Gate Weave',
+  icon: 'GTE',
+  color: '#c4b59a',
+  description: 'The picture jitters and drifts like film in a projector, with flicker and dust.',
+  params: [
+    { key: 'amount', label: 'Weave', type: 'number', min: 0, max: 4, step: 0.05, default: 1, unit: 'px', intensity: 'up', help: 'How far it wanders.' },
+    { key: 'flicker', label: 'Flicker', type: 'number', min: 0, max: 1, step: 0.01, default: 0.4, intensity: 'up', help: 'Brightness that changes frame to frame.' },
+    { key: 'dust', label: 'Dust', type: 'number', min: 0, max: 1, step: 0.01, default: 0.3, intensity: 'up', help: 'Specks of dust on the film.' },
+  ],
+};
+
+export const dvTape: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'dvTape',
+  name: 'DV Tape',
+  icon: 'DV',
+  color: '#a8c8a0',
+  description: 'A 2000s camcorder: colour in blocks, over-sharpened edges, interlaced lines and a cheap cast.',
+  params: [
+    { key: 'amount', label: 'Amount', type: 'number', min: 0, max: 1, step: 0.01, default: 0.7, intensity: 'up', help: 'How strong the look is.' },
+    { key: 'res', label: 'Pixel size', type: 'number', min: 1, max: 4, step: 0.25, default: 1.5, unit: 'px', intensity: 'up', help: 'Lower resolution (bigger pixels).' },
+    { key: 'lines', label: 'Interlaced', type: 'bool', default: true, help: 'Every other line a little out of step.' },
+  ],
+};
+
+export const trails: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'trails',
+  name: 'Light Trails',
+  icon: 'TRL',
+  color: '#b0f0ff',
+  description: 'Bright things leave trails that fade away, like a long exposure.',
+  params: [
+    { key: 'decay', label: 'Length', type: 'number', min: 0.5, max: 0.99, step: 0.01, default: 0.88, intensity: 'up', help: 'How long the trails last.' },
+    { key: 'add', label: 'Glowing', type: 'bool', default: false, help: 'Trails add light instead of keeping the brightest.' },
+  ],
+};
+
+export const hold: PixelEffectDef = {
+  kind: 'pixel',
+  type: 'hold',
+  name: 'Step Print',
+  icon: 'STP',
+  color: '#d0b8f0',
+  description: 'Holds each picture for a few frames: the choppy, low-frame-rate look of step-printed film and anime.',
+  params: [{ key: 'every', label: 'Hold for', type: 'int', min: 2, max: 8, default: 2, unit: 'frames', intensity: 'up', help: 'How many frames each picture is held (2: like 12 fps at 24).' }],
+};
+
+export const pixelEffects: PixelEffectDef[] = [vectorWarp, chromaDrift, pixelSort, rawBend, flowPaint, vhs, crt, grain, posterize, threshold, halftone, lineArt, glow, vignette, lightLeak, gateWeave, dvTape, trails, hold, subjectGuard];

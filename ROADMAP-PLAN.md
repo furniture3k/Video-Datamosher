@@ -332,6 +332,15 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - Out of scope: full 3D camera solve (left on the roadmap as a stretch goal).
 
 ### M11: Looks pack (P4). Unlocks R5, R6, R1 halftone
+
+> **Done (PR for `feat/m11-looks`, built after M7: M8–M10 need model and device work first).**
+> Ten pixel effects in a new "Film and print" family (`src/lib/looks.ts` shaders, run by
+> `PostProcessor`): 1-bit (six inks, optional dither), Halftone, Line Art (ink on paper, light
+> on black, over the picture), Glow with halation, Vignette, Light Leak, Gate Weave (with
+> flicker and dust), DV Tape, Light Trails and Step Print (both remember earlier frames, kept
+> per effect and started afresh when the frames jump). Step print per clip (`Clip.stepFps`:
+> `fps=N,fps=project` in the clip graph, the preview's time held to the same steps). Five film
+> presets (Cinematic Film, Degraded 8 mm, Risograph, Neon Lines, 2000s Camcorder).
 - **New pixel effects** registered like `RETRO` in `src/lib/retro.ts`/`post.ts` and listed in
   `src/engine/effects` and the Add-effect guide (`src/lib/effectguide.ts`): threshold/1-bit,
   halftone, line art, light trails (a feedback target kept between chunks in `PostRunner`, like
