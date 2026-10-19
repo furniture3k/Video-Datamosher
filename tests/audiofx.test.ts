@@ -4,6 +4,7 @@ import { applyBitstream, type Prepared } from '../src/engine/mosh';
 import { makeEffect } from '../src/engine/presets';
 import { audioKey, audioKeysNeeded, bakeAudio, usesBeats, type MoshAudio } from '../src/engine/audiofx';
 import { evalAutomation, paramAt } from '../src/engine/automation';
+import { subdivide } from '../src/engine/beattime';
 import { beatEdit, defaultBeatEdit, findDrops } from '../src/engine/beatedit';
 import { withChaos } from '../src/engine/chaos';
 import type { AudioFeatures } from '../src/engine/beats';
@@ -137,6 +138,16 @@ describe('auto-edit to the beat', () => {
     expect(placed.every((pl) => pl.clip.muted)).toBe(true);
     // the music clip is untouched
     expect(p.clips.find((c) => c.id === 'm')).toBeTruthy();
+  });
+  it('cuts on quarter beats: four pieces to a beat', () => {
+    const f = song(400);
+    const p = beatEdit(base(), f, { ...defaultBeatEdit(['a', 'b']), every: 0.25, melts: 'none', blooms: false });
+    const starts = layoutVideo(p).map((pl) => Math.round(pl.start * FPS));
+    const want = [0, ...subdivide(f.beats, 4).map(Math.round).filter((b) => b > 0 && b < 400)];
+    expect(starts).toEqual(want);
+    // between two beats there are three more cuts
+    const [b0, b1] = f.beats.slice(1, 3);
+    expect(starts.filter((s) => s > b0 && s < b1).length).toBe(3);
   });
   it('melts on bars, blooms on drops', () => {
     const f = song(400);

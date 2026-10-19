@@ -3,7 +3,7 @@
 import { formatSeconds } from '../engine/eta';
   import { compoundOf } from '../engine/compound';
   import { makeCompound, openCompound } from '../lib/compound.svelte';
-  import { beatInfo, refreshBeats, beatInputs } from '../lib/beatinfo.svelte';
+  import { beatInfo, refreshBeats, beatInputs, gridTimes } from '../lib/beatinfo.svelte';
   import { usesBeats } from '../engine/audiofx';
   import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
@@ -94,7 +94,7 @@ import { formatSeconds } from '../engine/eta';
     for (const c of store.project.clips) if (c.track !== VIDEO_TRACK && c.id !== exclude) t.push(c.start, c.start + clipLen(c));
     for (const tx of store.project.layers) if (tx.id !== exclude) t.push(tx.start, tx.start + tx.duration);
     for (const m of markers) t.push(m.t);
-    if (beatInfo.grid) t.push(...beatInfo.beats);
+    if (beatInfo.grid) t.push(...gridTimes());
     if (store.ui.inPoint !== null) t.push(store.ui.inPoint);
     if (store.ui.outPoint !== null) t.push(store.ui.outPoint);
     return t;
@@ -302,7 +302,7 @@ import { formatSeconds } from '../engine/eta';
 
   function snapFrame(f: number, ev: PointerEvent, id: string) {
     if (!store.ui.snap || ev.shiftKey) return f;
-    const cands = [0, totalF, Math.round(store.ui.time * fps), ...(beatInfo.grid ? beatInfo.beats.map((b) => Math.round(b * fps)) : []), ...store.cuts, ...store.project.encoder.keyMarkers, ...store.project.effects.flatMap((e) => (e.id === id ? [] : [e.start, e.end]))];
+    const cands = [0, totalF, Math.round(store.ui.time * fps), ...(beatInfo.grid ? gridTimes().map((b) => Math.round(b * fps)) : []), ...store.cuts, ...store.project.encoder.keyMarkers, ...store.project.effects.flatMap((e) => (e.id === id ? [] : [e.start, e.end]))];
     const tol = 8 / (pps / fps);
     let best = f;
     let bd = tol;
@@ -801,6 +801,12 @@ import { formatSeconds } from '../engine/eta';
                 <div class="beat" class:down={down.has(Math.round(b * 1000))} style="left:{x(b)}px" title={i === 0 ? `${Math.round(beatInfo.bpm)} BPM` : undefined}></div>
               {/if}
             {/each}
+            <!-- halves or quarters, when the grid has them and there's room to see them -->
+            {#if beatInfo.div > 1 && gap / beatInfo.div >= 4}
+              {#each gridTimes().filter((_, i) => i % beatInfo.div !== 0) as b}
+                <div class="beat sub" style="left:{x(b)}px"></div>
+              {/each}
+            {/if}
           {/if}
           {#if store.ui.inPoint !== null || store.ui.outPoint !== null}
             {@const a = store.ui.inPoint ?? 0}
@@ -1334,6 +1340,10 @@ import { formatSeconds } from '../engine/eta';
   .beat.down {
     height: 9px;
     opacity: 0.95;
+  }
+  .beat.sub {
+    height: 3px;
+    opacity: 0.35;
   }
   .g-head {
     color: var(--text-2);

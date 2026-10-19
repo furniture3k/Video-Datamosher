@@ -1,6 +1,7 @@
 // Auto-edit to the beat: cut a set of clips onto the music's beat grid, with melts on the
 // downbeats and blooms on the drops.
 import type { AudioFeatures } from './beats';
+import { subdivide } from './beattime';
 import { makeClip } from './timeline';
 import { makeEffect, uid } from './presets';
 import { makeRng } from './rng';
@@ -9,7 +10,7 @@ import { CLIP_AUDIO, VIDEO_TRACK, type Clip, type MediaItem, type Project, type 
 export interface BeatEditOptions {
   /** media to cut between, in order */
   media: string[];
-  /** a cut every this many beats */
+  /** a cut every this many beats (or bars); ½ and ¼ cut between beats */
   every: number;
   /** cut on bars (downbeats) instead of beats */
   onBars: boolean;
@@ -57,14 +58,15 @@ export function beatEdit(project: Project, f: AudioFeatures, o: BeatEditOptions)
   const fps = f.fps;
   const media = o.media.map((id) => project.media.find((m) => m.id === id)).filter((m): m is MediaItem => !!m && m.hasVideo);
   if (!media.length) throw new Error('Pick at least one video or picture to cut between.');
-  const grid = o.onBars ? f.downbeats : f.beats;
-  if (grid.length < 2) throw new Error('No beat found in the music.');
+  if ((o.onBars ? f.downbeats : f.beats).length < 2) throw new Error('No beat found in the music.');
+  // halves and quarters of a beat: cut on every point of the finer grid
+  const split = !o.onBars && o.every < 1 ? Math.round(1 / o.every) : 1;
+  const grid = o.onBars ? f.downbeats : subdivide(f.beats, split).map(Math.round);
   const every = Math.max(1, Math.round(o.every));
   const bars = new Set(f.downbeats);
-  // cut points in frames: the start, then every Nth beat, to the end of the music
-  const cuts = [0, ...grid.filter((_, i) => i % every === 0).filter((b) => b > 0)];
   const end = f.frames;
-  if (cuts.at(-1)! >= end) cuts.pop();
+  // cut points in frames: the start, then every Nth point of the grid, to the end of the music
+  const cuts = [0, ...grid.filter((_, i) => i % every === 0).filter((b) => b > 0 && b < end)];
   const rng = makeRng(o.seed);
   // where each piece of footage has got to, so cuts move through it instead of repeating
   const cursor = new Map<string, number>();

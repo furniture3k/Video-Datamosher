@@ -6,7 +6,7 @@
   import { audioSources } from '../engine/timeline';
   import { CLIP_AUDIO, type AudioSettings, type Track } from '../engine/types';
   import { audioKey } from '../engine/audiofx';
-  import { beatInfo, refreshBeats, setBeatGrid } from '../lib/beatinfo.svelte';
+  import { beatInfo, refreshBeats, setBeatGrid, setBeatDiv } from '../lib/beatinfo.svelte';
   const a = $derived(store.project.audio);
   const set = <K extends keyof AudioSettings>(k: K) => (v: AudioSettings[K]) => store.edit((p) => (p.audio[k] = v), 'au' + k);
   const tracks = $derived(store.project.tracks.filter((t) => t.kind === 'audio'));
@@ -39,6 +39,20 @@
       }}
     />
     <Field type="bool" label="Beat grid" value={beatInfo.grid} help="Show the beats on the timeline ruler (the first beat of each bar taller). Clips, marks and effect bars snap to them." onchange={(v: boolean) => setBeatGrid(v)} />
+    {#if beatInfo.grid}
+      <Field
+        type="select"
+        label="Grid"
+        value={String(beatInfo.div)}
+        options={[
+          { value: '1', label: 'Beats' },
+          { value: '2', label: '½ beats' },
+          { value: '4', label: '¼ beats' },
+        ]}
+        help="What the grid marks and snaps to: every beat, or halves or quarters of a beat for faster cuts."
+        onchange={(v: string) => setBeatDiv(Number(v))}
+      />
+    {/if}
     <button onclick={() => (store.ui.dialog = 'beatEdit')} disabled={!srcs.length || !store.project.media.some((m) => m.hasVideo)}><Icon name="music" />Auto-edit to the beat…</button>
   </div>
 
