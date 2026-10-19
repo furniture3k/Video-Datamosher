@@ -13,7 +13,8 @@
   import { drawOrder, isEmpty, layerEnd } from '../engine/layers';
   import { VIDEO_TRACK, clipOn, transformOf, type Clip, type MediaItem } from '../engine/types';
 
-  let { W, H, box }: { W: number; H: number; box: { left: number; top: number; width: number; height: number } } = $props();
+  /** compact: the phone player, where a tap on the picture plays and pauses */
+  let { W, H, box, compact = false }: { W: number; H: number; box: { left: number; top: number; width: number; height: number }; compact?: boolean } = $props();
 
   interface Item {
     id: string;
@@ -65,6 +66,8 @@
     pinch0?: [Pt, Pt];
     /** the second click of a double click on a title */
     second: boolean;
+    /** it was already picked when this began */
+    wasPicked: boolean;
   } | null = null;
   /** the last click on a title (for double clicks and taps) */
   let lastTap: { id: string; at: number; p: Pt } | null = null;
@@ -94,7 +97,8 @@
     e.stopPropagation();
     e.preventDefault();
     if (e.shiftKey && mode === 'move') return store.selectClip(id, true);
-    if (!(store.ui.selectedClips.length === 1 && store.ui.selectedClips[0] === id)) store.selectClip(id);
+    const wasPicked = store.ui.selectedClips.length === 1 && store.ui.selectedClips[0] === id;
+    if (!wasPicked) store.selectClip(id);
     const p0 = toFrame(e);
     // a second click or tap on a title, quickly and in the same place (and let go without
     // dragging, see onUp): type into it
@@ -106,7 +110,7 @@
     if (!start) return;
     // move snaps the anchor to the middle of the frame and to the other things' anchors
     const others = items.filter((it) => it.id !== id).map((it) => poseOf(store.project, it.id, t)).filter((x): x is Pose => !!x);
-    drag = { mode, id, t, p0, start, anchor: [start.x * W, start.y * H], snapX: [W / 2, ...others.map((o) => o.x * W)], snapY: [H / 2, ...others.map((o) => o.y * H)], moved: false, fingers: new Map(), second };
+    drag = { mode, id, t, p0, start, anchor: [start.x * W, start.y * H], snapX: [W / 2, ...others.map((o) => o.x * W)], snapY: [H / 2, ...others.map((o) => o.y * H)], moved: false, fingers: new Map(), second, wasPicked };
     if (e.pointerType === 'touch') drag.fingers.set(e.pointerId, p0);
     window.addEventListener('pointerdown', onSecondFinger, true);
     window.addEventListener('pointermove', onMove);
@@ -173,6 +177,8 @@
     window.removeEventListener('pointercancel', onUp);
     if (drag?.moved) store.commit('gizmo' + Math.random());
     else if (drag?.second) editing = drag.id;
+    // on a phone, tapping what's already picked plays and pauses as a tap on the picture does
+    else if (drag && compact && drag.wasPicked && drag.mode === 'move') store.ui.playing = !store.ui.playing;
     drag = null;
     guides = { x: null, y: null };
   }

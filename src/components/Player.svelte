@@ -763,7 +763,7 @@
       </div>
     {/if}
     {#if gizmoBox}
-      <Gizmo W={guideSize.w} H={guideSize.h} box={gizmoBox} />
+      <Gizmo W={guideSize.w} H={guideSize.h} box={gizmoBox} {compact} />
     {/if}
     {#if store.ui.scopes && hasTimeline}
       <Scopes source={() => (mosh ? canvas : editCanvas)} />

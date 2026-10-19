@@ -456,11 +456,19 @@ await step('handles on a phone: a tap picks a title without playing, two fingers
   await touch('pointerup', 2, cx, cy + 120);
   await touch('pointerup', 1, cx, cy);
   const l = await layerOf('hp');
+  // a tap on what's already picked plays, as a tap on the picture does (not a double tap: wait first)
+  await page.waitForTimeout(500);
+  const nb = await page.locator('polygon.hit[data-gizmo="hp"]').boundingBox();
+  await touch('pointerdown', 1, nb.x + nb.width / 2, nb.y + nb.height / 2);
+  await touch('pointerup', 1, nb.x + nb.width / 2, nb.y + nb.height / 2);
+  const played = await S(() => window.__moshpit.store.ui.playing);
+  await S(() => (window.__moshpit.store.ui.playing = false));
   await dropLayer('hp');
   await page.setViewportSize({ width: 1440, height: 900 });
   await settle();
   if (picked[0] !== 'hp' || picked[1]) throw new Error('a tap on the title should pick it, not play: ' + JSON.stringify(picked));
   if (Math.abs(l.size - 0.3) > 0.01 || Math.abs((l.rotate ?? 0) - 90) > 1) throw new Error('pinch and twist: ' + JSON.stringify({ size: l.size, rotate: l.rotate }));
+  if (!played) throw new Error('a tap on the picked title did not play');
 });
 
 await step('editor: edit view plays and keeps time', async () => {
