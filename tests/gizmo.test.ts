@@ -1,3 +1,4 @@
+import type { TextLayer } from '../src/engine/layers';
 import { describe, expect, it } from 'vitest';
 import { boxQuad, centre, inQuad, normDeg, pictureQuad, pinch, poseOf, scaleBy, setPose, snapTo, snapTurn, turnBy, turnHandle } from '../src/engine/gizmo';
 import { withKeyAt } from '../src/engine/keys';
@@ -110,7 +111,7 @@ describe('poses', () => {
   it('move a title that follows a path along with its whole path, and size and turn it', () => {
     const p = project();
     setPose(p, 't', 2, { x: 0.5, y: 0.3, scale: 0.2, turn: 30 }, 0.02);
-    const l = p.layers[0];
+    const l = p.layers[0] as TextLayer;
     expect(l.follow!.map(([, x, y]) => [+x.toFixed(6), +y.toFixed(6)])).toEqual([[0.3, 0.3], [0.7, 0.3]]);
     expect([l.size, l.rotate]).toEqual([0.2, 30]);
   });

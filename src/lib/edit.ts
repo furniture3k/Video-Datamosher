@@ -4,7 +4,10 @@ import { ask } from './ask';
 import { forgetMedia } from './media';
 import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips } from '../engine/timeline';
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TransitionType } from '../engine/types';
-import { FIRST_ROW, nextRow, type TextLayer } from '../engine/layers';
+import { FIRST_ROW, freeRow, nextRow, type ShapeLayer, type TextLayer } from '../engine/layers';
+import { DEFAULT_LOOK, fitPen, newShape, type Pt, type ShapeLook } from '../engine/shapes';
+import { outputSize } from '../engine/args';
+import { localGet, localSet } from './storage';
 import { addToTimeline } from './media';
 import { styleForNew } from './styles.svelte';
 import { applyStyle } from '../engine/styles';
@@ -420,6 +423,41 @@ export function graphicsRowAt(clientX: number, clientY: number, id: string): str
   if (!top || clientY >= top.getBoundingClientRect().top) return null;
   // the row above all the others (a layer already alone on top stays there)
   return nextRow(store.project.layers.filter((l) => l.id !== id));
+}
+
+/** The look new shapes get: the last one changed (colour, line, glow…), else annotation red. */
+export const shapeLook = (): ShapeLook => ({ ...DEFAULT_LOOK, ...localGet<Partial<ShapeLook>>('shapeLook', {}) });
+
+/** Remember a shape's look for the next one. */
+export function rememberShapeLook(s: ShapeLayer) {
+  const { color, width, fill, glow, drawOn, boil } = s;
+  if (s.shape !== 'highlight') localSet('shapeLook', { color, width, fill, glow, drawOn, boil });
+}
+
+const aspect = () => {
+  const { w, h } = outputSize(store.project, 640);
+  return w / h;
+};
+
+/** Add a shape at the playhead, on a free graphics row. */
+export function addShape(kind: ShapeLayer['shape']) {
+  const t = store.ui.time;
+  const s = newShape(kind, uid(), freeRow(store.project.layers, t, t + 3), t, aspect(), shapeLook());
+  store.edit((p) => p.layers.push(s));
+  store.selectClip(s.id);
+  return s;
+}
+
+/** Add a freehand stroke drawn on the player (points as shares of the frame). */
+export function addPen(raw: Pt[]) {
+  const fit = fitPen(raw);
+  if (!fit) return null;
+  const t = store.ui.time;
+  const s: ShapeLayer = { ...newShape('pen', uid(), freeRow(store.project.layers, t, t + 3), t, aspect(), shapeLook()), ...fit };
+  delete s.fill;
+  store.edit((p) => p.layers.push(s));
+  store.selectClip(s.id);
+  return s;
 }
 
 /** Add a text title at the playhead. */

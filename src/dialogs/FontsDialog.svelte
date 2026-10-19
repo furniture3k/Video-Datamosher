@@ -20,7 +20,7 @@
   function use(f: FontRef) {
     const ids = store.ui.selectedClips;
     store.edit((p) => {
-      for (const l of p.layers) if (ids.includes(l.id)) l.font = `font:${f.id}`;
+      for (const l of p.layers) if (l.kind === 'text' && ids.includes(l.id)) l.font = `font:${f.id}`;
     });
     store.ui.dialog = null;
     store.toast(`Added ${f.name}.`, 'ok');

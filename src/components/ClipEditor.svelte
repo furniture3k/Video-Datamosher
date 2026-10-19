@@ -5,6 +5,7 @@ import { store } from '../lib/store.svelte';
   import { TEXT_ANIMS } from '../lib/text';
   import StylePicker from './StylePicker.svelte';
   import TitleSettings from './TitleSettings.svelte';
+  import ShapeSettings from './ShapeSettings.svelte';
   import BeatChips from './BeatChips.svelte';
   ;
   import Icon from './Icon.svelte';
@@ -14,12 +15,14 @@ import { store } from '../lib/store.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick } from '../lib/motion.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, markTracked } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
   const media = $derived(c ? mediaOf(store.project, c.mediaId) : undefined);
-  const text = $derived(store.ui.selectedClips.length === 1 ? store.project.layers.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
+  const layer = $derived(store.ui.selectedClips.length === 1 ? store.project.layers.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
+  const text = $derived(layer?.kind === 'text' ? layer : undefined);
+  const shape = $derived(layer?.kind === 'shape' ? layer : undefined);
   const trClip = $derived(store.ui.selectedTransition ? store.project.clips.find((x) => x.id === store.ui.selectedTransition) : undefined);
   const isStill = $derived(media?.source.kind === 'file' && media.source.isImage);
   const isVideo = $derived(c?.track === VIDEO_TRACK);
@@ -256,6 +259,8 @@ import { store } from '../lib/store.svelte';
     <Field type="bool" label="Melt with the video" value={text.moshed} help="Burn the text into the footage before moshing, so it smears and melts with everything else. Off = clean text on top." onchange={(v: boolean) => store.edit(() => (text.moshed = v))} />
     <button class="ghost" onclick={() => deleteSelected()}><Icon name="trash" />Delete text</button>
   </div>
+{:else if shape}
+  <ShapeSettings {shape} />
 {:else if c && media}
   <div class="col">
     {#if media.thumb}<img src={media.thumb} alt="" class="th" />{/if}
@@ -382,13 +387,15 @@ import { store } from '../lib/store.svelte';
           {#if c.stab}<button class="small ghost" onclick={() => editKeys((x) => (x.stab = undefined))}>Remove ({Math.round((c.stab.zoom - 1) * 100)}% zoom)</button>{/if}
         </div>
         <div class="row btns">
-          <button class="small" class:on={store.ui.trackPick === c.id} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id)} title="Then drag a box on the player around what to follow">{store.ui.trackPick === c.id ? 'Cancel tracking' : 'Track an object'}</button>
+          <button class="small" class:on={store.ui.trackPick === c.id && !store.ui.trackThen} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id)} title="Then drag a box on the player around what to follow">{store.ui.trackPick === c.id && !store.ui.trackThen ? 'Cancel tracking' : 'Track an object'}</button>
+          <button class="small" class:on={store.ui.trackPick === c.id && store.ui.trackThen === 'mark'} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id, store.ui.trackThen === 'mark' ? null : 'mark')} title="Then drag a box on the player around it: it's followed, boxed, arrowed and labelled">{store.ui.trackPick === c.id && store.ui.trackThen === 'mark' ? 'Cancel' : 'Mark something'}</button>
         </div>
         {#if store.ui.trackPick === c.id}<p class="small faint">Drag a box on the player around something with clear detail. It is followed forwards and backwards from this frame.</p>{/if}
         {#each c.paths ?? [] as path (path.id)}
           <div class="pathrow">
             <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>
             <button class="small" onclick={() => titleFollows(c.id, path.id)} title="Add a title that moves with it">Title follows</button>
+            <button class="small" onclick={() => markTracked(c.id, path.id)} title="Box it, point an arrow at it and label it, all following it">Mark it</button>
             {#if followers.length}
               <select class="small" aria-label="Clip that follows" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) clipFollows(c.id, path.id, v); (e.target as HTMLSelectElement).value = ''; }}>
                 <option value="">Clip follows…</option>

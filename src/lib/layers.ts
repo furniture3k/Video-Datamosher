@@ -3,6 +3,7 @@
 import { drawOrder, layerAlpha, layerPos, type Layer } from '../engine/layers';
 import { boxQuad, type Quad } from '../engine/gizmo';
 import { drawText, textBox } from './text';
+import { drawShape } from './shapes';
 
 /** Which layers to draw: all of them, the ones on top of the mosh, or the ones that melt with it. */
 export type LayerSet = 'all' | 'clean' | 'moshed';
@@ -14,6 +15,8 @@ export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h:
   switch (l.kind) {
     case 'text':
       return drawText(ctx, l, w, h, alpha, t);
+    case 'shape':
+      return drawShape(ctx, l, w, h, alpha, t);
   }
 }
 
@@ -28,6 +31,8 @@ export const anyLayerAt = (layers: Layer[], t: number, which: LayerSet = 'all') 
 /** Where a layer is on screen at timeline time t, in pixels of a w×h frame (for the handles). */
 export function layerQuad(l: Layer, t: number, w: number, h: number): Quad {
   const [px, py] = layerPos(l, t);
+  // a shape's box is its size (a little bigger for thin lines, so there's something to grab)
+  if (l.kind === 'shape') return boxQuad(px * w, py * h, Math.max(l.w * w, 12), Math.max(l.h * h, 12), l.rotate ?? 0);
   const b = textBox(l, w, h);
   const r = ((l.rotate ?? 0) * Math.PI) / 180;
   // the box's centre is across from the position along the turned baseline

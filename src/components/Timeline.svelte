@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { layerRows, type TextLayer } from '../engine/layers';
+  import { layerRows, type Layer } from '../engine/layers';
+  import { layerName } from '../engine/shapes';
 import { formatSeconds } from '../engine/eta';
   import { compoundOf } from '../engine/compound';
   import { makeCompound, openCompound } from '../lib/compound.svelte';
@@ -15,6 +16,7 @@ import { formatSeconds } from '../engine/eta';
   import { addFiles, addToTimeline } from '../lib/media';
   import * as edit from '../lib/edit';
   import Icon from './Icon.svelte';
+  import ShapePicker from './ShapePicker.svelte';
   import Waveform from './Waveform.svelte';
 
   const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -111,8 +113,8 @@ import { formatSeconds } from '../engine/eta';
   // ---------------------------------------------------------------- dragging
   type Drag =
     | { k: 'scrub' }
-    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | TextLayer; before: Project; grab: number; insert?: number; targets: number[]; to?: string; toT?: number }
-    | { k: 'trim'; id: string; kind: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextLayer; before: Project; targets: number[] }
+    | { k: 'move'; id: string; kind: 'v' | 'a' | 't'; x0: number; dx: number; moved: boolean; orig: Clip | Layer; before: Project; grab: number; insert?: number; targets: number[]; to?: string; toT?: number }
+    | { k: 'trim'; id: string; kind: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | Layer; before: Project; targets: number[] }
     | { k: 'fade'; id: string; edge: 'in' | 'out'; x0: number; orig: Clip }
     | { k: 'fx'; id: string; mode: 'move' | 'l' | 'r'; x0: number; s0: number; e0: number }
     | { k: 'trans'; id: string; x0: number; d0: number; before: Project }
@@ -150,7 +152,9 @@ import { formatSeconds } from '../engine/eta';
     return () => el.removeEventListener('touchmove', onTouchMove);
   });
   let menuAt = 0;
+  let shapesOpen = $state(false);
   function closeMenu() {
+    shapesOpen = false;
     // the click that ends a touch hold would close the menu it just opened
     if (performance.now() - menuAt > 400) menu = null;
   }
@@ -398,7 +402,7 @@ import { formatSeconds } from '../engine/eta';
       let dt = (e.clientX - d.x0) / pps;
       if (d.kind === 't') {
         const tx = store.project.layers.find((t) => t.id === d.id)!;
-        const o = d.orig as TextLayer;
+        const o = d.orig as Layer;
         if (d.edge === 'l') {
           const s = Math.min(o.start + o.duration - 0.2, Math.max(0, snapT(o.start + dt, e, d.id, d.targets)));
           tx.start = s;
@@ -434,7 +438,7 @@ import { formatSeconds } from '../engine/eta';
       }
       if (d.kind === 't') {
         const tx = store.project.layers.find((x) => x.id === d.id)!;
-        const o = d.orig as TextLayer;
+        const o = d.orig as Layer;
         let s = Math.max(0, t - d.grab);
         const s2 = snapT(s, e, d.id, d.targets);
         s = s2 !== s ? s2 : snapT(s + o.duration, e, d.id, d.targets) - o.duration;
@@ -749,6 +753,13 @@ import { formatSeconds } from '../engine/eta';
     <button class="ghost" title="Duplicate selected  D" onclick={edit.duplicateSelected} disabled={!store.ui.selectedClips.length}><Icon name="copy" /><span class="tlbl">Duplicate</span></button>
     <button class="ghost" title="Add a melt at the cut nearest the playhead  Ctrl T" onclick={() => edit.transitionAtPlayhead('melt')} disabled={placed.length < 2}><Icon name="split" /><span class="tlbl">Transition</span></button>
     <button class="ghost" title="Add a text title at the playhead" onclick={() => edit.addText()}><Icon name="text" /><span class="tlbl">Text</span></button>
+    <span class="shapes-wrap">
+      <button class="ghost" class:on={shapesOpen} title="Add a shape, draw with the pen, or mark something moving" aria-expanded={shapesOpen} onclick={(e) => (e.stopPropagation(), (shapesOpen = !shapesOpen))}><Icon name="shape" /><span class="tlbl">Shape</span></button>
+      {#if shapesOpen}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+        <div class="shapes-pop" onclick={(e) => e.stopPropagation()}><ShapePicker onpick={() => (shapesOpen = false)} /></div>
+      {/if}
+    </span>
     <span class="tsep"></span>
     <span class="tools" role="radiogroup" aria-label="Timeline tool">
       <button class="icon ghost" class:on={store.ui.tool === 'select'} role="radio" aria-checked={store.ui.tool === 'select'} title="Select tool  A: drag clips to move, edges to trim (Alt: roll a cut, slip a clip)" aria-label="Select tool" onclick={() => (store.ui.tool = 'select')}><Icon name="pointer" /></button>
@@ -895,9 +906,9 @@ import { formatSeconds } from '../engine/eta';
             <div class="lane text-lane" data-row={row} style="width:{W}px" onpointerdown={scrubDown}>
               {#if drag?.k === 'move' && drag.kind === 't' && drag.moved && row === graphicsRows.at(-1)}<span class="rowhint faint small">↑ drag above for a new row</span>{/if}
               {#each store.project.layers.filter((l) => l.row === row) as tx (tx.id)}
-                <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={tx.text}>
+                <div class="clip text" data-clip={tx.id} class:sel={sel.has(tx.id)} style="left:{x(tx.start)}px;width:{Math.max(6, x(tx.duration))}px" onpointerdown={(e) => clipDown(e, tx.id, 't')} oncontextmenu={(e) => openMenu(e, tx.id, 't')} title={layerName(tx)}>
                   <div class="edge l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}></div>
-                  <span class="cname">{tx.text || 'Text'}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}
+                  <span class="cname">{layerName(tx)}</span>{#if tx.moshed}<span class="badge">melts</span>{/if}
                   <div class="edge r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}></div>
                 </div>
               {/each}
@@ -1188,6 +1199,21 @@ import { formatSeconds } from '../engine/eta';
     flex-direction: column;
     min-height: 0;
     background: var(--surface);
+  }
+  .shapes-wrap {
+    position: relative;
+  }
+  .shapes-pop {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 4px);
+    z-index: 40;
+    width: 340px;
+    padding: 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r-lg);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
   }
   .toolbar {
     display: flex;

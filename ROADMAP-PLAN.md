@@ -215,6 +215,18 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
   fit-to-width.
 
 ### M5: Shapes and annotations. Unlocks R7–R9 marks and R4 callouts
+
+> **Done (PR for `feat/m5-shapes`).** `Layer` is now `TextLayer | ShapeLayer`. Every shape is
+> polylines (`src/engine/shapes.ts`, pure), so draw-on (a share of the total length, line after
+> line) and boil (three jittered drawings cycled at 8 a second) work for all of them; drawn by
+> `src/lib/shapes.ts` through the same layer renderer, so shapes melt too. Box, rounded box,
+> circle, triangle, star, line and arrow (bend), corner marks, underline, highlighter, tunnel,
+> pen; line colour and width, fill, glow. The handles scale both sides together. Shape button
+> on the timeline toolbar, a Shape sheet on the phone, palette commands. **Mark something
+> moving** (`src/engine/annotate.ts`): track a box, then a box, an arrow from the side with more
+> room and a typing label, all following the path ("Mark it" also on tracks made earlier, and
+> on the phone's clip tools). New shapes take the last look used. Still to do: polygons, the
+> leader line with end squares, the callout preset, and grouping the marks into one layer.
 - **Shape layer**: rect, rounded rect, circle, triangle, polygon, star, line, arrow (straight,
   curved, hand-drawn), bracket, underline, highlighter, freehand pen, and nested repeat (the box
   "tunnel" in R7).

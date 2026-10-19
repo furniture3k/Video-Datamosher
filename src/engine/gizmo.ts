@@ -118,7 +118,7 @@ export function poseOf(p: Pick<Project, 'clips' | 'media' | 'layers'>, id: strin
   const l = p.layers.find((x) => x.id === id);
   if (l) {
     const [x, y] = layerPos(l, t);
-    return { x, y, scale: l.size, turn: l.rotate ?? 0 };
+    return { x, y, scale: l.kind === 'text' ? l.size : Math.max(l.w, l.h), turn: l.rotate ?? 0 };
   }
   const c = p.clips.find((x) => x.id === id);
   if (!c) return null;
@@ -145,7 +145,15 @@ export function setPose(p: Pick<Project, 'clips' | 'media' | 'layers'>, id: stri
       l.y += dy;
       if (l.follow) l.follow = l.follow.map(([ft, fx, fy]) => [ft, fx + dx, fy + dy]);
     }
-    if (changed(to.scale, now.scale)) l.size = to.scale;
+    if (changed(to.scale, now.scale)) {
+      if (l.kind === 'text') l.size = to.scale;
+      else {
+        // a shape keeps its proportions
+        const k = to.scale / now.scale;
+        l.w *= k;
+        l.h *= k;
+      }
+    }
     if (changed(to.turn, now.turn)) l.rotate = to.turn;
     return;
   }

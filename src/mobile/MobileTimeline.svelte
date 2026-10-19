@@ -9,7 +9,8 @@
   import { EFFECTS } from '../engine/effects';
   import { layoutVideo, clipLen, nearestCut, remapToFootage, trimClip, moveVideo, isOverlayTrack, mediaOf } from '../engine/timeline';
   import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project } from '../engine/types';
-  import { layerRows, type TextLayer } from '../engine/layers';
+  import { layerRows, type Layer } from '../engine/layers';
+  import { layerName } from '../engine/shapes';
   import { mediaState } from '../lib/mediastate.svelte';
   import Icon from '../components/Icon.svelte';
   import Waveform from '../components/Waveform.svelte';
@@ -95,7 +96,7 @@
 
   // ---- taps, trims, moves
   type D =
-    | { k: 'trim'; id: string; ck: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | TextLayer; before: Project }
+    | { k: 'trim'; id: string; ck: 'v' | 'a' | 't'; edge: 'l' | 'r'; x0: number; orig: Clip | Layer; before: Project }
     | { k: 'move'; id: string; ck: 'a' | 't'; x0: number; s0: number; before: Project; moved: boolean }
     | { k: 'fx'; id: string; mode: 'move' | 'l' | 'r'; x0: number; s0: number; e0: number; moved: boolean }
     | { k: 'reorder'; id: string; x: number; insert: number; before: Project };
@@ -165,7 +166,7 @@
     e.stopPropagation();
     e.preventDefault();
     const orig = ck === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
-    drag = { k: 'trim', id, ck, edge, x0: e.clientX, orig: clone($state.snapshot(orig)) as Clip | TextLayer, before: clone($state.snapshot(store.project)) as Project };
+    drag = { k: 'trim', id, ck, edge, x0: e.clientX, orig: clone($state.snapshot(orig)) as Clip | Layer, before: clone($state.snapshot(store.project)) as Project };
     haptics.grab();
     listen();
   }
@@ -196,7 +197,7 @@
     if (d.k === 'trim') {
       if (d.ck === 't') {
         const tx = store.project.layers.find((t) => t.id === d.id);
-        const o = d.orig as TextLayer;
+        const o = d.orig as Layer;
         if (!tx) return;
         if (d.edge === 'l') {
           const s = Math.min(o.start + o.duration - 0.2, Math.max(0, o.start + dt));
@@ -391,7 +392,7 @@
             {@const on = sel.has(tx.id)}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div class="item text" class:sel={on} style="left:{x(tx.start)}px;width:{x(tx.duration)}px" onpointerdown={(e) => itemDown(e, tx.id, 't')}>
-              <Icon name="text" size={11} /><span class="nm">{tx.text}</span>
+              <Icon name={tx.kind === 'text' ? 'text' : 'shape'} size={11} /><span class="nm">{layerName(tx)}</span>
               {#if on}
                 <span class="h l" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'l')}><i></i></span>
                 <span class="h r" onpointerdown={(e) => edgeDown(e, tx.id, 't', 'r')}><i></i></span>

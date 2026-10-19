@@ -26,7 +26,7 @@ export const styleForNew = () => (titleStyles.last ? allStyles().find((s) => s.i
 /** Put a style on these titles (one undo step); new titles get it too from now on. */
 export function styleTitles(ids: string[], s: TitleStyle) {
   store.edit((p) => {
-    for (const l of p.layers) if (ids.includes(l.id)) applyStyle(l, s);
+    for (const l of p.layers) if (l.kind === 'text' && ids.includes(l.id)) applyStyle(l, s);
   });
   remember(s.id);
 }

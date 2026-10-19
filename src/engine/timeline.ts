@@ -1,6 +1,6 @@
 // Timeline model: layout of the magnetic video track, audio tracks, segments for rendering,
 // pure edit operations and the mapping that keeps effects attached to footage across edits.
-import type { TextLayer } from './layers';
+import type { Layer as GfxLayer } from './layers';
 import { CLIP_AUDIO, VIDEO_TRACK, clipOn, type Clip, type EffectInstance, type MediaItem, type Project, type Track, type Transition, type TransitionType } from './types';
 import { EFFECTS, defaultParams } from './effects';
 import { hashSeed } from './rng';
@@ -415,15 +415,15 @@ export function splitClip(p: Project, id: string, t: number): Clip | null {
   return b;
 }
 
-/** Cut a title in two at timeline time t. Returns the second half (null when t isn't inside it). */
-export function splitText(p: Project, id: string, t: number): TextLayer | null {
+/** Cut a title or other layer in two at timeline time t. Returns the second half (null when t isn't inside it). */
+export function splitText(p: Project, id: string, t: number): GfxLayer | null {
   const a = p.layers.find((x) => x.id === id);
   if (!a) return null;
   const local = t - a.start;
   if (local < 0.05 || local > a.duration - 0.05) return null;
   // the second half carries on where the first stops: no second fade or entrance
-  const b: TextLayer = { ...JSON.parse(JSON.stringify(a)), id: uid(), start: t, duration: a.duration - local, anim: undefined, animIn: undefined };
-  if (a.words) {
+  const b: GfxLayer = { ...JSON.parse(JSON.stringify(a)), id: uid(), start: t, duration: a.duration - local, anim: undefined, animIn: undefined };
+  if (a.kind === 'text' && b.kind === 'text' && a.words) {
     b.words = a.words.filter((w) => w.t1 > local).map((w) => ({ ...w, t0: Math.max(0, w.t0 - local), t1: w.t1 - local }));
     a.words = a.words.filter((w) => w.t0 < local);
   }

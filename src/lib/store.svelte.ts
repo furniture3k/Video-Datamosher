@@ -81,6 +81,10 @@ class Store {
     maskErase: false,
     /** id of the clip to track: the next box drawn on the player is followed through it */
     trackPick: null as string | null,
+    /** what happens once it's tracked: 'mark' adds a box, arrow and label that follow it */
+    trackThen: null as null | 'mark',
+    /** drawing a freehand line on the player */
+    pen: false,
     /** scopes panel under the player */
     scopes: false,
     /** safe-zone guides drawn over the player (social export presets) */
