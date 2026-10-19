@@ -87,6 +87,7 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'sequencer', title: 'Add a Frame Sequencer at the playhead', group: 'Mosh', keys: ['G'] },
   { id: 'keyframe', title: 'Force a keyframe at the playhead', group: 'Mosh', keys: ['Shift+K'], words: 'i-frame' },
   { id: 'beat-edit', title: 'Auto-edit to the beat…', group: 'Mosh', keys: [], words: 'music cut' },
+  { id: 'word-beats', title: 'Words on the beat…', group: 'Mosh', keys: [], words: 'lyrics titles text kinetic type' },
   { id: 'bake', title: 'Bake the mosh into a clip…', group: 'Mosh', keys: [] },
   { id: 'captions', title: 'Auto captions…', group: 'Mosh', keys: [], words: 'subtitles whisper' },
   { id: 'live', title: 'Live mode…', group: 'Mosh', keys: [], words: 'camera webcam' },

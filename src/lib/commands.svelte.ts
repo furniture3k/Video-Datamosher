@@ -141,6 +141,7 @@ const ACTIONS: Record<string, Action> = {
     },
   },
   'beat-edit': { run: dialog('beatEdit'), when: () => store.project.clips.length > 0 },
+  'word-beats': { run: dialog('wordBeats'), when: hasClips },
   bake: { run: dialog('bake'), when: hasClips },
   captions: { run: dialog('captions'), when: hasClips },
   live: { run: dialog('live') },

@@ -496,6 +496,30 @@ await step('styles: put a built-in look on a title, save your own, new titles ge
   await S((id) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== 'sty' && l.id !== id))), fresh.id);
 });
 
+await step('words on the beat: one title per word, on the cuts, in the chosen look on a new row', async () => {
+  const before = await S(() => window.__moshpit.store.project.layers.map((l) => l.id));
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.seek(0);
+    st.ui.dialog = 'wordBeats';
+  });
+  try {
+    await page.locator('textarea[aria-label="Words"]').fill('ONE TWO THREE');
+    await page.locator('select[aria-label="On"]').selectOption('cuts');
+    const note = await page.getByRole('dialog').locator('[aria-live="polite"]').innerText();
+    if (!/2 titles/.test(note) || !/1 don't fit/.test(note)) throw new Error('summary: ' + note);
+    await page.getByRole('button', { name: 'Add titles' }).click();
+  } finally {
+    await S(() => (window.__moshpit.store.ui.dialog = null));
+  }
+  const added = await S((before) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.filter((l) => !before.includes(l.id)))), before);
+  const cuts = await S(() => window.__moshpit.timeline.layoutVideo(window.__moshpit.store.project).map((p) => p.start));
+  await S((ids) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => !ids.includes(l.id)))), added.map((l) => l.id));
+  if (added.map((l) => l.text).join() !== 'ONE,TWO') throw new Error('titles: ' + JSON.stringify(added.map((l) => l.text)));
+  if (added[0].start !== cuts[0] || Math.abs(added[1].start - cuts[1]) > 1e-6) throw new Error('not on the cuts: ' + JSON.stringify([added.map((l) => l.start), cuts]));
+  if (added.some((l) => l.fit !== 'width' || l.row === 'g1')) throw new Error('look or row: ' + JSON.stringify(added[0]));
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
