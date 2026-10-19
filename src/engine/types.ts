@@ -1,5 +1,6 @@
 import type { MoshCodec } from './bitstream';
 import type { Keys, Ramp } from './keys';
+import type { Canvas } from './canvas';
 import type { Layer } from './layers';
 
 export type FrameType = 'I' | 'P' | 'B' | 'S' | '?';
@@ -339,6 +340,8 @@ export interface Project {
   luts?: LutRef[];
   /** added fonts (the files are kept with the media) */
   fonts?: FontRef[];
+  /** the picture set in on a backdrop like a card */
+  canvas?: Canvas;
 }
 
 export const defaultEncoder = (): EncoderSettings => ({

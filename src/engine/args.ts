@@ -1,6 +1,7 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
 import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project } from './types';
 import { layerEnd, type Layer } from './layers';
+import { blurRadius, cardRect, hasCanvas, type Canvas } from './canvas';
 import { findRecipe } from './recipe';
 import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
@@ -37,6 +38,17 @@ export type PathFn = (m: MediaItem) => string;
  * changes, one PNG per frame it's on screen (fades drawn in), one after another in a single file,
  * the first one at timeline frame `frames.first`.
  */
+/**
+ * Pictures for the canvas, drawn by the page (../lib/canvas): the backdrop with the card's shadow
+ * (frame size), the card's shape as a white-on-black mask (card size; only with round corners)
+ * and the border (frame size, transparent elsewhere).
+ */
+export interface CanvasPlates {
+  bg: string;
+  mask?: string;
+  border?: string;
+}
+
 export interface LayerOverlay {
   layer: Layer;
   path: string;
@@ -274,7 +286,7 @@ const BLEND: Record<string, { mode: string; neutral: string }> = {
  * or plain concatenation, then clips on upper video tracks are composited on top. Returns the
  * inputs it needs and its output label.
  */
-function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn, overlays: LayerOverlay[] = []): { inputs: string[]; filter: string[]; label: string; count: number } {
+function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn, overlays: LayerOverlay[] = [], canvas?: { c: Canvas; plates: CanvasPlates }): { inputs: string[]; filter: string[]; label: string; count: number } {
   const n = seg.f1 - seg.f0;
   const label = `seg${tag}`;
   const t0 = seg.f0 / fps;
@@ -353,6 +365,39 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     }
     acc = next;
   });
+  // ---- the canvas: the picture as a card on a backdrop
+  if (canvas && hasCanvas(canvas.c)) {
+    const { c, plates } = canvas;
+    const R = cardRect(c, w, h);
+    const still = (file: string) => {
+      inputs.push('-loop', '1', '-framerate', String(fps), '-t', String(r3(dur + 1)), '-i', file);
+      return `${first + count++}:v`;
+    };
+    let pic = acc;
+    let back = `${tag}cvk`;
+    if (c.bg === 'blur') {
+      filter.push(`[${acc}]split[${tag}cva][${tag}cvb]`);
+      pic = `${tag}cva`;
+      filter.push(`[${tag}cvb]boxblur=${Math.min(blurRadius(c, h), Math.floor(Math.min(w, h) / 2) - 1)}:2[${back}]`);
+    } else filter.push(`color=c=black:s=${w}x${h}:r=${fps}:d=${r3(dur + 1)},format=yuv420p[${back}]`);
+    filter.push(`[${still(plates.bg)}]format=rgba[${tag}cvp]`);
+    filter.push(`[${back}][${tag}cvp]overlay=0:0:shortest=1:format=auto[${tag}cvg]`);
+    filter.push(`[${pic}]crop=${R.crop.w}:${R.crop.h}:${R.crop.x}:${R.crop.y},scale=${R.w}:${R.h},setsar=1[${tag}cvi]`);
+    let card = `${tag}cvi`;
+    if (R.r > 0 && plates.mask) {
+      filter.push(`[${still(plates.mask)}]format=gray,scale=${R.w}:${R.h}[${tag}cvm]`);
+      filter.push(`[${card}]format=yuva420p[${tag}cvj]`);
+      filter.push(`[${tag}cvj][${tag}cvm]alphamerge[${tag}cvr]`);
+      card = `${tag}cvr`;
+    }
+    filter.push(`[${tag}cvg][${card}]overlay=${R.x}:${R.y}:format=auto,format=yuv420p[${tag}cvc]`);
+    acc = `${tag}cvc`;
+    if ((c.border ?? 0) > 0 && plates.border) {
+      filter.push(`[${still(plates.border)}]format=rgba[${tag}cvo]`);
+      filter.push(`[${acc}][${tag}cvo]overlay=0:0:shortest=1:format=auto,format=yuv420p[${tag}cvd]`);
+      acc = `${tag}cvd`;
+    }
+  }
   // ---- layers that melt, in drawing order
   shown.forEach((o, k) => {
     const idx = first + count++;
@@ -435,7 +480,7 @@ export function keyTimes(project: Project): number[] {
 }
 
 /** Prepare the whole timeline in a single pass (used when cuts must not get keyframes). */
-export function prepArgs(project: Project, width: number, out = 'prep.avi', path: PathFn = inputName, overlays: LayerOverlay[] = []): string[] {
+export function prepArgs(project: Project, width: number, out = 'prep.avi', path: PathFn = inputName, overlays: LayerOverlay[] = [], plates?: CanvasPlates): string[] {
   const { w, h } = outputSize(project, width);
   const fps = project.encoder.fps;
   const segs = segments(project, fps);
@@ -444,7 +489,7 @@ export function prepArgs(project: Project, width: number, out = 'prep.avi', path
   const labels: string[] = [];
   let next = 0;
   segs.forEach((s, i) => {
-    const g = segmentGraph(s, fps, w, h, next, `s${i}`, path, overlays);
+    const g = segmentGraph(s, fps, w, h, next, `s${i}`, path, overlays, canvasOf(project, plates));
     next += g.count;
     inputs.push(...g.inputs);
     filter.push(...g.filter);
@@ -454,11 +499,13 @@ export function prepArgs(project: Project, width: number, out = 'prep.avi', path
   return [...inputs, '-filter_complex', filter.join(';'), '-map', '[vout]', '-an', ...encoderArgs(project.encoder, keyTimes(project)), '-f', 'avi', out];
 }
 
+const canvasOf = (p: Project, plates?: CanvasPlates) => (plates && hasCanvas(p.canvas) ? { c: p.canvas, plates } : undefined);
+
 /** Prepare one segment on its own (starts with a keyframe). Keyframe times are relative to it. */
-export function segmentArgs(project: Project, seg: Segment, width: number, out: string, path: PathFn = inputName, overlays: LayerOverlay[] = []): string[] {
+export function segmentArgs(project: Project, seg: Segment, width: number, out: string, path: PathFn = inputName, overlays: LayerOverlay[] = [], plates?: CanvasPlates): string[] {
   const { w, h } = outputSize(project, width);
   const fps = project.encoder.fps;
-  const g = segmentGraph(seg, fps, w, h, 0, 'a', path, overlays);
+  const g = segmentGraph(seg, fps, w, h, 0, 'a', path, overlays, canvasOf(project, plates));
   const t0 = seg.f0 / fps;
   const t1 = seg.f1 / fps;
   const keys = keyTimes(project)
@@ -482,6 +529,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
     clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '', ...clipLook(pl.clip) })),
     layers: seg.layers.map((l) => ({ m: path(l.media) || JSON.stringify(l.media.source), w: l.media.width, h: l.media.height, i: l.clip.in, o: l.clip.out, s: l.clip.speed, r: l.clip.reverse, f: l.clip.fit, st: r3(l.start - t0), tr: l.track, ...clipLook(l.clip) })),
     hb: seg.hideBase,
+    cv: hasCanvas(project.canvas) ? project.canvas : undefined,
   });
 }
 

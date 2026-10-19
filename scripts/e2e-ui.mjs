@@ -622,6 +622,49 @@ await step('shapes: add a box from the toolbar, it is drawn and scales with the 
   await S(() => window.__moshpit.store.setPref('view', 'auto'));
 });
 
+await step('canvas: set the picture in as a card, in the preview and the render, on desktop and a phone', async () => {
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.setPref('view', 'edit');
+    st.ui.playing = false;
+    st.seek(0.5);
+    st.selectClip(null);
+  });
+  await page.locator('.tabs button', { hasText: 'Encode' }).click();
+  try {
+    await page.getByRole('button', { name: 'Paper card', exact: true }).click();
+    const c = await S(() => window.__moshpit.store.project.canvas);
+    if (!c || c.inset <= 0 || c.bg !== 'color') throw new Error('no canvas: ' + JSON.stringify(c));
+    await S(() => window.__moshpit.store.edit((p) => Object.assign(p.canvas, { color: '#ff00ff', shadow: 0 })));
+    await page.waitForTimeout(500);
+    // the frame's corner is the backdrop, its middle is still the picture
+    const px = await S(() => {
+      const cv = document.querySelector('.stage canvas.edit');
+      const g = cv.getContext('2d');
+      return [[...g.getImageData(2, 2, 1, 1).data], [...g.getImageData(cv.width / 2, cv.height / 2, 1, 1).data]];
+    });
+    const magenta = ([r, g, b]) => r > 220 && g < 40 && b > 220;
+    if (!magenta(px[0])) throw new Error('no backdrop in the corner: ' + JSON.stringify(px[0]));
+    if (magenta(px[1])) throw new Error('the backdrop covers the picture');
+    // the mosh renders with the canvas (the backdrop goes into the prep graph)
+    await S(() => window.__moshpit.store.doRender(true));
+    await settle();
+    if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error('no frames with a canvas');
+    // and on a phone, in the Look sheet
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(400);
+    await page.locator('.tools .tool', { hasText: 'Look' }).click();
+    await page.locator('.sheet').getByRole('button', { name: 'Full frame', exact: true }).click();
+    if (await S(() => window.__moshpit.store.project.canvas)) throw new Error('Full frame did not take the canvas off');
+    await page.locator('.sheet .done').click();
+  } finally {
+    await S(() => window.__moshpit.store.edit((p) => delete p.canvas));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await S(() => window.__moshpit.store.setPref('view', 'auto'));
+    await settle();
+  }
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));

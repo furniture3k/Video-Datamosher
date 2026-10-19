@@ -12,6 +12,7 @@
   import { pictureMatrix } from '../engine/placement';
   import { baseHidden, layers as upperClips, layoutVideo } from '../engine/timeline';
   import { drawOrder, isEmpty, layerEnd } from '../engine/layers';
+  import { cardRect, hasCanvas } from '../engine/canvas';
   import { VIDEO_TRACK, clipOn, transformOf, type Clip, type MediaItem } from '../engine/types';
 
   /** compact: the phone player, where a tap on the picture plays and pauses */
@@ -24,9 +25,17 @@
 
   const locked = (track: string) => !!store.project.tracks.find((t) => t.id === track)?.locked;
 
+  /** with a canvas the picture (clips) is shown on a card: between picture and frame pixels */
+  const card = $derived(hasCanvas(store.project.canvas) ? cardRect(store.project.canvas, W, H) : null);
+  const toCard = ([x, y]: Pt): Pt => (card ? [card.x + ((x - card.crop.x) * card.w) / card.crop.w, card.y + ((y - card.crop.y) * card.h) / card.crop.h] : [x, y]);
+  const fromCard = ([x, y]: Pt): Pt => (card ? [card.crop.x + ((x - card.x) * card.crop.w) / card.w, card.crop.y + ((y - card.y) * card.crop.h) / card.h] : [x, y]);
+  const isLayer = (id: string) => store.project.layers.some((l) => l.id === id);
+  /** a pointer in the space of what's dragged: the frame for graphics, the picture for clips */
+  const at = (id: string, e: { clientX: number; clientY: number }) => (isLayer(id) ? toFrame(e) : fromCard(toFrame(e)));
+
   function clipItem(c: Clip, m: MediaItem, local: number): Item {
     const T = transformOf(c);
-    return { id: c.id, quad: pictureQuad(pictureMatrix(c, local, m.width, m.height, W, H), W, H, T.cropL, T.cropT, 1 - T.cropR, 1 - T.cropB) };
+    return { id: c.id, quad: pictureQuad(pictureMatrix(c, local, m.width, m.height, W, H), W, H, T.cropL, T.cropT, 1 - T.cropR, 1 - T.cropB).map(toCard) as Quad };
   }
 
   /** what can be picked at the playhead, bottom first (later ones are on top) */
@@ -105,7 +114,7 @@
     if (e.shiftKey && mode === 'move') return store.selectClip(id, true);
     const wasPicked = store.ui.selectedClips.length === 1 && store.ui.selectedClips[0] === id;
     if (!wasPicked) store.selectClip(id);
-    const p0 = toFrame(e);
+    const p0 = at(id, e);
     // a second click or tap on a title, quickly and in the same place (and let go without
     // dragging, see onUp): type into it
     const now = performance.now();
@@ -114,8 +123,8 @@
     const t = store.ui.time;
     const start = poseOf(store.project, id, t);
     if (!start) return;
-    // move snaps the anchor to the middle of the frame and to the other things' anchors
-    const others = items.filter((it) => it.id !== id).map((it) => poseOf(store.project, it.id, t)).filter((x): x is Pose => !!x);
+    // move snaps the anchor to the middle of the frame and to the other things' anchors (in the same space)
+    const others = items.filter((it) => it.id !== id && isLayer(it.id) === isLayer(id)).map((it) => poseOf(store.project, it.id, t)).filter((x): x is Pose => !!x);
     drag = { mode, id, t, p0, start, anchor: [start.x * W, start.y * H], snapX: [W / 2, ...others.map((o) => o.x * W)], snapY: [H / 2, ...others.map((o) => o.y * H)], moved: false, fingers: new Map(), second, wasPicked };
     if (e.pointerType === 'touch') drag.fingers.set(e.pointerId, p0);
     window.addEventListener('pointerdown', onSecondFinger, true);
@@ -130,7 +139,7 @@
     if (!d || e.pointerType !== 'touch' || d.fingers.size !== 1 || d.mode !== 'move') return;
     e.stopPropagation();
     e.preventDefault();
-    d.fingers.set(e.pointerId, toFrame(e));
+    d.fingers.set(e.pointerId, at(d.id, e));
     const [a, b] = [...d.fingers.values()];
     d.mode = 'pinch';
     d.pinch0 = [a, b];
@@ -142,7 +151,7 @@
   function onMove(e: PointerEvent) {
     const d = drag;
     if (!d) return;
-    const p = toFrame(e);
+    const p = at(d.id, e);
     if (d.fingers.has(e.pointerId)) d.fingers.set(e.pointerId, p);
     if (!d.moved && Math.hypot(p[0] - d.p0[0], p[1] - d.p0[1]) < 3 * k) return;
     d.moved = true;
@@ -166,7 +175,8 @@
         const sy = snapTo(ay, d.snapY, 6 * k);
         ax = sx.v;
         ay = sy.v;
-        guides = { x: sx.to, y: sy.to };
+        // (a clip's guides are in the picture: shown where the picture is)
+        guides = isLayer(d.id) || !card ? { x: sx.to, y: sy.to } : { x: sx.to === null ? null : toCard([sx.to, 0])[0], y: sy.to === null ? null : toCard([0, sy.to])[1] };
       }
       to.x = ax / W;
       to.y = ay / H;

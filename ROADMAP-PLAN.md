@@ -243,6 +243,16 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
   phone.
 
 ### M6: Canvas and collage. Unlocks R3, R4, R8
+
+> **Split.** **M6a (PR for `feat/m6-canvas`)**: `Project.canvas` (`src/engine/canvas.ts`): the
+> picture (main and upper tracks) cropped to the card's shape and set in on a colour, a gradient
+> or a blurred copy of itself, with round corners, a border, a shadow and an up/down shift;
+> presets (Paper card, Polaroid, Blurred, Pastel, Night). The page draws the backdrop, the
+> card's mask and the border (`src/lib/canvas.ts`); the preview composites with them and the
+> prep graph overlays them (`alphamerge` for the corners), so the canvas melts with the mosh
+> and graphics still use the whole frame. Handles, tracking and follow paths map between the
+> picture and the card. In the Encode tab (the phone's Look sheet). Image backdrops, card style
+> per clip, stamp trail, pop on beat, shape masks and grids are M6b.
 - **Canvas**: `Project.canvas` (colour, gradient, image or blurred copy) with the picture inset by
   padding, border and corner radius. Drawn in both `segmentGraph` (pad/overlay) and `EditPreview`.
 - **Card style** on clips and image stickers: border, shadow, radius, polaroid caption.

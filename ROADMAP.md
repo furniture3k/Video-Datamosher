@@ -113,7 +113,7 @@ unlocks, where it goes in the code, and when it counts as done.
 - [ ] Glow, drop shadow and outer stroke as layer styles.
 
 ### Canvas, frames and collage (R3, R4, R8)
-- [ ] **Canvas background**: colour, gradient, image or blurred copy of the video; the picture
+- [x] **Canvas background** *(M6a: `src/engine/canvas.ts`; colour, gradient and blurred copy, round corners, border, shadow, moved up or down; an image backdrop is still to do)*: colour, gradient, image or blurred copy of the video; the picture
   inset with padding, border and corner radius (R4 off-white, R8 blue border).
 - [ ] **Card style** for clips and images: border, shadow, rounded corners, caption under it
   (polaroid).

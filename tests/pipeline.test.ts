@@ -7,6 +7,7 @@ import { framesFromAvi, applyBitstream, writeMoshed, concatPrepared } from '../s
 import { cutFrames, segments, timelineDuration, transitionEffects } from '../src/engine/timeline';
 import { splitJpegs } from '../src/engine/jpeg';
 import { newProject, type EffectInstance, type Project } from '../src/engine/types';
+import { cardRect } from '../src/engine/canvas';
 import { EFFECTS, defaultParams } from '../src/engine/effects';
 
 const d = hasFfmpeg ? describe : describe.skip;
@@ -278,5 +279,41 @@ d('native ffmpeg pipeline', () => {
     };
     expect(diff(10)).toBeLessThan(8); // 0.4 s: not yet
     expect(diff(16)).toBeGreaterThan(60); // 0.64 s: its second picture, the box at x 24..64
+  });
+
+  it('sets the picture in as a card on the canvas: backdrop, round corners and border', () => {
+    const c = { bg: 'color' as const, color: '#00ff00', inset: 0.1, radius: 0.1, border: 0.02, borderColor: '#0000ff' };
+    const p: Project = { ...project, canvas: c };
+    const seg = segments(p, 25)[0];
+    const { w, h } = { w: 320, h: 240 };
+    const R = cardRect(c, w, h);
+    const b = Math.round(0.02 * h);
+    // the pictures the page draws, made here with FFmpeg: a green backdrop, the card's shape
+    // with its top-left corner cut off, and a blue border round the card
+    ff(dir, ['-f', 'lavfi', '-i', `color=c=0x00ff00:s=${w}x${h}`, '-frames:v', '1', 'cv_bg.png']);
+    ff(dir, ['-f', 'lavfi', '-i', `color=c=white:s=${R.w}x${R.h},format=gray,geq=lum='if(lt(X\\,${R.r})*lt(Y\\,${R.r})\\,0\\,255)'`, '-frames:v', '1', 'cv_mask.png']);
+    ff(dir, ['-f', 'lavfi', '-i', `color=c=blue:s=${w}x${h},format=rgba,geq=r=0:g=0:b=255:a='if(between(X\\,${R.x - b}\\,${R.x + R.w + b - 1})*between(Y\\,${R.y - b}\\,${R.y + R.h + b - 1})*not(between(X\\,${R.x}\\,${R.x + R.w - 1})*between(Y\\,${R.y}\\,${R.y + R.h - 1}))\\,255\\,0)'`, '-frames:v', '1', 'cv_border.png']);
+    ff(dir, segmentArgs(p, seg, w, 'card.avi', undefined, [], { bg: 'cv_bg.png', mask: 'cv_mask.png', border: 'cv_border.png' }));
+    expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'card.avi'))), 'mpeg4').frames.length).toBe(seg.f1 - seg.f0);
+    ff(dir, ['-i', 'card.avi', '-vf', 'select=eq(n\\,10)', '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'card.raw']);
+    const px = fs.readFileSync(path.join(dir, 'card.raw'));
+    const at = (x: number, y: number) => [...px.subarray((y * w + x) * 3, (y * w + x) * 3 + 3)];
+    const green = ([r, g, bl]: number[]) => g > 180 && r < 80 && bl < 80;
+    const blue = ([r, g, bl]: number[]) => bl > 160 && r < 80 && g < 80;
+    expect(green(at(4, 4))).toBe(true); // the backdrop, outside the card
+    expect(green(at(R.x + 2, R.y + 2))).toBe(true); // the card's cut-off corner shows the backdrop
+    expect(blue(at(R.x + R.w / 2, R.y - Math.ceil(b / 2)))).toBe(true); // the border, just above the card
+    expect(green(at(R.x + R.w / 2, R.y + R.h / 2)) || blue(at(R.x + R.w / 2, R.y + R.h / 2))).toBe(false); // the picture in the middle
+    // without the canvas's pictures nothing changes (as old projects)
+    expect(segmentArgs(p, seg, w, 'x.avi').join(' ')).toBe(segmentArgs(project, seg, w, 'x.avi').join(' '));
+  });
+
+  it('puts the card on a blurred copy of the picture', () => {
+    const c = { bg: 'blur' as const, color: '#000000', blur: 0.5, inset: 0.15 };
+    const p: Project = { ...project, canvas: c };
+    const seg = segments(p, 25)[0];
+    ff(dir, ['-f', 'lavfi', '-i', 'color=c=black@0:s=320x240,format=rgba', '-frames:v', '1', 'cv_clear.png']);
+    ff(dir, segmentArgs(p, seg, 320, 'blur.avi', undefined, [], { bg: 'cv_clear.png' }));
+    expect(framesFromAvi(new Uint8Array(fs.readFileSync(path.join(dir, 'blur.avi'))), 'mpeg4').frames.length).toBe(seg.f1 - seg.f0);
   });
 });
