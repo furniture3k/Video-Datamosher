@@ -8,7 +8,7 @@ import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
-import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
@@ -26,6 +26,7 @@ import { clipOn, VIDEO_TRACK, type Frame, type MediaItem, type Project } from '.
 import { drawOrder, isEmpty, isStill, layerAlpha, layerEnd, type Layer } from '../engine/layers';
 import { drawLayer, type MatteSource } from './layers';
 import { ensureMattes, matteSourceFor } from './mattes.svelte';
+import { buildPlates } from './clipplates';
 import { ensureFonts } from './fonts.svelte';
 import { FrameEncoder, encodedSize, hardwareCodec, hardwareProxy } from './webcodecs';
 
@@ -227,6 +228,38 @@ async function clipMattePlates(project: Project, w: number, h: number, mounts: R
   return out;
 }
 
+/** The card and mask pictures of every upper-track clip that has either, for the graph (drawn once per look, kept). */
+const plateCache = new LRU<Awaited<ReturnType<typeof buildPlates>>>(24, 120e6);
+async function clipPlateSet(project: Project, w: number, h: number, mounts: Record<string, Blob>, progress?: Progress, signal?: Signal): Promise<ClipPlates[]> {
+  const out: ClipPlates[] = [];
+  const fps = project.encoder.fps;
+  for (const c of project.clips) {
+    if ((!c.card && !c.mask) || c.track === VIDEO_TRACK || !clipOn(c)) continue;
+    const m = mediaOf(project, c.mediaId);
+    if (!m || !m.hasVideo || m.source.kind === 'adjust') continue;
+    check(signal);
+    const key = JSON.stringify({ card: c.card, mask: c.mask, fit: c.fit, w, h, fps, len: c.out - c.in, mw: m.width, mh: m.height, sp: c.speed });
+    let built = plateCache.get(key);
+    if (!built) {
+      built = await buildPlates(c, m, w, h, fps, (k, n) => progress?.('Drawing the cards', k / n));
+      plateCache.set(key, built, (built.back?.size ?? 0) + (built.mask?.size ?? 0));
+    }
+    const p: ClipPlates = { clipId: c.id };
+    if (built.back) {
+      mounts[`cardback_${c.id}.png`] = built.back;
+      p.back = MOUNT + `cardback_${c.id}.png`;
+    }
+    if (built.mask) {
+      const name = `cardmask_${c.id}.${built.maskFrames ? 'pngs' : 'png'}`;
+      mounts[name] = built.mask;
+      p.mask = MOUNT + name;
+      if (built.maskFrames) p.maskFrames = built.maskFrames;
+    }
+    out.push(p);
+  }
+  return out;
+}
+
 /** The canvas's pictures for the prep graph (see CanvasPlates), when the picture is set in. */
 async function canvasPlates(project: Project, w: number, h: number, mounts: Record<string, Blob>): Promise<CanvasPlates | undefined> {
   const c = project.canvas;
@@ -295,6 +328,7 @@ export async function prepare(project: Project, width: number, progress?: Progre
   const overlays = await layerOverlays(project, size.w, size.h, mounts, progress, signal);
   const plates = await canvasPlates(project, size.w, size.h, mounts);
   const clipMattes = await clipMattePlates(project, size.w, size.h, mounts, progress, signal);
+  const clipPlates = await clipPlateSet(project, size.w, size.h, mounts, progress, signal);
   // Without keyframes at cuts the stream must be encoded in one go (cuts become P-frames).
   const whole = !project.encoder.keyAtCuts;
   const segs: (Segment | null)[] = whole ? [null] : segments(project, fps);
@@ -303,12 +337,12 @@ export async function prepare(project: Project, width: number, progress?: Progre
   let done = 0;
   for (const seg of segs) {
     check(signal);
-    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays, plates, clipMattes), t: project.layers.filter((t) => t.moshed), cv: project.canvas }));
+    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays, plates, clipMattes, clipPlates), t: project.layers.filter((t) => t.moshed), cv: project.canvas }));
     const n = seg ? seg.f1 - seg.f0 : totalFrames;
     let part = preview ? segCache.get(key) : undefined;
     if (!part) {
       const name = disk ? `prep_${parts.length}.avi` : 'prep.avi';
-      const args = seg ? segmentArgs(project, seg, width, name, path, overlays, plates, clipMattes) : prepArgs(project, width, name, path, overlays, plates, clipMattes);
+      const args = seg ? segmentArgs(project, seg, width, name, path, overlays, plates, clipMattes, clipPlates) : prepArgs(project, width, name, path, overlays, plates, clipMattes, clipPlates);
       const base = done;
       const onFrame = (k: number) => progress?.('Preparing clips', Math.min(1, (base + k) / totalFrames));
       let log: string;

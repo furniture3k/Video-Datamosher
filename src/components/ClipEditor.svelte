@@ -6,6 +6,7 @@ import { store } from '../lib/store.svelte';
   import StylePicker from './StylePicker.svelte';
   import TitleSettings from './TitleSettings.svelte';
   import ShapeSettings from './ShapeSettings.svelte';
+  import CollageSettings from './CollageSettings.svelte';
   import SubjectSettings from './SubjectSettings.svelte';
   import BeatChips from './BeatChips.svelte';
   ;
@@ -507,6 +508,7 @@ import { store } from '../lib/store.svelte';
           help={hasMattes(store.project) ? "Over the main track, or behind the subject you cut out of it (the subject comes back over this clip)." : 'To go behind a subject, cut the subject out of a clip on the main track first (Clip tab, Motion).'}
           onchange={(v: string) => editKeys((x) => (v === 'behind' ? (x.depth = 'behind') : delete x.depth))}
         />
+        <CollageSettings clip={c} />
         <div class="row sect"><span class="label grow">Surface</span></div>
         {#if c.screen}
           <div class="row small faint">Plays on a tracked surface: it follows the surface's corners (its own position, zoom and turn don't apply). <button class="small ghost" onclick={() => takeClipOffSurface(c.id)}>Take it off</button></div>

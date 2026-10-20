@@ -1,10 +1,26 @@
 // Draws shape layers onto a 2D canvas (for the graphics renderer in ./layers): the lines come from
 // ../engine/shapes, this strokes and fills them.
 import { layerPos, type ShapeLayer } from '../engine/layers';
-import { boilStrokes, drawnShare, progressShare, shapeStrokes, trimStrokes } from '../engine/shapes';
+import { boilStrokes, drawnShare, progressShare, rippleRings, shapeStrokes, trimStrokes } from '../engine/shapes';
 
 export function drawShape(ctx: CanvasRenderingContext2D, s: ShapeLayer, w: number, h: number, alpha: number, t = s.start) {
   if (alpha <= 0) return;
+  if (s.shape === 'ripple') {
+    // rings spreading out from its middle, over its time
+    const [qx, qy] = layerPos(s, t);
+    ctx.save();
+    ctx.translate(qx * w, qy * h);
+    ctx.lineWidth = Math.max(1, s.width * h);
+    ctx.strokeStyle = s.color;
+    for (const { r, alpha: a } of rippleRings(Math.max(0, Math.min(1, (t - s.start) / Math.max(0.05, s.duration))))) {
+      ctx.globalAlpha = alpha * a;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, Math.max(0.5, (s.w * w * r) / 2), Math.max(0.5, (s.h * h * r) / 2), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
   // a loading bar is always drawn whole: it fills instead
   const share = s.shape === 'progress' ? 1 : drawnShare(s, t);
   if (share <= 0) return;

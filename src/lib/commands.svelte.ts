@@ -6,7 +6,7 @@ import { startMark, startSurface } from './motion.svelte';
 import { startCutout } from './cutout.svelte';
 import { chaos, mutate } from '../engine/presets';
 import { chaosGraphics } from '../engine/graphicschaos';
-import { revealOnBeats } from './graphicsops.svelte';
+import { revealOnBeats, swapCellsOnBeat } from './graphicsops.svelte';
 import { beatInfo } from './beatinfo.svelte';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
@@ -159,6 +159,9 @@ const ACTIONS: Record<string, Action> = {
   'add-circle': { run: () => void edit.addShape('circle') },
   'add-arrow': { run: () => void edit.addShape('arrow') },
   'add-callout': { run: () => void edit.addCallout() },
+  'add-selection': { run: () => void edit.addSelection() },
+  'add-notification': { run: () => void edit.addNotification() },
+  'add-ripple': { run: () => void edit.addShape('ripple') },
   'add-polygon': { run: () => void edit.addShape('polygon') },
   'add-leader': { run: () => void edit.addShape('leader') },
   pen: { run: () => void (store.ui.pen = true), when: hasClips },
@@ -173,6 +176,7 @@ const ACTIONS: Record<string, Action> = {
   script: { run: dialog('script'), when: hasClips },
   steal: { run: dialog('steal') },
   'reveal-beats': { run: () => revealOnBeats(1), when: hasClips },
+  'swap-cells': { run: () => swapCellsOnBeat(1), when: hasClips },
   group: { run: () => edit.groupSelected(), when: hasClips },
   ungroup: { run: () => edit.ungroupSelected(), when: hasClips },
   bake: { run: dialog('bake'), when: hasClips },

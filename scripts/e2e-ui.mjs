@@ -2292,6 +2292,141 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   await S(() => (window.__moshpit.store.ui.home = false));
 });
 
+await isoStep('collage: a card and a mask on a clip, pop in, swapping cells, mockups, a camera zoom, fake phone UI', async () => {
+  // a grey clip on the main track and a red one above it
+  await S(async () => {
+    const { ffmpeg, media, store, edit, timeline } = window.__moshpit;
+    for (const [name, col] of [['grey.mp4', 'gray'], ['red.mp4', 'red']]) {
+      const r = await ffmpeg.run(['-f', 'lavfi', '-i', `color=c=${col}:s=320x240:r=24:d=4`, '-pix_fmt', 'yuv420p', name], { outputs: [name] });
+      await media.addFiles([new File([r.out[name]], name, { type: 'video/mp4' })], 'none');
+    }
+    const g = store.project.media.find((m) => m.source.name === 'grey.mp4');
+    const r = store.project.media.find((m) => m.source.name === 'red.mp4');
+    store.edit((p) => p.clips.push(timeline.makeClip(g, 'v1', { start: 0 })));
+    const track = edit.addVideoTrack();
+    const up = timeline.makeClip(r, track, { start: 0 });
+    // smaller than the frame, so the paper round it shows
+    up.transform = { zoom: 0.6 };
+    store.edit((p) => p.clips.push(up));
+    window.__upId = up.id;
+    store.ui.selectedClips = [up.id];
+    store.ui.view = 'edit';
+    store.ui.playing = false;
+    store.seek(1.5);
+  });
+  await idle();
+  const shown = (pts) => S((pts) => {
+    const cv = document.querySelector('.stage canvas.edit');
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    return pts.map(([x, y]) => { const i = (Math.round(y * cv.height) * cv.width + Math.round(x * cv.width)) * 4; return [d[i], d[i + 1], d[i + 2]]; });
+  }, pts);
+  const settle2 = () => page.waitForTimeout(550);
+  const redp = (c) => c[0] > 190 && c[1] < 70 && c[2] < 70;
+  const whitep = (c) => c.every((v) => v > 215);
+  const greyp = (c) => Math.abs(c[0] - c[1]) < 20 && Math.abs(c[1] - c[2]) < 20 && c[0] > 90 && c[0] < 175;
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  // ---- a polaroid card with a caption, and a circle mask over the picture
+  await page.getByRole('group', { name: 'Card styles' }).getByRole('button', { name: 'Polaroid' }).click();
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.find((c) => c.id === window.__upId).card?.caption === '', null, { timeout: 5000 });
+  await page.locator('input[aria-label="Caption"]').fill('Hi');
+  await page.getByRole('group', { name: 'Mask shapes' }).getByRole('button', { name: 'Circle' }).click();
+  await S(() => window.__moshpit.store.edit((p) => (p.clips.find((c) => c.id === window.__upId).mask.size = 0.6)));
+  await settle2();
+  // the picture's rectangle is the middle 60%: the circle shows red, the corner of the rectangle shows the paper, beyond it the clip below
+  let [centre, corner, far] = await shown([[0.5, 0.5], [0.23, 0.23], [0.05, 0.05]]);
+  if (!(redp(centre) && whitep(corner) && greyp(far))) throw new Error('card and mask in the preview: ' + JSON.stringify([centre, corner, far]));
+  await shot('m-collage-card');
+  // the same in the rendered mosh
+  await S(() => (window.__moshpit.store.ui.view = 'auto'));
+  await settle();
+  const rend = (pts) => S(async (pts) => {
+    const st = window.__moshpit.store;
+    const b = await createImageBitmap(new Blob([st.render.jpegs[Math.round(1.5 * st.project.encoder.fps)]], { type: 'image/jpeg' }));
+    const c = new OffscreenCanvas(b.width, b.height).getContext('2d');
+    c.drawImage(b, 0, 0);
+    return pts.map(([x, y]) => { const d = c.getImageData(Math.round(x * b.width) - 1, Math.round(y * b.height) - 1, 3, 3).data; let r = 0, g = 0, bb = 0; for (let i = 0; i < d.length; i += 4) (r += d[i]), (g += d[i + 1]), (bb += d[i + 2]); return [r / 9, g / 9, bb / 9]; });
+  }, pts);
+  [centre, corner, far] = await rend([[0.5, 0.5], [0.23, 0.23], [0.05, 0.05]]);
+  if (!(redp(centre) && corner.every((v) => v > 190) && greyp(far))) throw new Error('card and mask in the render: ' + JSON.stringify([centre, corner, far]));
+  await renderShot('m-collage-card-render', 1.5);
+  await S(() => (window.__moshpit.store.ui.view = 'edit'));
+  // a mask that grows: at the start it is small, so the corner of the rectangle is paper and the circle's edge is too; later the circle is full
+  await S(() => window.__moshpit.store.edit((p) => { const c = p.clips.find((x) => x.id === window.__upId); c.mask.size = 1.2; c.mask.grow = 1; }));
+  await S(() => window.__moshpit.store.seek(0.05));
+  await settle2();
+  const early = (await shown([[0.4, 0.4]]))[0];
+  await S(() => window.__moshpit.store.seek(2));
+  await settle2();
+  const late = (await shown([[0.4, 0.4]]))[0];
+  if (!(whitep(early) && redp(late))) throw new Error('the mask did not grow: ' + JSON.stringify([early, late]));
+  await S(() => window.__moshpit.store.edit((p) => { const c = p.clips.find((x) => x.id === window.__upId); delete c.mask; delete c.card; }));
+  // ---- pop in: settled it is where it rests; at its start it is small
+  await page.getByRole('group', { name: 'Pop in' }).getByRole('button', { name: 'Pop', exact: true }).click();
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.find((c) => c.id === window.__upId).keys?.zoom?.length === 3, null, { timeout: 5000 });
+  await S(() => window.__moshpit.store.seek(0));
+  await settle2();
+  const start0 = (await shown([[0.35, 0.5]]))[0];
+  await S(() => window.__moshpit.store.seek(1.5));
+  await settle2();
+  const settled = (await shown([[0.35, 0.5]]))[0];
+  if (!(greyp(start0) && redp(settled))) throw new Error('pop in: ' + JSON.stringify([start0, settled]));
+  await page.getByLabel('Smooth').uncheck().catch(() => {});
+  await S(() => window.__moshpit.store.edit((p) => { const c = p.clips.find((x) => x.id === window.__upId); c.pop = { ...c.pop, ease: false }; }));
+  await page.getByRole('group', { name: 'Pop in' }).getByRole('button', { name: 'None' }).click();
+  if (await S(() => window.__moshpit.store.project.clips.find((c) => c.id === window.__upId).keys)) throw new Error('taking the pop off left keys behind');
+  // ---- swapping cells: two clips side by side trade places on the beats (none here: half a second apart)
+  await S(() => { const st = window.__moshpit.store; window.__moshpit.edit.arrangeGrid('side'); st.ui.selectedClips = []; st.seek(0.1); });
+  await S(() => window.__moshpit.graphicsops?.swapCellsOnBeat?.(1));
+  await page.locator('.tabs button', { hasText: 'Encode' }).click();
+  await page.getByRole('button', { name: 'Swap places on the beat' }).click();
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.every((c) => c.keys?.x?.length > 3), null, { timeout: 5000 });
+  const xs = await S(() => {
+    const { store, timeline } = window.__moshpit;
+    const keyed = (c, t) => { const k = c.keys.x; for (let i = 0; i < k.length - 1; i++) if (t < k[i + 1][0]) return k[i][1] + (k[i + 1][1] - k[i][1]) * (k[i + 1][2] === 0 ? (t - k[i][0]) / (k[i + 1][0] - k[i][0]) : 0); return k.at(-1)[1]; };
+    const a = store.project.clips.find((c) => c.track === 'v1');
+    const b = store.project.clips.find((c) => c.id === window.__upId);
+    return [keyed(a, 0.3), keyed(a, 0.7), keyed(b, 0.3), keyed(b, 0.7)];
+  });
+  if (!(xs[0] < 0 && xs[1] > 0 && xs[2] > 0 && xs[3] < 0)) throw new Error('swapping cells: ' + JSON.stringify(xs));
+  await S(() => window.__moshpit.store.edit((p) => p.clips.forEach((c) => { delete c.keys; delete c.transform; })));
+  // ---- mockups: a music player has controls on a panel under the picture; a chat bubble is blue round it
+  const preset = (device) => S((device) => window.__moshpit.store.edit((p) => (p.canvas = device === 'music' ? { bg: 'gradient', color: '#3a1c71', color2: '#d76d77', angle: 20, inset: 0.17, shift: -0.1, radius: 0.05, shadow: 0.5, device: 'music' } : device === 'chat' ? { bg: 'color', color: '#eef1f6', inset: 0.15, shift: -0.04, radius: 0.05, shadow: 0.3, device: 'chat' } : { bg: 'gradient', color: '#3a1c71', color2: '#d76d77', angle: 20, inset: 0.17, shift: -0.1, radius: 0.05, shadow: 0.5 })), device);
+  await S(() => { const st = window.__moshpit.store; st.edit((p) => (p.clips = p.clips.filter((c) => c.track === 'v1'))); st.seek(1); });
+  await preset('none');
+  await settle2();
+  const darkest = async () => (await S(() => { const cv = document.querySelector('.stage canvas.edit'); const d = cv.getContext('2d').getImageData(Math.round(cv.width * 0.3), Math.round(cv.height * 0.8), Math.round(cv.width * 0.4), Math.round(cv.height * 0.12)).data; let lo = 765; for (let i = 0; i < d.length; i += 4) lo = Math.min(lo, d[i] + d[i + 1] + d[i + 2]); return lo; }));
+  const plainDark = await darkest();
+  await preset('music');
+  await settle2();
+  const musicDark = await darkest();
+  if (!(plainDark > 220 && musicDark < 120)) throw new Error(`music player: backdrop ${plainDark}, with the player ${musicDark}`);
+  await shot('m-collage-music');
+  await preset('chat');
+  await settle2();
+  const bubble = await S(() => { const cv = document.querySelector('.stage canvas.edit'); const y = Math.round(cv.height * 0.5); const d = cv.getContext('2d').getImageData(0, y, cv.width, 1).data; for (let x = 0; x < cv.width; x++) { const r = d[x * 4], g = d[x * 4 + 1], b = d[x * 4 + 2]; if (r < 60 && g > 90 && g < 170 && b > 220) return true; } return false; });
+  if (!bubble) throw new Error('chat bubble: no blue round the picture');
+  // ---- a camera move into the card: before it starts the card has a margin, once it is zoomed the picture runs to the edge
+  await S(() => window.__moshpit.store.edit((p) => (p.canvas = { bg: 'color', color: '#f4efe6', inset: 0.1, radius: 0, shadow: 0, zoomIn: { at: 0.5, dur: 1 } })));
+  const edgeOf = async (t) => { await S((t) => window.__moshpit.store.seek(t), t); await settle2(); return (await shown([[0.02, 0.5]]))[0]; };
+  const before = await edgeOf(0.2);
+  const after = await edgeOf(2.5);
+  if (!(whitep(before) && greyp(after))) throw new Error('camera zoom: ' + JSON.stringify([before, after]));
+  await S(() => window.__moshpit.store.edit((p) => delete p.canvas));
+  // ---- fake phone UI from the palette: a ripple, selected text with a menu, a notification
+  const palette = async (name) => { await page.keyboard.press('Control+p'); await page.locator('.pal input').waitFor(); await page.keyboard.type(name); await page.keyboard.press('Enter'); await page.waitForTimeout(300); };
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  await palette('click ripple');
+  await palette('selected text with handles');
+  await palette('notification banner');
+  const ui = await S(() => { const ls = window.__moshpit.store.project.layers; return { ripple: ls.filter((l) => l.shape === 'ripple').length, handles: ls.filter((l) => l.shape === 'handle').length, groups: new Set(ls.filter((l) => l.group).map((l) => l.group)).size, total: ls.length }; });
+  if (!(ui.ripple === 1 && ui.handles === 2 && ui.groups === 2 && ui.total === 1 + 7 + 4)) throw new Error('fake UI: ' + JSON.stringify(ui));
+  // the ripple draws rings: a moment after it starts there are pixels where there were none
+  await S(() => { const st = window.__moshpit.store; st.edit((p) => (p.layers = p.layers.filter((l) => l.shape === 'ripple'))); st.edit((p) => { const l = p.layers[0]; l.start = 0; l.duration = 1; l.color = '#00ff00'; l.w = 0.5; l.h = 0.5 * 4 / 3; l.width = 0.01; }); st.seek(0.45); });
+  await settle2();
+  const rings = await S(() => { const cv = document.querySelector('.stage canvas.edit'); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 200 && d[i] < 90 && d[i + 2] < 90) n++; return n; });
+  if (!(rings > 150)) throw new Error('the ripple drew nothing: ' + rings);
+});
+
 await isoStep('type and shapes: gradient, line and word looks, polygon, leader line, callout, shadow and outline, shape styles', async () => {
   // titles over black, so what is drawn is what is there; the pixels are read off the live edit picture
   await S(() => {

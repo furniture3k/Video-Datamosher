@@ -480,6 +480,12 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - Output: a template + kit applied to the user's clips.
 - Tests: synthetic references with known cut rhythm, fps and colour cast.
 
+> **Done (PR for `feat/m15-steal`).** The reference is read in the browser (small grey and colour frames), measured by `src/engine/steal.ts` and turned into a plan: shot lengths that repeat to fill the user's footage (on whole beats of their music when the reference cut on its own beat), a step-print rate, a card if the reference had bars, and a LUT built by colour transfer. Nothing leaves the device. Tests use synthetic references with a known rhythm, frame rate, bars and colour cast.
+
+### G1 and G2: type, shapes, collage and mockups
+> **Done (PRs for `feat/g1-type-shapes` and `feat/g2-collage`).** G1: gradient fills, looks for single lines and words, polygons, leader lines with end squares, callouts, glow, drop shadow and outer stroke on any layer, and style kits for shapes and stickers. G2: a card and an animated mask on any clip (plates rendered by the page and alpha-merged in the graph, so they travel with the picture), pop in on the beat, split-screen cells that swap on beats, music player and chat bubble mockups, a camera zoom into the screen, and fake phone UI (click ripple, selection handles and menu, notification banner).
+
+
 ---
 
 ## Verification (every milestone, before its PR)

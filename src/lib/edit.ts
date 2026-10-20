@@ -6,7 +6,7 @@ import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, l
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TransitionType } from '../engine/types';
 import { FIRST_ROW, freeRow, nextRow, withGroups, type Layer, type ShapeLayer, type TextLayer } from '../engine/layers';
 import { DEFAULT_LOOK, fitPen, newShape, type Pt, type ShapeLook } from '../engine/shapes';
-import { calloutLayers } from '../engine/annotate';
+import { calloutLayers, notificationLayers, selectionLayers } from '../engine/annotate';
 import { outputSize } from '../engine/args';
 import { GRID_LAYOUTS, cellTransform, inset } from '../engine/grid';
 import { flipbook, type FlipOrder } from '../engine/flipbook';
@@ -529,6 +529,24 @@ export function addCallout(at: [number, number] = [0.5, 0.5]) {
   const made = calloutLayers(at, aspect(), look, store.project.layers, uid, t, 3);
   store.edit((p) => p.layers.push(...made));
   // the title is what to type over first
+  store.selectClip(made[2].id);
+  return made;
+}
+
+/** Selected text with its handles and menu, as phones show it (a group), at `at` (shares of the frame). */
+export function addSelection(at: [number, number] = [0.5, 0.55]) {
+  const t = store.ui.time;
+  const made = selectionLayers(at, aspect(), store.project.layers, uid, t, 3);
+  store.edit((p) => p.layers.push(...made));
+  store.selectClip(made[0].id);
+  return made;
+}
+
+/** A notification banner sliding down from the top (a group). */
+export function addNotification() {
+  const t = store.ui.time;
+  const made = notificationLayers(aspect(), store.project.layers, uid, t, 3);
+  store.edit((p) => p.layers.push(...made));
   store.selectClip(made[2].id);
   return made;
 }

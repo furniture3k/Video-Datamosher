@@ -152,7 +152,7 @@ export interface LineStyle {
   bold?: boolean;
 }
 
-export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst' | 'subject' | 'polygon' | 'leader';
+export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst' | 'subject' | 'polygon' | 'leader' | 'ripple' | 'handle';
 
 /** What a subject effect does to the subject cut out of the footage (or, for blur and grade, to everything but it). */
 export interface SubjectFx {
@@ -282,7 +282,7 @@ export function isStill(l: Layer): boolean {
   // (behind the subject changes with the footage's matte from frame to frame)
   if (l.follow?.length || l.surface || l.trail || l.particles || (l.depth && l.depth !== 'front')) return false;
   // (a subject effect follows the footage's matte from frame to frame)
-  if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress' && l.shape !== 'subject';
+  if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress' && l.shape !== 'subject' && l.shape !== 'ripple';
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }
 

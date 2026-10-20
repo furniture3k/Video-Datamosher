@@ -21,6 +21,8 @@ export const SHAPES: { value: ShapeKind; label: string; hint: string }[] = [
   { value: 'polygon', label: 'Polygon', hint: 'Three or more equal sides: a pentagon, a hexagon, a stop sign.' },
   { value: 'line', label: 'Line', hint: 'From one corner to the other; bend it into a curve.' },
   { value: 'arrow', label: 'Arrow', hint: 'Points at something; bend it into a curve.' },
+  { value: 'ripple', label: 'Click ripple', hint: 'Rings that spread out and fade, like a tap or a click (put it under a cursor).' },
+  { value: 'handle', label: 'Selection handle', hint: 'The ball on a line that marks the end of selected text.' },
   { value: 'leader', label: 'Leader line', hint: 'A line with a small square at each end, to point at something and carry a note.' },
   { value: 'bracket', label: 'Corners', hint: 'Four corner marks, like a camera focusing.' },
   { value: 'underline', label: 'Underline', hint: 'A hand-drawn line under a word.' },
@@ -89,6 +91,8 @@ export function shapeStrokes(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' |
   const out = strokesOf(s, W, H);
   // the line kinds can run the other diagonal
   if (s.flip && (s.shape === 'line' || s.shape === 'arrow' || s.shape === 'leader')) return out.map((st) => ({ ...st, pts: st.pts.map(([x, y]) => [-x, y] as Pt) }));
+  // a selection handle's ball goes on the bottom end instead
+  if (s.flip && s.shape === 'handle') return out.map((st) => ({ ...st, pts: st.pts.map(([x, y]) => [x, -y] as Pt) }));
   return out;
 }
 
@@ -96,6 +100,15 @@ function strokesOf(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' | 'head' | 
   const w = s.w * W;
   const h = s.h * H;
   switch (s.shape) {
+    // (a ripple is drawn as rings that grow and fade, see rippleRings; the outline is its widest ring)
+    case 'ripple':
+      return [{ pts: ring(48, (a) => [(Math.sin(a) * w) / 2, (-Math.cos(a) * h) / 2]), closed: true }];
+    case 'handle': {
+      // a text-selection handle: a line with a ball on its top end (on its bottom end when flipped)
+      const q = Math.max(3, w / 2);
+      const top = -h / 2;
+      return [{ pts: [[0, top], [0, h / 2]], closed: false }, { pts: ring(24, (a) => [Math.sin(a) * q, top - q - Math.cos(a) * q]), closed: true }];
+    }
     case 'polygon': {
       const n = Math.max(3, Math.min(24, Math.round(s.sides ?? 5)));
       return [{ pts: ring(n, (a) => [(Math.sin(a) * w) / 2, (-Math.cos(a) * h) / 2]), closed: true }];
@@ -273,6 +286,8 @@ export function newShape(shape: ShapeKind, id: string, row: string, start: numbe
   const s: ShapeLayer = { id, kind: 'shape', row, shape, start, duration: 3, x: 0.5, y: 0.5, fade: 0, moshed: false, w, h, ...look };
   if (shape === 'tunnel') s.count = 6;
   if (shape === 'polygon') s.sides = 6;
+  if (shape === 'ripple') Object.assign(s, { w: sq(0.2)[0], h: 0.2, color: '#ffffff', width: 0.004, drawOn: undefined, duration: 0.8 });
+  if (shape === 'handle') Object.assign(s, { w: sq(0.026)[0], h: 0.07, color: '#1a73e8', fill: '#1a73e8', width: 0.004, drawOn: undefined });
   // the squares at the ends of a leader line are filled with its colour
   if (shape === 'leader') Object.assign(s, { fill: look.color, head: 0.06 });
   if (shape === 'cursor') Object.assign(s, { w: sq(0.06)[0], h: 0.06 * 1.4, color: '#000000', fill: '#ffffff', width: 0.003, drawOn: undefined });
@@ -286,4 +301,14 @@ export function newShape(shape: ShapeKind, id: string, row: string, start: numbe
     delete s.fill;
   }
   return s;
+}
+
+/** The rings of a click ripple `p` (0..1) of the way through: each starts a little after the one before, grows to full size and fades as it does. */
+export function rippleRings(p: number, rings = 3): { r: number; alpha: number }[] {
+  const out: { r: number; alpha: number }[] = [];
+  for (let k = 0; k < rings; k++) {
+    const q = Math.max(0, Math.min(1, (p - k * 0.2) / 0.6));
+    if (q > 0 && q < 1) out.push({ r: 1 - (1 - q) ** 2, alpha: (1 - q) * 0.9 });
+  }
+  return out;
 }
