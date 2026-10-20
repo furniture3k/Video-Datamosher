@@ -33,7 +33,7 @@ export const SHAPES: { value: ShapeKind; label: string; hint: string }[] = [
 ];
 
 /** What a layer is called on the timeline: a title's words, a shape's kind. */
-export const layerName = (l: Layer) => (l.kind === 'text' ? l.text.trim() || 'Text' : (SHAPES.find((s) => s.value === l.shape)?.label ?? 'Shape'));
+export const layerName = (l: Layer) => (l.kind === 'text' ? l.text.trim() || 'Text' : l.shape === 'subject' ? 'Subject effect' : (SHAPES.find((s) => s.value === l.shape)?.label ?? 'Shape'));
 
 const CURSOR: Pt[] = [[0, 0], [0, 0.82], [0.23, 0.63], [0.38, 0.97], [0.53, 0.9], [0.38, 0.57], [0.66, 0.57]];
 
@@ -148,6 +148,9 @@ export function shapeStrokes(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' |
       return [{ pts: ring(64, (a) => { const k = Math.pow(Math.abs(Math.cos(2 * a)), 6) * 0.82 + 0.18; return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; }), closed: true }];
     case 'burst':
       return [{ pts: ring(28, (a) => { const i = Math.round((a / (Math.PI * 2)) * 28); const k = i % 2 ? 0.66 + noiseless(i) * 0.12 : 1; return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; }), closed: true }];
+    // (drawn from the subject's matte, not from lines)
+    case 'subject':
+      return [];
   }
 }
 

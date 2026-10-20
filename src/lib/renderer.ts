@@ -150,7 +150,7 @@ async function layerOverlays(project: Project, w: number, h: number, mounts: Rec
     // the timeline frames it's on screen in
     const first = Math.ceil(l.start * fps - 1e-6);
     const count = Math.max(1, Math.ceil(layerEnd(l) * fps - 1e-6) - first);
-    const key = JSON.stringify({ l, w, h, fps, mv: l.depth === 'behind' ? mv : '' });
+    const key = JSON.stringify({ l, w, h, fps, mv: l.depth && l.depth !== 'front' ? mv : '' });
     let seq = seqCache.get(key);
     if (!seq) {
       seq = await layerFrames(l, w, h, first, count, fps, progress, signal, matte);

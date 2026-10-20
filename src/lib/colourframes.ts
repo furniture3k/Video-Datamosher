@@ -33,7 +33,10 @@ export function colourFrames(m: MediaItem, from: number, to: number, fps: number
         const name = `cf_${m.id}.${src.ext}`;
         const count = Math.min(per, n - c * per);
         const r = await ffmpeg.run(['-ss', String(from + (c * per) / fps), '-i', MOUNT + name, '-an', '-vf', `fps=${fps},scale=${w}:${h},format=rgb24`, '-frames:v', String(count), '-f', 'rawvideo', 'cf.rgb'], { mounts: { [name]: blob }, outputs: ['cf.rgb'] });
-        return r.out['cf.rgb'];
+        const raw = r.out['cf.rgb'];
+        // (a chunk that starts past the last frame is empty: its frames are the last one again)
+        if ((!raw || raw.length < w * h * 3) && c === 0) throw new Error('Could not read frames from the footage: ' + r.log.trim().split('\n').slice(-3).join(' | '));
+        return raw ?? new Uint8Array(0);
       })();
       p.catch(() => chunks.delete(c));
       chunks.set(c, p);
@@ -46,10 +49,12 @@ export function colourFrames(m: MediaItem, from: number, to: number, fps: number
     w,
     h,
     n,
-    async get(i) {
+    async get(i): Promise<ImageBitmap> {
       const c = Math.floor(i / per);
       const raw = await load(c);
       const k = Math.min(i - c * per, Math.floor(raw.length / (w * h * 3)) - 1);
+      // past the end of the footage: the last frame there is
+      if (k < 0 && i > 0) return this.get(i - 1);
       if (k < 0) throw new Error('That frame could not be read.');
       const px = new Uint8ClampedArray(w * h * 4);
       const o = k * w * h * 3;

@@ -3,7 +3,7 @@
 import { store } from './store.svelte';
 import { colourFrames } from './colourframes';
 import { clipFrames } from './analysis';
-import { openFrame, resizeMask } from './objectseg';
+import { openFrame, resizeMask, setObjectBackend } from './objectseg';
 import { busy, framesBuffer, inWorker } from './motion.svelte';
 import { cacheMatte, forgetMattes } from './mattes.svelte';
 import { putFile } from './storage';
@@ -14,7 +14,7 @@ import { clipLen, mediaOf, sourceTime } from '../engine/timeline';
 import { even } from '../engine/args';
 import { uid } from '../engine/presets';
 import { clipStart, trackableAt } from './motion.svelte';
-import { FIRST_ROW, freeRow, type TextLayer } from '../engine/layers';
+import { FIRST_ROW, freeRow, type ShapeLayer, type SubjectFx, type TextLayer } from '../engine/layers';
 import type { Clip, Project } from '../engine/types';
 
 /** The job in progress: for the progress bar and the Cancel button. */
@@ -142,7 +142,7 @@ export function deleteMatte(mediaId: string, matteId: string) {
     const m = q.media.find((x) => x.id === mediaId);
     if (m) m.mattes = m.mattes?.filter((x) => x.id !== matteId);
     // layers that were behind it go back to the front: there is nothing to hide them now
-    if (!q.media.some((x) => (x.mattes ?? []).length)) for (const l of q.layers) if (l.depth === 'behind') delete l.depth;
+    if (!q.media.some((x) => (x.mattes ?? []).length)) for (const l of q.layers) delete l.depth;
   });
   forgetMattes();
 }
@@ -159,6 +159,7 @@ export function toggleCutout(id: string) {
   const start = clipStart(store.project, c);
   const len = clipLen(c);
   if (store.ui.time < start || store.ui.time >= start + len - 1e-3) store.seek(start + Math.min(len / 2, 0.5));
+  setObjectBackend(store.ui.cutModel);
   store.ui.cutout = { clipId: id, points: [] };
 }
 
@@ -186,4 +187,32 @@ export function titleBehind(clipId: string, at: [number, number] = [0.5, 0.5], t
   store.edit((q) => q.layers.push(tx));
   store.ui.selectedClips = [tx.id];
   store.toast('Added a title behind the subject: change its words in the inspector.', 'ok');
+}
+
+/** What each subject effect starts as. */
+export const SUBJECT_EFFECTS: { value: SubjectFx['effect']; label: string; hint: string; colour: string; fx: Partial<SubjectFx> }[] = [
+  { value: 'fill', label: 'Recolour', hint: 'The subject as a flat colour: a red car, a white cut-out.', colour: '#ff2a2a', fx: { amount: 0.5 } },
+  { value: 'outline', label: 'Outline', hint: 'A line round the subject.', colour: '#ffffff', fx: { amount: 0.3 } },
+  { value: 'glow', label: 'Glow', hint: 'A soft light round the subject.', colour: '#ff5cc8', fx: { amount: 0.5 } },
+  { value: 'echo', label: 'Echo', hint: 'Copies of the subject stepping away behind it.', colour: '#22d3ee', fx: { amount: 0.5, copies: 4, dx: 0.04, dy: 0 } },
+  { value: 'blur', label: 'Blur the background', hint: 'Everything but the subject out of focus.', colour: '#ffffff', fx: { amount: 0.5, part: 'background' } },
+  { value: 'grade', label: 'Darken the background', hint: 'Everything but the subject dimmer and greyer (or change it to taste).', colour: '#ffffff', fx: { amount: 0.5, part: 'background', brightness: 0.45, saturation: 0.3, contrast: 1 } },
+];
+
+/** A subject effect over the whole length of a clip that has a cut-out. */
+export function addSubjectEffect(clipId: string, effect: SubjectFx['effect']) {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !m) return;
+  if (!(m.mattes ?? []).length) return store.toast('Cut a subject out of the clip first: the effect is made of it.', 'error');
+  const def = SUBJECT_EFFECTS.find((x) => x.value === effect)!;
+  const t0 = clipStart(p, c);
+  const t1 = t0 + clipLen(c);
+  const fx: SubjectFx = { effect, amount: 0.5, ...def.fx };
+  const l: ShapeLayer = { id: uid(), kind: 'shape', row: p.layers.length ? freeRow(p.layers, t0, t1) : FIRST_ROW, shape: 'subject', start: t0, duration: Math.max(0.5, t1 - t0), x: 0.5, y: 0.5, w: 1, h: 1, color: def.colour, width: 0.004, fade: 0, moshed: false, subject: fx };
+  store.edit((q) => q.layers.push(l));
+  store.ui.selectedClips = [l.id];
+  store.toast(`${def.label}: change it in the settings.`, 'ok');
+  return l.id;
 }

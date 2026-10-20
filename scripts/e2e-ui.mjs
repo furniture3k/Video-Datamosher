@@ -1806,7 +1806,58 @@ await step('cut out: tap a moving subject, follow it through the clip, put a lay
   }, { pts: [[1.0, centreAt(1.0)], [1.0, [30, 220]], [2.2, centreAt(2.2)], [2.2, centreAt(1.0)]] });
   if (!(white(rend[0]) && magenta(rend[1]) && white(rend[2]) && magenta(rend[3]))) throw new Error('in the render the card is not behind the square: ' + JSON.stringify(rend.map((p) => p.map(Math.round))));
   await renderShot('m8-behind-render', 2.2);
-  // deleting the cut-out sends the layer back to the front
+  // a track matte: only on the subject
+  await S(() => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === window.__cardId).moshed = false)));
+  await S(() => (window.__moshpit.store.ui.view = 'edit'));
+  await page.locator('.field', { hasText: 'Depth' }).locator('select').selectOption('inside');
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.find((l) => l.id === window.__cardId)?.depth === 'inside', null, { timeout: 5000 });
+  if (!magenta(await colourAt(1.0, centreAt(1.0)))) throw new Error('only on the subject: the card should show on the square');
+  if (magenta(await colourAt(1.0, [30, 220]))) throw new Error('only on the subject: the card should not show round it');
+  // subject effects: recolour the square solid red, in the preview and (melted) the render
+  await S((cid) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== cid))), await S(() => window.__cardId));
+  await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  await page.locator('.pathrow', { hasText: 'Cut-out 1' }).locator('select[aria-label="Effect on the subject"]').selectOption('fill');
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.some((l) => l.shape === 'subject'), null, { timeout: 5000 });
+  const red = (px) => px[0] > 200 && px[1] < 90 && px[2] < 90;
+  if (!red(await colourAt(1.0, centreAt(1.0)))) throw new Error('recolour: the square is not red');
+  if (red(await colourAt(1.0, [30, 220]))) throw new Error('recolour: the background went red too');
+  if (!red(await colourAt(2.2, centreAt(2.2)))) throw new Error('recolour: the red did not follow the square');
+  await shot('m8-recolour-preview');
+  // outline: a ring round the square, the inside left alone
+  await S(() => window.__moshpit.store.edit((p) => { const l = p.layers.find((x) => x.shape === 'subject'); l.subject = { effect: 'outline', amount: 0.5 }; l.color = '#00ff00'; }));
+  await page.waitForTimeout(400);
+  const green = (px) => px[1] > 200 && px[0] < 90 && px[2] < 90;
+  const [edge] = await onScreen([[centreAt(1.0)[0] + 40 + 4, centreAt(1.0)[1]]]);
+  await S((t) => window.__moshpit.store.seek(t), 1.0);
+  await page.waitForTimeout(500);
+  const ring = await S(({ u, v, cu, cv }) => {
+    const c = document.querySelector('.stage canvas.edit');
+    const at = (a, b) => [...c.getContext('2d').getImageData(Math.round(a * c.width), Math.round(b * c.height), 1, 1).data];
+    return { ring: at(u, v), inside: at(cu, cv) };
+  }, { u: edge.u, v: edge.v, cu: (await onScreen([centreAt(1.0)]))[0].u, cv: (await onScreen([centreAt(1.0)]))[0].v });
+  if (!green(ring.ring)) throw new Error('outline: nothing drawn just outside the square: ' + ring.ring);
+  if (green(ring.inside)) throw new Error('outline: the inside of the square went green');
+  // blur the background: the dim noise goes smooth while the square stays sharp
+  await S(() => window.__moshpit.store.edit((p) => { const l = p.layers.find((x) => x.shape === 'subject'); l.subject = { effect: 'blur', amount: 0.8, part: 'background' }; }));
+  await page.waitForTimeout(500);
+  const noisy = await S(() => {
+    const c = document.querySelector('.stage canvas.edit');
+    const d = c.getContext('2d').getImageData(Math.round(c.width * 0.03), Math.round(c.height * 0.85), 24, 24).data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < d.length; i += 4) (lo = Math.min(lo, d[i])), (hi = Math.max(hi, d[i]));
+    return hi - lo;
+  });
+  if (noisy > 14) throw new Error('blur the background: the background is still noisy (' + noisy + ')');
+  await S((cid) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.shape !== 'subject'))), null);
+  await S(() => (window.__moshpit.store.ui.view = 'auto'));
+  // deleting the cut-out sends a layer that was behind it back to the front
+  await S(() => {
+    const { store, edit } = window.__moshpit;
+    const s2 = edit.addShape('rect');
+    store.edit((p) => Object.assign(p.layers.find((l) => l.id === s2.id), { start: 0, duration: 3, w: 1.2, h: 1.2, x: 0.5, y: 0.5, depth: 'behind', fill: '#ff00ff', color: '#ff00ff', drawOn: 0, boil: 0, fade: 0 }));
+    window.__cardId = s2.id;
+  });
   await page.locator('.tabs button', { hasText: 'Clip' }).click();
   await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
   await page.getByRole('button', { name: 'Delete cut-out' }).click();
@@ -2437,6 +2488,19 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   if (hb.x < stageBox.x || hb.x + hb.width > stageBox.x + stageBox.width || hb.y < stageBox.y || hb.y + hb.height > stageBox.y + stageBox.height) throw new Error('the corner handle is off the phone preview');
   await page.locator('.tools .tool', { hasText: 'Cancel' }).click();
   if (await S(() => window.__moshpit.store.ui.surfacePick)) throw new Error('Cancel did not stop picking the surface');
+  // cutting a subject out from the phone tools: arm it, tap the preview, the mask and a dot show, Cancel stops it
+  await S(() => window.__moshpit.objectseg.setObjectSegmenter(async () => ({ w: 8, h: 8, data: new Uint8Array(64).fill(255) })));
+  await page.locator('.tools .tool', { hasText: 'Cut out' }).click();
+  await page.locator('.cutmask').waitFor();
+  if ((await S(() => window.__moshpit.store.ui.cutout?.clipId)) !== tid) throw new Error('the Cut out tool did not arm');
+  await page.waitForFunction(() => document.querySelector('.stage-note')?.textContent?.includes('tap the thing'), null, { timeout: 30000 });
+  await page.mouse.click(st.x + st.width * 0.5, st.y + st.height * 0.5);
+  await page.waitForFunction(() => window.__moshpit.store.ui.cutout?.points.length === 1, null, { timeout: 5000 });
+  await page.locator('.cutdot').waitFor();
+  await page.waitForFunction(() => { const c = document.querySelector('.cutmask'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true; return false; }, null, { timeout: 15000 });
+  await page.locator('.tools .tool', { hasText: 'Cancel' }).click();
+  if (await S(() => window.__moshpit.store.ui.cutout)) throw new Error('Cancel did not stop the cut-out');
+  await S(() => window.__moshpit.objectseg.setObjectSegmenter(null));
   await page.locator('.tools .back').click();
   await page.locator('.tools .tool', { hasText: 'Media' }).click();
   await page.locator('.sheet').waitFor();

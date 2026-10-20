@@ -86,7 +86,7 @@ class Store {
     /** id of the clip whose surface is being picked: four corners on the player, then it is tracked */
     surfacePick: null as string | null,
     /** cutting a subject out of a clip: the taps on the playhead's frame (shares of the clip's own picture; 1 = it, 0 = not it) */
-    cutout: null as null | { clipId: string; points: [number, number, 0 | 1][] },
+    cutout: null as null | { clipId: string; points: [number, number, 0 | 1][]; then?: 'recolour' },
     /** what happens once the surface is tracked: 'title' pins a new title to it */
     surfaceThen: null as null | 'title',
     /** the four corners of the surface being picked, clockwise from the top left (shares of the frame) */
@@ -111,6 +111,8 @@ class Store {
     home: false,
     /** imported clips on an empty timeline get a melt (or a bloom) straight away */
     autoMosh: localGet('autoMosh', true),
+    /** which model cuts subjects out: 'auto' (quick, precise once something is left out), 'mediapipe' (quick), 'sam' (precise), 'person' (people only, quickest) */
+    cutModel: localGet<'auto' | 'mediapipe' | 'sam' | 'person'>('cutModel', 'auto'),
     /** start on the home screen (else straight into the last project) */
     startHome: localGet('startHome', true),
     /** vibrate on phones when clips are picked up, trimmed and cut */
@@ -592,7 +594,7 @@ class Store {
     return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapProxies];
   }
 
-  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics' | 'startHome' | 'autoMosh'>(k: K, v: (typeof this.ui)[K]) {
+  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics' | 'startHome' | 'autoMosh' | 'cutModel'>(k: K, v: (typeof this.ui)[K]) {
     this.ui[k] = v;
     localSet(k, v);
     if (k === 'autoRender' && v) this.scheduleRender(50);

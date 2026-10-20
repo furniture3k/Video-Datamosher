@@ -14,7 +14,7 @@
     store.edit((p) => {
       const l = p.layers.find((x) => x.id === id);
       if (!l) return;
-      if (v === 'behind') l.depth = 'behind';
+      if (v === 'behind' || v === 'inside') l.depth = v;
       else delete l.depth;
     });
   }
@@ -28,7 +28,8 @@
   options={[
     { value: 'front', label: 'In front', hint: 'Over everything.' },
     { value: 'behind', label: 'Behind the subject', hint: 'Hidden wherever the subject is: it shows between the subject and the background.' },
+    { value: 'inside', label: 'Only on the subject', hint: 'Shown only where the subject is, like a pattern printed on it (a track matte).' },
   ]}
-  help={ready ? 'In front of everything, or behind the subject you cut out of the footage.' : 'To put this behind a subject, cut the subject out of a clip first (Clip tab, Motion).'}
+  help={ready ? 'In front of everything, behind the subject you cut out of the footage, or only on it.' : 'To put this behind a subject, cut the subject out of a clip first (Clip tab, Motion).'}
   onchange={set}
 />

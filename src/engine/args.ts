@@ -550,7 +550,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
     layers: seg.layers.map((l) => ({ m: path(l.media) || JSON.stringify(l.media.source), w: l.media.width, h: l.media.height, i: l.clip.in, o: l.clip.out, s: l.clip.speed, r: l.clip.reverse, f: l.clip.fit, st: r3(l.start - t0), tr: l.track, ...clipLook(l.clip) })),
     hb: seg.hideBase,
     // (layers behind the subject are cut by the mattes: a new matte draws them again)
-    mt: project.layers.some((l) => l.moshed && l.depth === 'behind') ? project.media.flatMap((m) => (m.mattes ?? []).map((x) => `${x.id}@${x.version}`)) : undefined,
+    mt: project.layers.some((l) => l.moshed && l.depth && l.depth !== 'front') ? project.media.flatMap((m) => (m.mattes ?? []).map((x) => `${x.id}@${x.version}`)) : undefined,
     cv: hasCanvas(project.canvas) ? project.canvas : undefined,
   });
 }

@@ -6,6 +6,7 @@ import { affineBetween, growTri, warpTriangles, type WarpTri } from '../engine/w
 import { boxQuad, type Quad } from '../engine/gizmo';
 import { drawText, textBox } from './text';
 import { drawShape } from './shapes';
+import { drawSubject } from './subject';
 import { particlesAt } from '../engine/particles';
 
 /** Which layers to draw: all of them, the ones on top of the mosh, or the ones that melt with it. */
@@ -97,7 +98,9 @@ let behind: { w: number; h: number; c?: CanvasImageSource; g?: Cx } = { w: 0, h:
  * and the rest goes on.
  */
 export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number, matte?: MatteSource) {
-  const cut = l.depth === 'behind' && matte ? matte(t, w, h) : null;
+  // a subject effect is made of the matte itself
+  if (l.kind === 'shape' && l.shape === 'subject') return drawSubject(ctx, l, w, h, alpha, t, matte);
+  const cut = (l.depth === 'behind' || l.depth === 'inside') && matte ? matte(t, w, h) : null;
   if (!cut) return drawBent(ctx, l, w, h, alpha, t);
   if (behind.w !== w || behind.h !== h || !behind.g) {
     const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
@@ -106,7 +109,8 @@ export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h:
   const g = behind.g!;
   g.clearRect(0, 0, w, h);
   drawBent(g as CanvasRenderingContext2D, l, w, h, alpha, t);
-  g.globalCompositeOperation = 'destination-out';
+  // behind: the subject is cut out of the layer; inside (a track matte): only the subject is left of it
+  g.globalCompositeOperation = l.depth === 'inside' ? 'destination-in' : 'destination-out';
   g.drawImage(cut, 0, 0, w, h);
   g.globalCompositeOperation = 'source-over';
   ctx.drawImage(behind.c!, 0, 0);

@@ -11,7 +11,7 @@
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
   import { trackClip, pathOnTimeline, pathSize, pathAt, guardPath, confirmSurface, pictureMap } from '../lib/motion.svelte';
-  import { cutoutJob, frameAt, sourceAt, cutOutThroughClip } from '../lib/cutout.svelte';
+  import { addSubjectEffect, cutoutJob, frameAt, sourceAt, cutOutThroughClip } from '../lib/cutout.svelte';
   import { openFrame, resizeMask, type FrameSession, type ObjectMask } from '../lib/objectseg';
   import { rasterizeField, type Stroke } from '../engine/flowfield';
   import { drawMask, type MaskStroke } from '../lib/maps';
@@ -817,9 +817,11 @@
     const srcT = c ? sourceAt(store.project, c, store.ui.time) : null;
     if (!c || srcT == null) return;
     const points = cut.points.map((q) => [...q] as [number, number, 0 | 1]);
+    const then = cut.then;
     store.ui.cutout = null;
     try {
-      await cutOutThroughClip(c.id, points, srcT);
+      const made = await cutOutThroughClip(c.id, points, srcT);
+      if (made && then === 'recolour') addSubjectEffect(c.id, 'fill');
     } catch (err) {
       store.toast('Cut-out failed: ' + (err as Error).message, 'error');
     }

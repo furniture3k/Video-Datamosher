@@ -6,7 +6,7 @@
 //   node scripts/models-check.mjs                 (both models, a visible browser)
 //   HEADLESS=1 node scripts/models-check.mjs      (no window)
 //   THROTTLE=4 node scripts/models-check.mjs      (CPU slowed 4×, a stand-in for a phone)
-//   ONLY=sam node scripts/models-check.mjs        (one cut-out model: sam or mediapipe)
+//   ONLY=sam node scripts/models-check.mjs        (one cut-out model: sam, mediapipe or person)
 //   FRAMES=8 node scripts/models-check.mjs        (frames for the speed test, default 6)
 import http from 'node:http';
 import fs from 'node:fs';
@@ -92,13 +92,15 @@ await check('find a face in the portrait', async () => {
 const CASES = [
   { name: 'dog', file: 'dog.jpg', taps: [[0.5, 0.5], [0.3, 0.4], [0.82, 0.13]], inside: [[0.5, 0.5], [0.3, 0.4], [0.82, 0.13]], outside: [[0.05, 0.1], [0.95, 0.9]], area: [0.2, 0.65] },
   { name: 'astronaut', file: 'astronaut.jpg', taps: [[0.54, 0.24], [0.51, 0.08], [0.6, 0.4]], inside: [[0.54, 0.24], [0.51, 0.08], [0.6, 0.4]], outside: [[0.1, 0.1], [0.9, 0.9], [0.1, 0.9]], area: [0.07, 0.3] },
-  { name: 'portrait', file: 'portrait.jpg', taps: [[0.5, 0.75], [0.2, 0.6], [0.5, 0.2]], inside: [[0.5, 0.75], [0.2, 0.6], [0.5, 0.2]], outside: [[0.05, 0.3], [0.92, 0.08]], area: [0.25, 0.8] },
+  { name: 'portrait', person: true, file: 'portrait.jpg', taps: [[0.5, 0.75], [0.2, 0.6], [0.5, 0.2]], inside: [[0.5, 0.75], [0.2, 0.6], [0.5, 0.2]], outside: [[0.05, 0.3], [0.92, 0.08]], area: [0.25, 0.8] },
 ];
-const backends = (process.env.ONLY ? [process.env.ONLY] : ['mediapipe', 'sam']).filter((b) => b === 'sam' || b === 'mediapipe');
+const backends = (process.env.ONLY ? [process.env.ONLY] : ['mediapipe', 'sam', 'person']).filter((b) => ['sam', 'mediapipe', 'person'].includes(b));
 const FRAMES = Number(process.env.FRAMES || 6);
 fs.mkdirSync('test-results', { recursive: true });
 for (const backend of backends)
   for (const c of CASES) {
+    // the people model only knows people
+    if (backend === 'person' && !c.person) continue;
     await check(`cut out the ${c.name} with ${backend}`, async () => {
       const r = await page.evaluate(
         async ({ url, backend, c, FRAMES }) => {
@@ -147,6 +149,47 @@ for (const backend of backends)
       return line;
     });
   }
+
+// ---- the whole job: cut the dog out through a slowly panning clip made from the photo
+for (const backend of backends.filter((b) => b !== 'person')) {
+  await check(`cut the dog out through a clip with ${backend}`, async () => {
+    const r = await page.evaluate(
+      async ({ url, backend }) => {
+        const { ffmpeg, media, store, cutout, mattes } = window.__moshpit;
+        const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+        const made = await ffmpeg.run(['-loop', '1', '-i', 'dog.jpg', '-vf', "zoompan=z='1.05+0.002*on':x='iw/2-(iw/zoom/2)+on*0.5':y='ih/2-(ih/zoom/2)':d=1:s=640x480:fps=24", '-t', '4', '-pix_fmt', 'yuv420p', 'dogpan.mp4'], { outputs: ['dogpan.mp4'], inputs: { 'dog.jpg': async () => bytes } });
+        await media.addFiles([new File([made.out['dogpan.mp4']], `dogpan-${backend}.mp4`, { type: 'video/mp4' })], { track: 'v1', index: 0 });
+        // let the app finish with the new footage (preview copy, first mosh) before working on it
+        await new Promise((res) => setTimeout(res, 1000));
+        for (let i = 0; i < 600 && (store.status.busy || store.status.pending || store.status.engine); i++) await new Promise((res) => setTimeout(res, 200));
+        const clip = store.project.clips.find((c) => store.project.media.find((m) => m.id === c.mediaId)?.source.name === `dogpan-${backend}.mp4`);
+        store.ui.cutModel = backend;
+        window.__moshpit.objectseg.setObjectBackend(backend);
+        const heap = () => performance.memory?.usedJSHeapSize ?? 0;
+        const h0 = heap();
+        const t0 = performance.now();
+        // the dog is near the middle of the first frame
+        const id = await cutout.cutOutThroughClip(clip.id, [[0.5, 0.5, 1]], clip.in);
+        const secs = (performance.now() - t0) / 1000;
+        const m = store.project.media.find((x) => x.id === clip.mediaId).mattes?.find((x) => x.id === id);
+        if (!m) return { none: true };
+        await mattes.loadMatte(m);
+        const f = mattes.matteFramesNow(m);
+        const areas = f.map((fr) => { let n = 0; for (const v of fr) if (v >= 128) n++; return n / (m.w * m.h); });
+        store.edit((p) => (p.clips = p.clips.filter((c) => c.id !== clip.id)));
+        return { frames: f.length, secs, areas, heapMB: (heap() - h0) / 1e6 };
+      },
+      { url: `${base}/fixtures/dog.jpg`, backend },
+    );
+    if (r.none) throw new Error('no matte was made');
+    const good = r.areas.filter((a) => a > 0.2 && a < 0.7).length;
+    const line = `${r.frames} frames in ${r.secs.toFixed(1)} s (${(r.frames / r.secs).toFixed(1)} frames a second, the dog found in ${good} of them) · heap +${r.heapMB.toFixed(0)} MB`;
+    report.push({ name: `through-clip/${backend}`, frames: r.frames, seconds: Number(r.secs.toFixed(1)), fps: Number((r.frames / r.secs).toFixed(1)), found: good });
+    const bad = r.areas.map((a, i) => (a > 0.2 && a < 0.7 ? null : `${i}:${(a * 100).toFixed(0)}%`)).filter(Boolean);
+    if (good < r.frames * 0.9) throw new Error(`the dog was lost on too many frames: ${line} (frame:share of the picture: ${bad.join(' ')})`);
+    return line;
+  });
+}
 
 fs.writeFileSync(path.join('test-results', `models-report${process.env.THROTTLE ? '-throttled' : ''}.json`), JSON.stringify(report, null, 1));
 

@@ -28,8 +28,8 @@ interface LayerBase {
   fade: number;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
-  /** 'behind': under the subject cut out of the footage below (the layer is hidden where the matte is white) */
-  depth?: 'front' | 'behind';
+  /** 'behind': under the subject cut out of the footage below (the layer is hidden where the matte is white); 'inside': a track matte, shown only on the subject */
+  depth?: 'front' | 'behind' | 'inside';
   /** leaned back or to the side in perspective: degrees about the horizontal and the vertical axis through its position */
   tilt?: [number, number];
   /** pinned to a tracked surface: it is drawn where it is on `refT`, then carried along with the surface */
@@ -128,7 +128,24 @@ export interface TextLayer extends LayerBase {
   curve?: number;
 }
 
-export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst';
+export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst' | 'subject';
+
+/** What a subject effect does to the subject cut out of the footage (or, for blur and grade, to everything but it). */
+export interface SubjectFx {
+  effect: 'fill' | 'outline' | 'glow' | 'echo' | 'blur' | 'grade';
+  /** how much: thickness of an outline, size of a glow or blur (0..1) */
+  amount: number;
+  /** blur and grade: the subject, or everything else */
+  part?: 'subject' | 'background';
+  /** echo: how far each copy steps (shares of the frame) and how many there are */
+  dx?: number;
+  dy?: number;
+  copies?: number;
+  /** grade: brightness, saturation and contrast (1 = as it is) */
+  brightness?: number;
+  saturation?: number;
+  contrast?: number;
+}
 
 /** A drawn shape: boxes, circles, arrows, lines, a freehand stroke… for marking things up. */
 export interface ShapeLayer extends LayerBase {
@@ -156,6 +173,8 @@ export interface ShapeLayer extends LayerBase {
   bend?: number;
   /** pen: the stroke, in the shape's box (−0.5..0.5 each way) */
   points?: [number, number][];
+  /** subject: what it does to the subject cut out of the footage below */
+  subject?: SubjectFx;
 }
 
 export type Layer = TextLayer | ShapeLayer;
@@ -231,8 +250,9 @@ export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.sha
  */
 export function isStill(l: Layer): boolean {
   // (behind the subject changes with the footage's matte from frame to frame)
-  if (l.follow?.length || l.surface || l.trail || l.particles || l.depth === 'behind') return false;
-  if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress';
+  if (l.follow?.length || l.surface || l.trail || l.particles || (l.depth && l.depth !== 'front')) return false;
+  // (a subject effect follows the footage's matte from frame to frame)
+  if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress' && l.shape !== 'subject';
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }
 

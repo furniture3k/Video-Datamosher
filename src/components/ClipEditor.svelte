@@ -6,6 +6,7 @@ import { store } from '../lib/store.svelte';
   import StylePicker from './StylePicker.svelte';
   import TitleSettings from './TitleSettings.svelte';
   import ShapeSettings from './ShapeSettings.svelte';
+  import SubjectSettings from './SubjectSettings.svelte';
   import BeatChips from './BeatChips.svelte';
   ;
   import Icon from './Icon.svelte';
@@ -15,7 +16,7 @@ import { store } from '../lib/store.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { cutoutJob, deleteMatte, titleBehind, toggleCutout } from '../lib/cutout.svelte';
+  import { addSubjectEffect, cutoutJob, deleteMatte, SUBJECT_EFFECTS, titleBehind, toggleCutout } from '../lib/cutout.svelte';
   import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, toggleSurfacePick, titleOnSurface, putClipOnSurface, takeClipOffSurface, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
@@ -263,7 +264,11 @@ import { store } from '../lib/store.svelte';
     <button class="ghost" onclick={() => deleteSelected()}><Icon name="trash" />Delete text</button>
   </div>
 {:else if shape}
-  <ShapeSettings {shape} />
+  {#if shape.shape === 'subject' && shape.subject}
+    <SubjectSettings {shape} />
+  {:else}
+    <ShapeSettings {shape} />
+  {/if}
 {:else if c && media}
   <div class="col">
     {#if media.thumb}<img src={media.thumb} alt="" class="th" />{/if}
@@ -422,10 +427,22 @@ import { store } from '../lib/store.svelte';
           <button class="small" class:on={store.ui.cutout?.clipId === c.id} disabled={motionJob.running || cutoutJob.running} onclick={() => toggleCutout(c.id)} title="Then tap the thing on the player: it is followed through the clip, so titles can go behind it">{store.ui.cutout?.clipId === c.id ? 'Cancel' : 'Cut out a subject'}</button>
           {#if cutoutJob.running}<span class="small faint">{Math.round(cutoutJob.progress * 100)}%</span><button class="small ghost" onclick={() => (cutoutJob.cancel = true)}>Stop</button>{/if}
         </div>
+        <label class="row small">Cut-out model
+          <select aria-label="Cut-out model" value={store.ui.cutModel} onchange={(e) => store.setPref('cutModel', (e.target as HTMLSelectElement).value as typeof store.ui.cutModel)}>
+            <option value="auto">Automatic</option>
+            <option value="mediapipe">Quick (a tap)</option>
+            <option value="sam">Precise (slower)</option>
+            <option value="person">People only (quickest)</option>
+          </select>
+        </label>
         {#each media?.mattes ?? [] as mt (mt.id)}
           <div class="pathrow">
             <span class="small grow">{mt.name} · {(mt.to - mt.from).toFixed(1)} s</span>
             <button class="small" onclick={() => titleBehind(c.id)} title="Add a big title behind the subject">Title behind</button>
+            <select class="small" aria-label="Effect on the subject" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) addSubjectEffect(c.id, v as import('../engine/layers').SubjectFx['effect']); (e.target as HTMLSelectElement).value = ''; }}>
+              <option value="">Effect…</option>
+              {#each SUBJECT_EFFECTS as ef}<option value={ef.value}>{ef.label}</option>{/each}
+            </select>
             <button class="icon ghost" aria-label="Delete cut-out" title="Delete cut-out" onclick={() => deleteMatte(media!.id, mt.id)}><Icon name="x" size={12} /></button>
           </div>
         {/each}

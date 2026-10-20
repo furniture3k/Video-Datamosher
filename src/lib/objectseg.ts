@@ -3,6 +3,7 @@
 // and MediaPipe's interactive segmenter (a single tap, much quicker). Libraries and models are
 // downloaded on first use and cached by the browser; pictures never leave the device.
 import type { ObjectPrompt } from '../engine/cutout';
+import { personMask } from './segment';
 
 const TF = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/transformers.min.js';
 const SAM = 'Xenova/slimsam-77-uniform';
@@ -23,7 +24,7 @@ export interface FrameSession {
 }
 
 /** 'auto': the quick model for a tap, the precise one as soon as a point says "leave this out". */
-export type ObjectBackend = 'auto' | 'sam' | 'mediapipe';
+export type ObjectBackend = 'auto' | 'sam' | 'mediapipe' | 'person';
 let backend: ObjectBackend = 'auto';
 export const objectBackend = () => backend;
 export function setObjectBackend(b: ObjectBackend) {
@@ -46,6 +47,7 @@ type Img = ImageBitmap | HTMLCanvasElement | OffscreenCanvas;
 export async function openFrame(img: ImageBitmap): Promise<FrameSession> {
   if (override) return { mask: (p) => override!(img, p), close() {} };
   if (backend === 'mediapipe') return openMediaPipe(img);
+  if (backend === 'person') return openPeople(img);
   if (backend === 'sam') return openSam(img);
   // auto: each model looks at the picture only if it is asked
   let quick: FrameSession | undefined;
@@ -150,6 +152,24 @@ async function openSam(img: Img): Promise<FrameSession> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The people model (the one Subject Guard uses): everyone in the picture, whatever is tapped
+
+async function openPeople(img: ImageBitmap): Promise<FrameSession> {
+  return {
+    async mask() {
+      const t1 = performance.now();
+      const c = await personMask(img);
+      const g = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+      const data = new Uint8Array(c.width * c.height);
+      for (let i = 0; i < data.length; i++) data[i] = g[i * 4] > 127 ? 255 : 0;
+      lastTimings.mask = performance.now() - t1;
+      return { w: c.width, h: c.height, data };
+    },
+    close() {},
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
 // MediaPipe interactive segmenter
 
 interface MPMask {
@@ -181,24 +201,33 @@ async function openMediaPipe(img: Img): Promise<FrameSession> {
   const cv = toCanvas(img);
   return {
     async mask(prompt) {
-      // one tap only: the first point to include, or the middle of the box
-      const p = prompt.points.find((q) => q[2] === 1);
+      // one tap at a time: each point to include in turn (or the middle of the box) until one finds something
+      const taps: [number, number][] = prompt.points.filter((q) => q[2] === 1).map((q) => [q[0], q[1]]);
       const b = prompt.box;
-      const x = p ? p[0] : b ? (b[0] + b[2]) / 2 : 0.5;
-      const y = p ? p[1] : b ? (b[1] + b[3]) / 2 : 0.5;
+      if (!taps.length) taps.push(b ? [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2] : [0.5, 0.5]);
       const t1 = performance.now();
-      const res = seg.segment(cv, { keypoint: { x, y } });
-      try {
-        const m = res.confidenceMasks?.[0];
-        if (!m) return null;
-        const f = m.getAsFloat32Array();
-        const data = new Uint8Array(f.length);
-        for (let i = 0; i < f.length; i++) data[i] = f[i] > 0.5 ? 255 : 0;
-        lastTimings.mask = performance.now() - t1;
-        return { w: m.width, h: m.height, data };
-      } finally {
-        res.close();
+      let last: ObjectMask | null = null;
+      for (const [x, y] of taps.slice(0, 5)) {
+        const res = seg.segment(cv, { keypoint: { x, y } });
+        try {
+          const m = res.confidenceMasks?.[0];
+          if (!m) continue;
+          const f = m.getAsFloat32Array();
+          const data = new Uint8Array(f.length);
+          let on = 0;
+          for (let i = 0; i < f.length; i++) {
+            data[i] = f[i] > 0.5 ? 255 : 0;
+            if (data[i]) on++;
+          }
+          last = { w: m.width, h: m.height, data };
+          // a tap that lands on nothing gives an empty mask: try the next
+          if (on > f.length * 0.0005) break;
+        } finally {
+          res.close();
+        }
       }
+      lastTimings.mask = performance.now() - t1;
+      return last;
     },
     close() {},
   };

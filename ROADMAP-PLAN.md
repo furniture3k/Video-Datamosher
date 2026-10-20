@@ -289,6 +289,37 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - Tests: compose tests for each blend and the luma key.
 
 ### M8: Cut out any subject (P2, part 1). Unlocks R1, R2 fills, R9 car
+
+> **Done (PR for `feat/m8-cutout`).** Benchmark gate, measured on this laptop (an Apple Silicon Mac,
+> 12 cores, Chrome 141, `scripts/models-check.mjs` with the real models, three public-domain photos:
+> a dog, an astronaut, a portrait):
+>
+> | | MediaPipe interactive | SlimSAM (transformers.js) | People model |
+> |---|---|---|---|
+> | model load (first time, with download) | about 3 s | about 9 to 15 s | about 0.6 s |
+> | one picture, one tap | 14 ms (about 70 a second) | 1.07 s | 11 ms |
+> | through a 4 s clip at 12 frames a second | 49 frames in 1.7 s (28 a second) | 49 frames in 54 s (0.9 a second) | |
+> | quality on the three subjects | clean masks, right every time | right with several taps; one tap can land on a part (the astronaut came out as 1% of the picture) | people only |
+> | heap | about +60 MB | about +57 MB | about +37 MB |
+> | 4× CPU throttle (a stand-in for a phone) | 17 to 22 ms | 1.5 s | |
+>
+> The 4× throttle only slows the CPU, not the GPU, so real phones may be slower still; it needs a
+> real phone to say. **Decision:** MediaPipe's interactive segmenter is the default for taps and
+> for following the subject through a clip; SlimSAM is used automatically as soon as a point says
+> "leave this out" (the quick model has no such prompt), or by choice ("Precise"); the people
+> model is a third choice. A box prompt does not work in transformers.js's SAM export (it came out
+> wrong), so SAM is driven by points only, and the hint for each frame is the last mask's middle
+> plus four more spots spread over it. Also changed from the plan:
+> - MediaPipe uses one tap at a time: when a tap lands on something it calls empty, the next of the
+>   spread-out points is tried (this took the dog from 42 of 49 frames found to all 49).
+> - Frames are blended motion-aware (`blendMoving`): each is slid along the subject's movement
+>   before blending, so a matte between two frames is the subject in between, not two half copies.
+> - A subject effect is a `ShapeLayer` with `shape: 'subject'` and a `subject` object, which kept
+>   the change small; it draws from the matte itself. Blur and grade change the picture under
+>   them, so those are drawn on top of the mosh only.
+> - "Track matte" is the third Depth value, "Only on the subject".
+> - Not done here: the WebGL compositor for matte passes (the Canvas 2D one does it all at the
+>   frame rates tested), Subject Guard and clip depth (M9).
 - **Benchmark gate first**: try SlimSAM via transformers.js (same loader pattern as `depthMap` in
   `src/lib/maps.ts`) against MediaPipe InteractiveSegmenter (same library as `segment.ts`) on
   desktop Chrome and iPhone Safari. Pick the model and the analysis rate (e.g. 384 px at 12 fps,
