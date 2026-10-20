@@ -27,7 +27,12 @@ export interface Canvas {
   borderColor?: string;
   /** drop shadow under the card, 0..1 */
   shadow?: number;
+  /** a device drawn round the picture: a phone, a browser or app window, a laptop (generic ones, no brands) */
+  device?: 'phone' | 'browser' | 'window' | 'laptop';
 }
+
+/** Anything drawn round the card on top of it (a border or a device)? */
+export const hasChrome = (c: Canvas) => (c.border ?? 0) > 0 || !!c.device;
 
 export const DEFAULT_CANVAS: Canvas = { bg: 'color', color: '#f4efe6', inset: 0.06, radius: 0.04, shadow: 0.4 };
 
@@ -37,6 +42,10 @@ export const CANVAS_PRESETS: { id: string; name: string; canvas: Canvas }[] = [
   { id: 'polaroid', name: 'Polaroid', canvas: { bg: 'color', color: '#1a1a1a', inset: 0.07, shift: -0.04, radius: 0, border: 0.025, borderColor: '#fbfaf5', shadow: 0.5 } },
   { id: 'blur', name: 'Blurred', canvas: { bg: 'blur', color: '#000000', blur: 0.6, inset: 0.08, radius: 0.06, shadow: 0.6 } },
   { id: 'pastel', name: 'Pastel', canvas: { bg: 'gradient', color: '#ffd1e8', color2: '#bde0ff', angle: 30, inset: 0.07, radius: 0.08, shadow: 0.3 } },
+  { id: 'phone', name: 'Phone', canvas: { bg: 'gradient', color: '#ffd6a5', color2: '#ff7eb6', angle: 20, inset: 0.12, radius: 0.09, shadow: 0.6, device: 'phone' } },
+  { id: 'browser', name: 'Browser', canvas: { bg: 'color', color: '#dfe6f0', inset: 0.07, shift: 0.025, radius: 0.012, shadow: 0.4, device: 'browser' } },
+  { id: 'window', name: 'App window', canvas: { bg: 'gradient', color: '#2a2d6e', color2: '#0b0b14', angle: 0, inset: 0.07, shift: 0.025, radius: 0.012, shadow: 0.6, device: 'window' } },
+  { id: 'laptop', name: 'Laptop', canvas: { bg: 'color', color: '#f2f2f2', inset: 0.13, shift: -0.03, radius: 0.01, shadow: 0.3, device: 'laptop' } },
   { id: 'night', name: 'Night', canvas: { bg: 'gradient', color: '#0b1a3a', color2: '#000000', angle: 0, inset: 0.05, radius: 0.03, border: 0.004, borderColor: '#ffffff', shadow: 0 } },
 ];
 

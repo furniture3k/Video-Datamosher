@@ -1,11 +1,12 @@
 // Draws shape layers onto a 2D canvas (for the graphics renderer in ./layers): the lines come from
 // ../engine/shapes, this strokes and fills them.
 import { layerPos, type ShapeLayer } from '../engine/layers';
-import { boilStrokes, drawnShare, shapeStrokes, trimStrokes } from '../engine/shapes';
+import { boilStrokes, drawnShare, progressShare, shapeStrokes, trimStrokes } from '../engine/shapes';
 
 export function drawShape(ctx: CanvasRenderingContext2D, s: ShapeLayer, w: number, h: number, alpha: number, t = s.start) {
   if (alpha <= 0) return;
-  const share = drawnShare(s, t);
+  // a loading bar is always drawn whole: it fills instead
+  const share = s.shape === 'progress' ? 1 : drawnShare(s, t);
   if (share <= 0) return;
   const whole = shapeStrokes(s, w, h);
   const line = Math.max(1, s.width * h);
@@ -27,7 +28,7 @@ export function drawShape(ctx: CanvasRenderingContext2D, s: ShapeLayer, w: numbe
     }
   };
   // the fill comes in with the line once it's drawn all the way round
-  if (s.fill && share >= 1) {
+  if (s.fill && share >= 1 && s.shape !== 'progress') {
     path(true);
     ctx.fillStyle = s.fill;
     ctx.fill();
@@ -45,6 +46,20 @@ export function drawShape(ctx: CanvasRenderingContext2D, s: ShapeLayer, w: numbe
   } else ctx.lineWidth = line;
   path(false);
   ctx.stroke();
+  if (s.shape === 'progress') {
+    // the bar inside, filling up from the left
+    const W = s.w * w;
+    const H = s.h * h;
+    const pad = Math.max(line * 1.5, H * 0.18);
+    const full = progressShare(s, t) * (W - 2 * pad);
+    if (full > 0) {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = s.fill ?? s.color;
+      ctx.beginPath();
+      ctx.roundRect(-W / 2 + pad, -H / 2 + pad, full, H - 2 * pad, (H - 2 * pad) / 2);
+      ctx.fill();
+    }
+  }
   // a glow drawn twice reads as light, not a shadow
   if (s.glow && s.glow > 0.5) ctx.stroke();
   ctx.restore();

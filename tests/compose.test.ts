@@ -81,6 +81,23 @@ d('compositing, transforms and colour', () => {
     expect(mean(mul)).toBeLessThan(30);
   });
 
+  it('the other blend modes', () => {
+    const over = (blend: Clip['blend'], base = red, top = blue) => prep(proj([clipOf(base), clipOf(top, { track: 'v2', start: 0, out: 2, blend })]), `bl_${blend}.avi`)[10];
+    const rgbOf = (f: Uint8Array) => [0, 1, 2].map((c) => box(f, c, 0.2, 0.2, 0.8, 0.8));
+    // lighten red and blue: both lit; darken: neither
+    const [lr, , lb] = rgbOf(over('lighten'));
+    expect(lr > 200 && lb > 200).toBe(true);
+    expect(mean(over('darken'))).toBeLessThan(30);
+    // exclusion of red and blue: magenta, like difference
+    const [er, , eb] = rgbOf(over('exclusion'));
+    expect(er > 200 && eb > 200).toBe(true);
+    // overlay of grey on red keeps it red (mid grey disappears)
+    const [or, og, ob] = rgbOf(over('overlay', red, grey));
+    expect(or).toBeGreaterThan(180);
+    expect(og + ob).toBeLessThan(80);
+    for (const b of ['softlight', 'hardlight', 'dodge', 'burn'] as const) expect(over(b).length).toBeGreaterThan(0);
+  });
+
   it('hidden tracks and disabled clips', () => {
     const p = proj([clipOf(red), clipOf(blue, { track: 'v2', start: 0, out: 2 })]);
     p.tracks.find((t) => t.id === 'v2')!.muted = true;

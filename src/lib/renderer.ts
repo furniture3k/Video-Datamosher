@@ -7,7 +7,7 @@ import { lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
-import { cardRect, hasCanvas } from '../engine/canvas';
+import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
 import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, type Segment } from '../engine/timeline';
@@ -178,7 +178,7 @@ async function canvasPlates(project: Project, w: number, h: number, mounts: Reco
     mounts['canvas_mask.png'] = await canvasPng(maskPlate(R));
     out.mask = MOUNT + 'canvas_mask.png';
   }
-  if ((c.border ?? 0) > 0) {
+  if (hasChrome(c)) {
     mounts['canvas_border.png'] = await canvasPng(borderPlate(c, w, h));
     out.border = MOUNT + 'canvas_border.png';
   }

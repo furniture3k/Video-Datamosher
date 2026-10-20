@@ -19,7 +19,21 @@ import { SAMPLE_RATE } from '../engine/audio';
 import { audioCtx } from './audioctx';
 import { clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type MediaItem, type Project } from '../engine/types';
 
-const COMPOSITE: Record<string, GlobalCompositeOperation> = { normal: 'source-over', screen: 'screen', add: 'lighter', multiply: 'multiply', difference: 'difference' };
+const COMPOSITE: Record<string, GlobalCompositeOperation> = {
+  normal: 'source-over',
+  screen: 'screen',
+  add: 'lighter',
+  multiply: 'multiply',
+  difference: 'difference',
+  overlay: 'overlay',
+  softlight: 'soft-light',
+  hardlight: 'hard-light',
+  lighten: 'lighten',
+  darken: 'darken',
+  dodge: 'color-dodge',
+  burn: 'color-burn',
+  exclusion: 'exclusion',
+};
 
 /** Opacity of a clip's picture at local time `local` (its opacity and video fades). */
 export function clipAlpha(c: Clip, local: number, len: number): number {
@@ -79,12 +93,13 @@ export function chromaKeyPixels(d: Uint8ClampedArray, k: NonNullable<Clip['key']
     const dr = d[i] - kr;
     const dg = d[i + 1] - kg;
     const db = d[i + 2] - kb;
-    const dist = Math.sqrt(dr * dr + dg * dg + db * db) / (255 * Math.sqrt(3));
+    const lum = (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255;
+    const dist = k.luma === 'dark' ? lum : k.luma === 'light' ? 1 - lum : Math.sqrt(dr * dr + dg * dg + db * db) / (255 * Math.sqrt(3));
     let a = 1;
     if (dist < sim) a = 0;
     else if (blend > 0 && dist < sim + blend) a = (dist - sim) / blend;
     d[i + 3] = d[i + 3] * a;
-    if (k.spill && a > 0) {
+    if (k.spill && !k.luma && a > 0) {
       if (green) d[i + 1] = Math.min(d[i + 1], (d[i] + d[i + 2]) / 2 + 8);
       else d[i + 2] = Math.min(d[i + 2], (d[i] + d[i + 1]) / 2 + 8);
     }

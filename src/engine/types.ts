@@ -90,6 +90,8 @@ export interface ChromaKey {
   blend: number;
   /** remove the colour's spill from the edges */
   spill: boolean;
+  /** key by brightness instead of colour: the dark parts go (shot on black), or the light ones (on white) */
+  luma?: 'dark' | 'light';
 }
 
 /** A font added to the project: a file (kept with the media) and the name it's shown as. */
@@ -106,7 +108,7 @@ export interface LutRef {
   name: string;
 }
 
-export type BlendMode = 'normal' | 'screen' | 'add' | 'multiply' | 'difference';
+export type BlendMode = 'normal' | 'screen' | 'add' | 'multiply' | 'difference' | 'overlay' | 'softlight' | 'hardlight' | 'lighten' | 'darken' | 'dodge' | 'burn' | 'exclusion';
 
 /** A file (or generator) in the media library. The same media can be used by many clips. */
 export interface MediaItem {

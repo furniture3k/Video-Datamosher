@@ -94,7 +94,7 @@ export interface TextLayer extends LayerBase {
   boil?: number;
 }
 
-export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel';
+export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress';
 
 /** A drawn shape: boxes, circles, arrows, lines, a freehand stroke… for marking things up. */
 export interface ShapeLayer extends LayerBase {
@@ -183,7 +183,7 @@ export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.sha
  */
 export function isStill(l: Layer): boolean {
   if (l.follow?.length || l.trail) return false;
-  if (l.kind === 'shape') return !l.drawOn && !l.boil;
+  if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress';
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }
 

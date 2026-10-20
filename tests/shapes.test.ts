@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { boilStrokes, drawnShare, fitPen, layerName, newShape, shapeStrokes, strokeLength, trimStrokes, SHAPES, type Stroke } from '../src/engine/shapes';
+import { boilStrokes, drawnShare, progressShare, fitPen, layerName, newShape, shapeStrokes, strokeLength, trimStrokes, SHAPES, type Stroke } from '../src/engine/shapes';
 import { markLayers } from '../src/engine/annotate';
 import { freeRow, isEmpty, isStill, type Layer, type ShapeLayer, type TextLayer } from '../src/engine/layers';
 import { poseOf, setPose } from '../src/engine/gizmo';
@@ -108,6 +108,17 @@ describe('shapes', () => {
     expect(describeChange(a, b)).toBe('Add a shape');
     expect(describeChange(b, { ...b, layers: [shape({ start: 2 })] })).toBe('Move a shape');
     expect(describeChange(b, a)).toBe('Delete a shape');
+  });
+
+  it('fills a loading bar while it is on screen, or over its draw-on time', () => {
+    const bar = newShape('progress', 'p', 'g1', 1, 1);
+    expect(progressShare(bar, 1)).toBe(0);
+    expect(progressShare(bar, 1 + 2.7)).toBeCloseTo(1);
+    expect(progressShare({ ...bar, drawOn: 1 }, 1.5)).toBeCloseTo(0.5);
+    expect(isStill(bar)).toBe(false);
+    // a cursor's tip is its box's top-left corner
+    const cur = newShape('cursor', 'c', 'g1', 0, 1);
+    expect(shapeStrokes(cur, 100, 100)[0].pts[0]).toEqual([-(cur.w * 100) / 2, -(cur.h * 100) / 2]);
   });
 
   it('puts a new layer on the lowest free row', () => {

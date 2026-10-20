@@ -177,6 +177,21 @@ d('native ffmpeg renders', () => {
     expect(mean(fr[10], 27, 37, 19, 29)).toBeLessThan(150);
   });
 
+  it('luma key: black (or white) goes see-through', () => {
+    const dir = tmpdir();
+    sources(dir);
+    const base = { ...makeClip(media('green'), 'v1'), out: 1 };
+    const dark = { ...makeClip(media('black'), 'v2'), out: 1, start: 0, key: { color: '#000000', similarity: 0.1, blend: 0.05, spill: false, luma: 'dark' as const } };
+    const light = { ...makeClip(media('white'), 'v2'), out: 1, start: 0, key: { color: '#000000', similarity: 0.1, blend: 0.05, spill: false, luma: 'light' as const } };
+    // the green clip below shows through where the black (or white) clip was
+    for (const top of [dark, light]) {
+      const fr = render(dir, project([base, top], [media('green'), media('black'), media('white')]));
+      // (the frames are grey: green is about 150, black about 16, white about 235)
+      expect(mean(fr[10], 0, 10)).toBeGreaterThan(120);
+      expect(mean(fr[10], 0, 10)).toBeLessThan(185);
+    }
+  });
+
   it('a LUT recolours the clip', () => {
     const dir = tmpdir();
     sources(dir);

@@ -24,11 +24,18 @@ export const SHAPES: { value: ShapeKind; label: string; hint: string }[] = [
   { value: 'underline', label: 'Underline', hint: 'A hand-drawn line under a word.' },
   { value: 'highlight', label: 'Highlighter', hint: 'A see-through marker stripe.' },
   { value: 'tunnel', label: 'Tunnel', hint: 'Boxes inside boxes.' },
+  { value: 'cursor', label: 'Cursor', hint: 'A mouse pointer (move it with keyframes or a tracked path).' },
+  { value: 'progress', label: 'Loading bar', hint: 'Fills up while it is on screen (or over its draw-on time).' },
   { value: 'pen', label: 'Pen', hint: 'Drawn by hand on the player.' },
 ];
 
 /** What a layer is called on the timeline: a title's words, a shape's kind. */
 export const layerName = (l: Layer) => (l.kind === 'text' ? l.text.trim() || 'Text' : (SHAPES.find((s) => s.value === l.shape)?.label ?? 'Shape'));
+
+const CURSOR: Pt[] = [[0, 0], [0, 0.82], [0.23, 0.63], [0.38, 0.97], [0.53, 0.9], [0.38, 0.57], [0.66, 0.57]];
+
+/** How full a loading bar is at timeline time t: over its draw-on time if it has one, else while it's on screen. */
+export const progressShare = (s: Pick<ShapeLayer, 'start' | 'duration' | 'drawOn'>, t: number) => Math.max(0, Math.min(1, (t - s.start) / Math.max(0.05, s.drawOn || s.duration * 0.9)));
 
 const ring = (n: number, f: (a: number) => Pt): Pt[] => Array.from({ length: n }, (_, i) => f((i / n) * Math.PI * 2));
 
@@ -123,6 +130,11 @@ export function shapeStrokes(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' |
     }
     case 'pen':
       return [{ pts: (s.points ?? []).map(([x, y]) => [x * w, y * h] as Pt), closed: false }];
+    case 'cursor':
+      // an arrow pointer, its tip at the box's top-left corner
+      return [{ pts: CURSOR.map(([x, y]) => [(x - 0.5) * w, (y - 0.5) * h] as Pt), closed: true }];
+    case 'progress':
+      return [{ pts: rounded(w, h, h / 2), closed: true }];
   }
 }
 
@@ -223,6 +235,8 @@ export function newShape(shape: ShapeKind, id: string, row: string, start: numbe
     shape === 'underline' ? [0.4, 0.03] : shape === 'highlight' ? [0.4, 0.06] : shape === 'line' || shape === 'arrow' ? sq(0.22) : shape === 'tunnel' ? sq(0.6) : sq(0.3);
   const s: ShapeLayer = { id, kind: 'shape', row, shape, start, duration: 3, x: 0.5, y: 0.5, fade: 0, moshed: false, w, h, ...look };
   if (shape === 'tunnel') s.count = 6;
+  if (shape === 'cursor') Object.assign(s, { w: sq(0.06)[0], h: 0.06 * 1.4, color: '#000000', fill: '#ffffff', width: 0.003, drawOn: undefined });
+  if (shape === 'progress') Object.assign(s, { w: 0.5, h: 0.035, color: '#ffffff', width: 0.004, drawOn: undefined });
   if (shape === 'arrow') s.head = 0.22;
   if (shape === 'highlight') {
     s.color = look.color === DEFAULT_LOOK.color ? '#ffe600' : look.color;

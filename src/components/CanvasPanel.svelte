@@ -71,6 +71,20 @@
   {#if c.border}
     <label class="row small">Border colour <input type="color" value={c.borderColor ?? '#ffffff'} oninput={(e) => set('borderColor', (e.target as HTMLInputElement).value)} aria-label="Border colour" /></label>
   {/if}
+  <Field
+    type="select"
+    label="Device"
+    value={c.device ?? 'none'}
+    options={[
+      { value: 'none', label: 'None' },
+      { value: 'phone', label: 'Phone' },
+      { value: 'browser', label: 'Browser window' },
+      { value: 'window', label: 'App window' },
+      { value: 'laptop', label: 'Laptop' },
+    ]}
+    help="Draws a generic device round the picture, so it looks like it's playing on a screen."
+    onchange={(v: string) => set('device', v === 'none' ? undefined : (v as Canvas['device']))}
+  />
   <Field label="Shadow" min={0} max={1} step={0.01} value={c.shadow ?? 0} help="A soft shadow under the picture." onchange={(v: number) => set('shadow', v || undefined)} />
 {/if}
 

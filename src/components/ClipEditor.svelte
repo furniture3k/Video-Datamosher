@@ -348,6 +348,14 @@ import { store } from '../lib/store.svelte';
             { value: 'add', label: 'Add', hint: 'Adds the light of both pictures: hotter and brighter than Screen.' },
             { value: 'multiply', label: 'Multiply', hint: 'Only darkens: white disappears. Good for textures, paper, grain.' },
             { value: 'difference', label: 'Difference', hint: 'Subtracts the pictures: inverted, psychedelic colours where they differ.' },
+            { value: 'overlay', label: 'Overlay', hint: 'More contrast: lights the light parts below and darkens the dark ones. Mid grey disappears.' },
+            { value: 'softlight', label: 'Soft light', hint: 'A gentler Overlay, like a soft lamp on the picture.' },
+            { value: 'hardlight', label: 'Hard light', hint: 'A harsh Overlay led by this clip: punchy textures and light.' },
+            { value: 'lighten', label: 'Lighten', hint: 'Keeps whichever is lighter, pixel by pixel.' },
+            { value: 'darken', label: 'Darken', hint: 'Keeps whichever is darker: line art and ink over a picture.' },
+            { value: 'dodge', label: 'Colour dodge', hint: 'Burns light into the picture below: glowing, blown-out highlights.' },
+            { value: 'burn', label: 'Colour burn', hint: 'Deep, saturated shadows.' },
+            { value: 'exclusion', label: 'Exclusion', hint: 'A softer Difference: washed-out inverted colours.' },
           ]}
           help="How the clip mixes with the picture below it."
           onchange={setC('blend')}
@@ -408,16 +416,30 @@ import { store } from '../lib/store.svelte';
       {/if}
 
       {#if isUpper && !isAdjust}
-        <div class="row sect"><span class="label grow">Chroma key</span></div>
-        <Field type="bool" label="Key out a colour" value={!!c.key} help="Green or blue screen: the colour becomes see-through and the tracks below show through it." onchange={(v: boolean) => editKeys((x) => (x.key = v ? (x.key ?? KEY_DEFAULT) : undefined))} />
+        <div class="row sect"><span class="label grow">Key</span></div>
+        <Field type="bool" label="Key it out" value={!!c.key} help="Part of the picture becomes see-through and the tracks below show through: a green or blue screen, or everything dark (or light)." onchange={(v: boolean) => editKeys((x) => (x.key = v ? (x.key ?? KEY_DEFAULT) : undefined))} />
         {#if c.key}
+          <Field
+            type="select"
+            label="Key by"
+            value={c.key.luma ?? 'color'}
+            options={[
+              { value: 'color', label: 'A colour', hint: 'Green or blue screen.' },
+              { value: 'dark', label: 'Darkness', hint: 'The black goes: line art, light leaks, fire or flares shot on black.' },
+              { value: 'light', label: 'Lightness', hint: 'The white goes: ink, drawings or text on white paper.' },
+            ]}
+            help="What becomes see-through."
+            onchange={(v: string) => setKey('luma')(v === 'color' ? undefined : (v as 'dark' | 'light'))}
+          />
+          {#if !c.key.luma}
           <div class="row keyc">
             <label class="row small grow">Colour <input type="color" value={c.key.color} oninput={(e) => setKey('color')((e.target as HTMLInputElement).value)} /></label>
             <button class="small" class:on={store.ui.eyedropper} title="Click the screen colour in the player" onclick={() => (store.ui.eyedropper = !store.ui.eyedropper)}>Pick from player</button>
           </div>
-          <Field label="Similarity" min={0.01} max={0.8} step={0.01} value={c.key.similarity} help="How close to the colour a pixel must be to disappear. Raise it until the screen is gone." onchange={setKey('similarity')} />
+          {/if}
+          <Field label={c.key.luma ? 'Threshold' : 'Similarity'} min={0.01} max={0.8} step={0.01} value={c.key.similarity} help={c.key.luma ? 'How dark (or light) a pixel must be to disappear.' : 'How close to the colour a pixel must be to disappear. Raise it until the screen is gone.'} onchange={setKey('similarity')} />
           <Field label="Softness" min={0} max={0.5} step={0.01} value={c.key.blend} help="A soft edge between kept and removed pixels." onchange={setKey('blend')} />
-          <Field type="bool" label="Remove spill" value={c.key.spill} help="Takes the screen's colour cast off hair and edges." onchange={setKey('spill')} />
+          {#if !c.key.luma}<Field type="bool" label="Remove spill" value={c.key.spill} help="Takes the screen's colour cast off hair and edges." onchange={setKey('spill')} />{/if}
         {/if}
       {/if}
 
