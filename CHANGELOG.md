@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.14.0
+
+- **Titles and type**: titles live on their own rows above the video. Pick a whole style in one
+  click, use any Google Font or a font file of your own, curve or tilt them, and drop words or lines
+  onto the beat with **Words on the beat**.
+- **Shapes, stickers and marks**: boxes, circles, arrows, a pen, callouts, emoji, particles and
+  stickers that follow faces or a tracked object. Group them so they move together.
+- **Handles on the player**: drag, scale and turn titles, shapes and clips right on the picture, or
+  right-click it (long-press on a phone) to add something exactly there.
+- **Cut out any subject**: tap it on the player and it is followed through the clip, so titles, shapes
+  and other clips can go behind it.
+- **Pin to a surface**: track a screen, a sign or a wall and put a title or a whole clip onto it.
+- **Collage and canvas**: split screens, cards with borders and captions, shaped masks, device
+  mockups, blurred or image backdrops, and clips that pop in or swap places on the beat.
+- **Looks, blends and transitions**: film and print looks, step print, blend modes, a luma key, whip
+  pans, zooms, wipes, flashes on the beat and flipbooks.
+- **Steal this edit**: give it a video you like and your clips are cut with the same rhythm, frame
+  rate and colour.
+- **Fixes and polish**: the live preview draws only as many pixels as the player shows, so tall and
+  square projects play more smoothly; the desktop app fills the screen when it is smaller than the
+  window; menus and notes on the player and timeline stay inside small windows; a font or cut-out that
+  can't load no longer slows playback by being asked for on every frame.
+
 ## 1.13.0
 
 - **Tracking that holds on**: Track an object follows things through zooms, moves, turns and
