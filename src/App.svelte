@@ -13,6 +13,7 @@
   import PresetsDialog from './dialogs/PresetsDialog.svelte';
   import SnapshotsDialog from './dialogs/SnapshotsDialog.svelte';
   import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
+  import WordBeatsDialog from './dialogs/WordBeatsDialog.svelte';
   import BakeDialog from './dialogs/BakeDialog.svelte';
   import CompoundDialog from './dialogs/CompoundDialog.svelte';
   import CaptionsDialog from './dialogs/CaptionsDialog.svelte';
@@ -246,6 +247,7 @@
 {#if store.ui.dialog === 'presets'}<PresetsDialog />{/if}
 {#if store.ui.dialog === 'snapshots'}<SnapshotsDialog />{/if}
 {#if store.ui.dialog === 'beatEdit'}<BeatEditDialog />{/if}
+{#if store.ui.dialog === 'wordBeats'}<WordBeatsDialog />{/if}
 {#if store.ui.dialog === 'bake'}<BakeDialog />{/if}
 {#if store.ui.dialog === 'compound'}<CompoundDialog />{/if}
 {#if store.ui.dialog === 'captions'}<CaptionsDialog />{/if}

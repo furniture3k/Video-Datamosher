@@ -84,16 +84,17 @@ unlocks, where it goes in the code, and when it counts as done.
 ### Type 2.0 (`src/lib/text.ts`, `TextClip` → text layers)
 - [ ] Custom fonts: import .ttf/.otf/.woff2 into the media library (stored with the project),
   plus a curated Google Fonts picker. Today there are four built-in families.
-- [ ] Stroke (outline-only too, R4), fill, gradient fill, letter spacing, line height, mixed sizes
+- [x] Stroke (outline-only too, R4), fill, gradient fill, letter spacing, line height, mixed sizes
   and colours per line or word ("What's On The Star? / YUNG FAZO", R4; white over red lines, R6).
-- [ ] **Fit to width / fit to box** and **overflow** (R2 fills the width; R6 runs past the edges).
+  *(M4a: outline, hollow, spacing and line height done; gradient fill and mixed styles per line are still to do.)*
+- [x] **Fit to width / fit to box** and **overflow** (R2 fills the width; R6 runs past the edges).
 - [ ] Text on a path (curved text along a line, R9) and perspective/3D tilt (R7–R9).
-- [ ] **Repeat**: tile the text across or down the frame, with an optional marquee scroll
+- [x] **Repeat**: tile the text across or down the frame, with an optional marquee scroll
   ("NUMB YOURSELF NUMB YOURSELF", R6).
-- [ ] New animations: slam (scale-down snap), stamp, letter-by-letter **snap** reveal (R4),
+- [x] New animations: slam (scale-down snap), stamp, letter-by-letter **snap** reveal (R4),
   write-on stroke, **strobe/flicker** (R6), scramble (exists as Glitch), wiggle/boil, drop.
   Exit animations too (today: enter only, `animIn`).
-- [ ] **Words → beats.** Paste a sentence or lyrics: each word (or line) becomes its own text
+- [x] **Words → beats.** Paste a sentence or lyrics: each word (or line) becomes its own text
   layer on its own beat or cut, fitted to width (R2). With music that has vocals, use the Whisper
   word timings that auto captions already produce (`TextClip.words`).
 - [ ] Text behind subject (needs F5 + P2).

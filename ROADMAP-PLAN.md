@@ -189,6 +189,14 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
   overrides.
 
 ### M4: Type 2.0. Unlocks R2, R4, R6 type
+
+> **Split in two.** **M4a (PR for `feat/m4-type`)**: layout and animation in one pure module
+> (`src/engine/textlayout.ts`, measuring through a passed-in function so it's tested without a
+> browser); letter and line spacing, outline and hollow letters, fit to width, copies and
+> ticker scroll, exits, strobe, boil, and the slam, stamp, drop and word-by-word entrances;
+> lengths in beats (chips that set seconds from the tempo); styles carry all of it; Words on
+> the beat. **M4b**: importing fonts and a Google Fonts picker, then gradient fills, mixed
+> styles per line and text on a path. Perspective tilt waits for the GPU compositor (M10).
 - **Fonts**: import .ttf/.otf/.woff2 as media items (`mime font/*`, kept like other media and
   loaded with the `FontFace` API), plus a Google Fonts picker (OFL) that downloads and stores the
   file with the project.

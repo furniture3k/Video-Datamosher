@@ -54,6 +54,7 @@
       />
     {/if}
     <button onclick={() => (store.ui.dialog = 'beatEdit')} disabled={!srcs.length || !store.project.media.some((m) => m.hasVideo)}><Icon name="music" />Auto-edit to the beat…</button>
+    <button onclick={() => (store.ui.dialog = 'wordBeats')} disabled={!srcs.length}><Icon name="text" />Words on the beat…</button>
   </div>
 
   <div class="label sect">Mixer</div>

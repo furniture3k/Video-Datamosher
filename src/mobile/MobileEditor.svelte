@@ -265,6 +265,7 @@
         <button class="tool" onclick={() => (sheet = 'chaos')}><Icon name="speed" size={22} /><span>Chaos</span></button>
         <button class="tool" onclick={() => (sheet = 'effects')}><Icon name="fx" size={22} /><span>Effects{store.project.effects.length ? ` ${store.project.effects.length}` : ''}</span></button>
         <button class="tool" onclick={() => edit.addText()}><Icon name="text" size={22} /><span>Text</span></button>
+        <button class="tool" disabled={!hasClips} onclick={() => (store.ui.dialog = 'wordBeats')}><Icon name="music" size={22} /><span>Words</span></button>
         <button class="tool" onclick={() => audioInput.click()}><Icon name="music" size={22} /><span>Music</span></button>
         <button class="tool" disabled={layoutVideo(store.project).length < 2} onclick={() => edit.transitionAtPlayhead('melt')}><Icon name="transition" size={22} /><span>Melt cut</span></button>
         <button class="tool" onclick={() => (sheet = 'look')}><Icon name="sliders" size={22} /><span>Look</span></button>
