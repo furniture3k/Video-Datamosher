@@ -2245,6 +2245,7 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   if (!cutsMatch || Math.abs(Number(cutsMatch[1]) - 4) > 1) throw new Error('the shots were not found: ' + found);
   if (!/12 pictures a second/.test(found)) throw new Error('the step print was not found: ' + found);
   if (!/frame round the picture/.test(found)) throw new Error('the bars were not found: ' + found);
+  const lutsBefore = await S(() => (window.__moshpit.store.project.luts ?? []).length);
   await page.getByRole('button', { name: 'Cut my clips like this' }).click();
   await page.locator('.modal').waitFor({ state: 'detached', timeout: 120000 });
   await idle();
@@ -2257,7 +2258,7 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   // the rhythm: the reference's shot lengths in turn, filling the footage (it has 12 s, the reference 4.5 s)
   if (!(out.lens.length >= 4 && Math.abs(out.lens[0] - 1) < 0.2 && Math.abs(out.lens[1] - 1.5) < 0.2 && Math.abs(out.lens[2] - 0.5) < 0.2 && total > 4 && total < 12.1)) throw new Error('the cuts are not the reference’s: ' + JSON.stringify(out.lens));
   if (!out.step.every((v) => v === 12)) throw new Error('the step print was not copied: ' + JSON.stringify(out.step));
-  if (!(out.luts === 1 && out.lut)) throw new Error('the grade was not copied: ' + JSON.stringify(out));
+  if (!(out.luts === lutsBefore + 1 && out.lut)) throw new Error('the grade was not copied: ' + JSON.stringify(out));
   if (!(out.canvas && out.canvas.color === '#000000' && out.canvas.inset > 0.05)) throw new Error('the frame was not copied: ' + JSON.stringify(out.canvas));
   // the picture really is warmer than before: the LUT pushes grey towards the reference's cast
   const warm = await S(async () => {
