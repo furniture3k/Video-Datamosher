@@ -2223,7 +2223,7 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   // the reference: four different shots (1 s, 1.5 s, 0.5 s, 1.5 s), step-printed at 12 fps, a warm cast, black bars top and bottom
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-steal-'));
   const ref = path.join(dir, 'reference.mp4');
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'rgbtestsrc=s=320x180:r=24:d=1.5', '-f', 'lavfi', '-i', 'smptebars=s=320x180:r=24:d=0.5', '-t', '1.5', '-f', 'lavfi', '-i', 'life=s=320x180:r=24:mold=10:ratio=0.2:death_color=#102040:life_color=#ffd060', '-filter_complex', '[0]format=yuv420p[a];[1]format=yuv420p[b];[2]format=yuv420p[c];[3]format=yuv420p[d];[a][b][c][d]concat=n=4:v=1:a=0,fps=12,fps=24,colorbalance=rs=.25:gs=.05:bs=-.25,pad=320:226:0:23:black', '-pix_fmt', 'yuv420p', '-r', '24', ref]);
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'rgbtestsrc=s=320x180:r=24:d=1.5', '-f', 'lavfi', '-i', 'smptebars=s=320x180:r=24:d=0.5', '-t', '1.5', '-f', 'lavfi', '-i', 'life=s=320x180:r=24:mold=10:ratio=0.2:seed=7:death_color=#102040:life_color=#ffd060', '-filter_complex', '[0]format=yuv420p[a];[1]format=yuv420p[b];[2]format=yuv420p[c];[3]format=yuv420p[d];[a][b][c][d]concat=n=4:v=1:a=0,fps=12,fps=24,colorbalance=rs=.25:gs=.05:bs=-.25,pad=320:226:0:23:black', '-pix_fmt', 'yuv420p', '-r', '24', ref]);
   // two clips of my own to cut
   await S(async () => {
     const { ffmpeg, media } = window.__moshpit;
@@ -2520,6 +2520,10 @@ await isoStep('beat timing: times in beats that follow a tempo change, start on 
     await media.addFiles([new File([r.out['beatbase.mp4']], 'beatbase.mp4', { type: 'video/mp4' })], 'none');
     const m = store.project.media.find((x) => x.source.name === 'beatbase.mp4');
     store.edit((p) => p.clips.push(timeline.makeClip(m, 'v1', { start: 0 })));
+    // an earlier step can leave the beat grid following the music: let the analysis that adding the
+    // clip started finish (there is no music, so it finds none) before the made-up beats go in
+    await new Promise((r) => setTimeout(r, 600));
+    for (let i = 0; i < 100 && beatinfo.beatInfo.status === 'working'; i++) await new Promise((r) => setTimeout(r, 100));
     // a made-up tempo: a beat every half second, then every second from 2 s
     Object.assign(beatinfo.beatInfo, { status: 'ready', bpm: 120, beats: [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8], downbeats: [0, 2, 4, 6, 8] });
     const l = edit.addShape('heart');
@@ -3262,10 +3266,14 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   const clip = await page.locator('.mtl .clip').first().boundingBox();
   if (!clip || clip.y + clip.height > 844 || clip.height < 40) throw new Error('timeline clips not on screen: ' + JSON.stringify(clip));
   // the playhead stays in the middle: scrubbing the timeline moves time
+  // (once the phone timeline has scrolled itself to the playhead: it does when it first shows)
+  await page.waitForFunction(() => { const sc = document.querySelector('.mtl .scroller'); return sc && sc.scrollWidth > sc.clientWidth + 60; }, null, { timeout: 10000 });
+  await page.waitForTimeout(300);
   const t0 = await S(() => window.__moshpit.store.ui.time);
   await S(() => (document.querySelector('.mtl .scroller').scrollLeft += 60));
-  await page.waitForTimeout(200);
-  if ((await S(() => window.__moshpit.store.ui.time)) === t0) throw new Error('scrolling the phone timeline did not move the playhead');
+  await page.waitForFunction((t0) => window.__moshpit.store.ui.time !== t0, t0, { timeout: 3000 }).catch(() => {
+    throw new Error('scrolling the phone timeline did not move the playhead');
+  });
   // the bottom tools change with the selection and open sheets over the timeline
   await page.locator('.mtl .clip').first().click();
   await page.locator('.tools .tool', { hasText: 'Speed' }).click();
