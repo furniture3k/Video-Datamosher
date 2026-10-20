@@ -27,6 +27,8 @@ export interface TextLayer extends LayerBase {
   /** position of the text centre, 0..1 */
   x: number;
   y: number;
+  /** degrees clockwise, about its position */
+  rotate?: number;
   align: 'left' | 'center' | 'right';
   shadow: boolean;
   box: boolean;

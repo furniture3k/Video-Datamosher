@@ -341,6 +341,136 @@ await step('graphics rows: drag a title above for a new row and back, on desktop
   if (phoneRow !== 'g2') throw new Error('phone: dragging above the rows did not make a new row: ' + phoneRow);
 });
 
+/** Put a title on the picture for the handle steps, paused at 1 s, nothing selected. */
+const handleTitle = (id, o = {}) =>
+  S(([id, o]) => {
+    const st = window.__moshpit.store;
+    st.setPref('view', 'edit');
+    st.ui.playing = false;
+    st.edit((p) => p.layers.push({ id, kind: 'text', row: 'g1', text: 'HANDLES', start: 0, duration: 3, size: 0.15, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: true, box: false, fade: 0, moshed: false, ...o }));
+    st.seek(1);
+    st.selectClip(null);
+  }, [id, o]);
+const layerOf = (id) => S((id) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.find((l) => l.id === id))), id);
+const dropLayer = (id) => S((id) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== id))), id);
+const dragBy = async (box, dx, dy) => {
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy, { steps: 8 });
+  await page.mouse.up();
+};
+
+await step('handles: pick a title on the player, move it, scale it from a corner and turn it; one undo step each', async () => {
+  await handleTitle('hz');
+  await page.waitForTimeout(300);
+  const b = await page.locator('polygon.hit[data-gizmo="hz"]').boundingBox();
+  const undo0 = await S(() => window.__moshpit.store.historySize.undo);
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  if (JSON.stringify(await S(() => window.__moshpit.store.ui.selectedClips)) !== '["hz"]') throw new Error('clicking the title did not pick it');
+  if (await S(() => window.__moshpit.store.ui.playing)) throw new Error('clicking the title started playback');
+  const pic = await page.locator('svg.gizmo').boundingBox();
+  // move: right by 80 px, a little down (snaps back to the middle)
+  await dragBy(b, 80, 3);
+  let l = await layerOf('hz');
+  if (Math.abs(l.x - (0.5 + 80 / pic.width)) > 0.01 || l.y !== 0.5) throw new Error('move: ' + JSON.stringify(l));
+  // scale from the bottom-right corner, outwards
+  await dragBy(await page.locator('circle.corner').nth(2).boundingBox(), 40, 20);
+  l = await layerOf('hz');
+  if (!(l.size > 0.17)) throw new Error('scale: ' + JSON.stringify(l));
+  // turn with the round handle
+  await dragBy(await page.locator('circle.turn').boundingBox(), 120, 60);
+  l = await layerOf('hz');
+  if (!(Math.abs(l.rotate) > 20)) throw new Error('turn: ' + JSON.stringify(l));
+  const undo1 = await S(() => window.__moshpit.store.historySize.undo);
+  if (undo1 - undo0 !== 3) throw new Error(`expected 3 undo steps, got ${undo1 - undo0}`);
+  await S(() => window.__moshpit.store.undo());
+  if ((await layerOf('hz')).rotate) throw new Error('undo did not take the turn back');
+  await dropLayer('hz');
+});
+
+await step('handles: double-click a title to type into it on the picture', async () => {
+  await handleTitle('hy');
+  await page.waitForTimeout(300);
+  const b = await page.locator('polygon.hit[data-gizmo="hy"]').boundingBox();
+  await page.mouse.dblclick(b.x + b.width / 2, b.y + b.height / 2);
+  const box = page.locator('textarea.inplace');
+  await box.waitFor({ timeout: 3000 });
+  await page.keyboard.type('NEW WORDS');
+  await page.keyboard.press('Enter');
+  await box.waitFor({ state: 'detached', timeout: 3000 });
+  if ((await layerOf('hy')).text !== 'NEW WORDS') throw new Error('typing on the picture did not change the title: ' + (await layerOf('hy')).text);
+  await dropLayer('hy');
+});
+
+await step('handles: a clip on a track above moves, and a keyframed zoom gets a key at the playhead', async () => {
+  const id = await S(() => {
+    const { store: st, edit, timeline } = window.__moshpit;
+    const track = edit.addVideoTrack();
+    const c = timeline.makeClip(st.project.media[0], track, { start: 0 });
+    c.out = Math.min(c.out, 2);
+    c.transform = { zoom: 0.4, x: -0.25 };
+    c.keys = { zoom: [[0, 0.4], [2, 0.4]] };
+    st.edit((p) => p.clips.push(c));
+    st.ui.playing = false;
+    st.seek(1);
+    st.selectClip(null);
+    return c.id;
+  });
+  await page.waitForTimeout(300);
+  const b = await page.locator(`polygon.hit[data-gizmo="${id}"]`).boundingBox();
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  await dragBy(b, 0, 30);
+  await dragBy(await page.locator('circle.corner').nth(2).boundingBox(), 30, 30);
+  const c = await S((id) => JSON.parse(JSON.stringify(window.__moshpit.store.project.clips.find((x) => x.id === id))), id);
+  await S((id) => window.__moshpit.store.edit((p) => (p.clips = p.clips.filter((x) => x.id !== id))), id);
+  await settle();
+  if (!(c.transform.y > 0.05)) throw new Error('the clip did not move: ' + JSON.stringify(c.transform));
+  if (c.transform.zoom !== 0.4 || c.keys.zoom.length !== 3 || !(c.keys.zoom[1][1] > 0.45)) throw new Error('no zoom key at the playhead: ' + JSON.stringify(c.keys));
+});
+
+await step('handles on a phone: a tap picks a title without playing, two fingers pinch and twist it', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  await handleTitle('hp');
+  await page.waitForTimeout(300);
+  const b = await page.locator('polygon.hit[data-gizmo="hp"]').boundingBox();
+  const cx = b.x + b.width / 2;
+  const cy = b.y + b.height / 2;
+  // synthetic touch pointers, as a phone sends them
+  const touch = (type, id, x, y) =>
+    S(([type, id, x, y]) => {
+      const target = type === 'pointerdown' ? document.elementFromPoint(x, y) : window;
+      target.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+    }, [type, id, x, y]);
+  await touch('pointerdown', 1, cx, cy);
+  await touch('pointerup', 1, cx, cy);
+  const picked = await S(() => [window.__moshpit.store.ui.selectedClips.join(), window.__moshpit.store.ui.playing]);
+  // first finger on the title, the second 60 px to its right, then that one swings to 120 px below
+  await touch('pointerdown', 1, cx, cy);
+  await touch('pointerdown', 2, cx + 60, cy);
+  for (let i = 1; i <= 6; i++) {
+    const a = (i / 6) * (Math.PI / 2);
+    const r = 60 + (i / 6) * 60;
+    await touch('pointermove', 2, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+  }
+  await touch('pointerup', 2, cx, cy + 120);
+  await touch('pointerup', 1, cx, cy);
+  const l = await layerOf('hp');
+  // a tap on what's already picked plays, as a tap on the picture does (not a double tap: wait first)
+  await page.waitForTimeout(500);
+  const nb = await page.locator('polygon.hit[data-gizmo="hp"]').boundingBox();
+  await touch('pointerdown', 1, nb.x + nb.width / 2, nb.y + nb.height / 2);
+  await touch('pointerup', 1, nb.x + nb.width / 2, nb.y + nb.height / 2);
+  const played = await S(() => window.__moshpit.store.ui.playing);
+  await S(() => (window.__moshpit.store.ui.playing = false));
+  await dropLayer('hp');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await settle();
+  if (picked[0] !== 'hp' || picked[1]) throw new Error('a tap on the title should pick it, not play: ' + JSON.stringify(picked));
+  if (Math.abs(l.size - 0.3) > 0.01 || Math.abs((l.rotate ?? 0) - 90) > 1) throw new Error('pinch and twist: ' + JSON.stringify({ size: l.size, rotate: l.rotate }));
+  if (!played) throw new Error('a tap on the picked title did not play');
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
