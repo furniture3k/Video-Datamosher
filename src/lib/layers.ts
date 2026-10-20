@@ -4,6 +4,7 @@ import { drawOrder, layerAlpha, layerPos, trailSteps, type Layer } from '../engi
 import { boxQuad, type Quad } from '../engine/gizmo';
 import { drawText, textBox } from './text';
 import { drawShape } from './shapes';
+import { particlesAt } from '../engine/particles';
 
 /** Which layers to draw: all of them, the ones on top of the mosh, or the ones that melt with it. */
 export type LayerSet = 'all' | 'clean' | 'moshed';
@@ -12,17 +13,34 @@ const inSet = (l: Layer, which: LayerSet) => which === 'all' || (which === 'mosh
 
 /** Draw one layer at timeline time t with opacity `alpha` (its fades are the caller's). */
 export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number) {
+  const one = (a: number) => {
+    switch (l.kind) {
+      case 'text':
+        return drawText(ctx, l, w, h, a, t);
+      case 'shape':
+        return drawShape(ctx, l, w, h, a, t);
+    }
+  };
+  // particles: copies of it rising, falling or bursting out, each turned and sized about where it is
+  if (l.particles) {
+    const [px, py] = layerPos(l, t);
+    for (const q of particlesAt(l.particles, t - l.start)) {
+      if (q.alpha <= 0) continue;
+      ctx.save();
+      ctx.translate((px + q.dx) * w, (py + q.dy) * h);
+      if (q.turn) ctx.rotate((q.turn * Math.PI) / 180);
+      ctx.scale(q.scale, q.scale);
+      ctx.translate(-px * w, -py * h);
+      one(alpha * q.alpha);
+      ctx.restore();
+    }
+    return;
+  }
   // a stamp trail: the copies left behind, then the layer where it is now
   for (const [dx, dy] of trailSteps(l, t)) {
     ctx.save();
     if (dx || dy) ctx.translate(dx * w, dy * h);
-    switch (l.kind) {
-      case 'text':
-        drawText(ctx, l, w, h, alpha, t);
-        break;
-      case 'shape':
-        drawShape(ctx, l, w, h, alpha, t);
-    }
+    one(alpha);
     ctx.restore();
   }
 }

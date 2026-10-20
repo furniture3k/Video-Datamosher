@@ -471,6 +471,18 @@ export function addShape(kind: ShapeLayer['shape']) {
   return s;
 }
 
+/** Emoji to stick on (reactions, as in the references). */
+export const EMOJI = ['😂', '😍', '🔥', '💀', '😭', '✨', '💯', '👀', '🙏', '❤️', '👍', '😎', '🤯', '🥹', '⭐', '🌸', '🎉', '💥'];
+
+/** Add an emoji sticker at the playhead (a title of one emoji: it has every title's settings). */
+export function addEmoji(e: string) {
+  const t = store.ui.time;
+  const l: TextLayer = { id: uid(), kind: 'text', row: freeRow(store.project.layers, t, t + 3), text: e, start: t, duration: 3, size: 0.14, color: '#ffffff', font: 'sans', bold: false, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, anim: 'pop', animIn: 0.25 };
+  store.edit((p) => p.layers.push(l));
+  store.selectClip(l.id);
+  return l;
+}
+
 /** Add a freehand stroke drawn on the player (points as shares of the frame). */
 export function addPen(raw: Pt[]) {
   const fit = fitPen(raw);

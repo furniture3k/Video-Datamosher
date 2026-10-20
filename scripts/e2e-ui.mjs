@@ -852,6 +852,58 @@ await step('flipbook every 3 frames on a new track, and a whip pan at a cut', as
   await settle();
 });
 
+await step('faces get stickers that follow them; emoji with particles; a heart', async () => {
+  if (!(await S(() => window.__moshpit.store.project.clips.length))) {
+    await S(async () => {
+      const m = window.__moshpit;
+      await m.media.addFiles([new File([await m.renderer.renderGenerator('testsrc2', 2, 320, 180, 24)], 'testsrc2.mp4', { type: 'video/mp4' })]);
+    });
+    await idle();
+  }
+  // a fake face detector (no model download): one face, drifting right
+  await S(() => {
+    let k = 0;
+    window.__moshpit.faces.setFaceDetector(async () => [{ x: 0.3 + 0.01 * k++, y: 0.3, w: 0.2, h: 0.25 }]);
+  });
+  const id = await S(() => {
+    const st = window.__moshpit.store;
+    const c = st.project.clips.find((x) => x.track === 'v1' && st.project.media.find((m) => m.id === x.mediaId)?.source.kind === 'file' && !st.project.media.find((m) => m.id === x.mediaId)?.source.isImage);
+    st.selectClip(c.id);
+    st.seek(window.__moshpit.timeline.layoutVideo(st.project).find((pl) => pl.clip.id === c.id).start + 0.1);
+    return c.id;
+  });
+  const before = await S(() => window.__moshpit.store.project.layers.map((l) => l.id));
+  try {
+    await page.locator('.tabs button', { hasText: 'Clip' }).click();
+    await page.getByRole('button', { name: 'Find faces' }).click();
+    await page.waitForFunction((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).paths?.some((p) => p.name === 'Face 1'), id, { timeout: 60000 });
+    const face = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).paths.find((p) => p.name === 'Face 1'), id);
+    if (!(face.pts.length >= 3) || !(face.pts.at(-1)[1] > face.pts[0][1])) throw new Error('face track: ' + JSON.stringify(face.pts.slice(0, 3)));
+    await page.locator('.pathrow', { hasText: 'Face 1' }).locator('select[aria-label="Sticker on it"]').selectOption('😎');
+    const st = await S((before) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.find((l) => !before.includes(l.id)))), before);
+    if (st?.text !== '😎' || !(st.follow?.length > 1) || !(st.size > 0.1)) throw new Error('sticker: ' + JSON.stringify(st));
+    // the emoji rises in particles; a heart; both render
+    await S((sid) => {
+      const { store: s, edit } = window.__moshpit;
+      s.edit((p) => (p.layers.find((l) => l.id === sid).particles = { kind: 'rise', count: 10, speed: 0.4, spread: 0.5 }));
+      edit.addShape('heart');
+    }, st.id);
+    await settle();
+    if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error('no frames');
+  } finally {
+    await S(({ id, before }) => {
+      const s = window.__moshpit.store;
+      window.__moshpit.faces.setFaceDetector(null);
+      s.edit((p) => {
+        p.layers = p.layers.filter((l) => before.includes(l.id));
+        const c = p.clips.find((x) => x.id === id);
+        c.paths = c.paths?.filter((pp) => !pp.name.startsWith('Face'));
+      });
+    }, { id, before });
+    await settle();
+  }
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));

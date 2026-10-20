@@ -371,6 +371,15 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
   `beatedit.ts`.
 
 ### M13: Stickers, faces and particles. Unlocks R3 star, R6 reactions
+
+> **Done (PR for `feat/m13-stickers`).** Emoji stickers (titles of one emoji, popping in) and
+> drawn hearts, sparkles and starbursts in the Shape picker. Particles on any title or shape
+> (`src/engine/particles.ts`: rise, fall or burst, with count, speed and spread). Find faces:
+> MediaPipe face detection on the clip's analysis frames (6 a second, `src/lib/faces.ts`, a
+> fake detector in tests), linked into one track per face (`src/engine/faces.ts`), stored with
+> the tracked objects, so Title follows, Mark it and a new Sticker menu work on faces; the phone's
+> Faces tool puts a sticker on every face at once. Still to do: face blur, ornaments, tape and
+> paper, particles on the beat.
 - **Built-in sticker library** (our own SVGs): emoji, reactions, stars, sparkles, ornaments, line
   art, scribbles, tape.
 - **Face pin**: MediaPipe FaceDetector produces face paths stored as `Clip.paths` (kind face). A

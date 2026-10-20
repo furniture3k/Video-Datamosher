@@ -30,7 +30,11 @@ interface LayerBase {
   follow?: [number, number, number][];
   /** stamp trail: every `every` seconds it steps on by (dx, dy) (shares of the frame), leaving a copy behind, `count` times */
   trail?: Trail;
+  /** many copies rising, falling or bursting out from it */
+  particles?: Particles;
 }
+
+import type { Particles } from './particles';
 
 export interface Trail {
   every: number;
@@ -94,7 +98,7 @@ export interface TextLayer extends LayerBase {
   boil?: number;
 }
 
-export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress';
+export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst';
 
 /** A drawn shape: boxes, circles, arrows, lines, a freehand stroke… for marking things up. */
 export interface ShapeLayer extends LayerBase {
@@ -182,7 +186,7 @@ export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.sha
  * single picture of it can stand in for every frame (fades are applied on top of that picture).
  */
 export function isStill(l: Layer): boolean {
-  if (l.follow?.length || l.trail) return false;
+  if (l.follow?.length || l.trail || l.particles) return false;
   if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress';
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }

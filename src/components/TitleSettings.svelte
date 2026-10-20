@@ -6,6 +6,7 @@
   import Field from './Field.svelte';
   import BeatChips from './BeatChips.svelte';
   import TrailSettings from './TrailSettings.svelte';
+  import ParticleSettings from './ParticleSettings.svelte';
   import type { TextAnim, TextLayer } from '../engine/layers';
 
   let { title }: { title: TextLayer } = $props();
@@ -72,6 +73,7 @@
   {/if}
 {/if}
 <TrailSettings layer={title} />
+<ParticleSettings layer={title} />
 
 <style>
   .label {

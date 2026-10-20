@@ -11,11 +11,11 @@ import { store } from '../lib/store.svelte';
   import Icon from './Icon.svelte';
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
-  import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead } from '../lib/edit';
+  import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, EMOJI } from '../lib/edit';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, markTracked } from '../lib/motion.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
@@ -409,6 +409,7 @@ import { store } from '../lib/store.svelte';
         </div>
         <div class="row btns">
           <button class="small" class:on={store.ui.trackPick === c.id && !store.ui.trackThen} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id)} title="Then drag a box on the player around what to follow">{store.ui.trackPick === c.id && !store.ui.trackThen ? 'Cancel tracking' : 'Track an object'}</button>
+          <button class="small" disabled={motionJob.running} onclick={() => findFaces(c.id).catch((e) => store.toast('Finding faces failed: ' + (e as Error).message, 'error'))} title="Find every face in the clip, to put stickers or labels on">Find faces</button>
           <button class="small" class:on={store.ui.trackPick === c.id && store.ui.trackThen === 'mark'} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id, store.ui.trackThen === 'mark' ? null : 'mark')} title="Then drag a box on the player around it: it's followed, boxed, arrowed and labelled">{store.ui.trackPick === c.id && store.ui.trackThen === 'mark' ? 'Cancel' : 'Mark something'}</button>
         </div>
         {#if store.ui.trackPick === c.id}<p class="small faint">Drag a box on the player around something with clear detail. It is followed forwards and backwards from this frame.</p>{/if}
@@ -417,6 +418,10 @@ import { store } from '../lib/store.svelte';
             <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>
             <button class="small" onclick={() => titleFollows(c.id, path.id)} title="Add a title that moves with it">Title follows</button>
             <button class="small" onclick={() => markTracked(c.id, path.id)} title="Box it, point an arrow at it and label it, all following it">Mark it</button>
+            <select class="small" aria-label="Sticker on it" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) emojiFollows(c.id, path.id, v); (e.target as HTMLSelectElement).value = ''; }}>
+              <option value="">Sticker…</option>
+              {#each EMOJI as em}<option value={em}>{em}</option>{/each}
+            </select>
             {#if followers.length}
               <select class="small" aria-label="Clip that follows" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) clipFollows(c.id, path.id, v); (e.target as HTMLSelectElement).value = ''; }}>
                 <option value="">Clip follows…</option>
