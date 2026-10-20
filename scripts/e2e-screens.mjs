@@ -58,6 +58,9 @@ const pictureCheck = () => page.evaluate(pictureProblem);
 let failed = 0;
 let page;
 const check = async (label, extra) => {
+  // a dialog sliding in is measured where it lands, not part-way (on a slow machine 400 ms isn't
+  // always enough); endless ones (spinners) don't count, and it waits 3 s at most
+  await page.evaluate(() => Promise.race([Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity).map((a) => a.finished.catch(() => {}))), new Promise((r) => setTimeout(r, 3000))]));
   const found = await problems();
   if (extra) {
     const e = await extra();
