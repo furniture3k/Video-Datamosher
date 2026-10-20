@@ -3,6 +3,7 @@
 // grade change the footage under them (so they work on layers drawn over the picture, not melted in).
 import type { ShapeLayer } from '../engine/layers';
 import type { MatteSource } from './layers';
+import { pathAt } from './motion.svelte';
 
 let tmp: HTMLCanvasElement | null = null;
 let tmp2: HTMLCanvasElement | null = null;
@@ -29,8 +30,47 @@ function silhouette(into: HTMLCanvasElement, matte: CanvasImageSource, colour: s
   g.globalCompositeOperation = 'source-over';
 }
 
+/** Each face blurred or pixelated, as an oval over the picture drawn so far. */
+function drawFaces(ctx: CanvasRenderingContext2D, l: ShapeLayer, w: number, h: number, alpha: number, t: number) {
+  const fx = l.subject!;
+  const here = ctx.canvas as HTMLCanvasElement;
+  const orig = scratch(tmp2, here.width, here.height);
+  tmp2 = orig;
+  orig.getContext('2d')!.drawImage(here, 0, 0);
+  const grace = 3 / 24;
+  for (const f of fx.faces ?? []) {
+    if (!f.pts.length || t < f.pts[0][0] - grace || t > f.pts[f.pts.length - 1][0] + grace) continue;
+    const [x, y] = pathAt(f.pts, t);
+    // a little bigger than the face's box, so hair and chin are covered
+    const bw = Math.max(4, f.size[0] * w * 1.5);
+    const bh = Math.max(4, f.size[1] * h * 1.5);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.ellipse(x * w, y * h, bw / 2, bh / 2, 0, 0, Math.PI * 2);
+    ctx.clip();
+    if (fx.effect === 'pixelFaces') {
+      // the face's box drawn tiny and blown up with hard edges: big squares
+      const cell = Math.max(2, bh * (0.06 + fx.amount * 0.14));
+      const sw = Math.max(1, Math.round(bw / cell));
+      const sh = Math.max(1, Math.round(bh / cell));
+      tmp = scratch(tmp, sw, sh);
+      tmp.getContext('2d')!.drawImage(orig, x * w - bw / 2, y * h - bh / 2, bw, bh, 0, 0, sw, sh);
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(tmp, 0, 0, sw, sh, x * w - bw / 2, y * h - bh / 2, bw, bh);
+      ctx.imageSmoothingEnabled = true;
+    } else {
+      ctx.filter = `blur(${Math.max(2, bh * (0.08 + fx.amount * 0.25))}px)`;
+      ctx.drawImage(orig, 0, 0);
+      ctx.filter = 'none';
+    }
+    ctx.restore();
+  }
+}
+
 export function drawSubject(ctx: CanvasRenderingContext2D, l: ShapeLayer, w: number, h: number, alpha: number, t: number, source?: MatteSource) {
   const fx = l.subject;
+  if (fx && (fx.effect === 'blurFaces' || fx.effect === 'pixelFaces')) return alpha > 0 ? drawFaces(ctx, l, w, h, alpha, t) : undefined;
   const matte = source?.(t, w, h);
   if (!fx || !matte || alpha <= 0) return;
   const colour = l.color;

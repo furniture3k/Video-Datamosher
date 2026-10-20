@@ -4,7 +4,7 @@ import { ask } from './ask';
 import { forgetMedia } from './media';
 import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips, layers as timelineLayers } from '../engine/timeline';
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TransitionType } from '../engine/types';
-import { FIRST_ROW, freeRow, nextRow, type ShapeLayer, type TextLayer } from '../engine/layers';
+import { FIRST_ROW, freeRow, nextRow, withGroups, type Layer, type ShapeLayer, type TextLayer } from '../engine/layers';
 import { DEFAULT_LOOK, fitPen, newShape, type Pt, type ShapeLook } from '../engine/shapes';
 import { outputSize } from '../engine/args';
 import { GRID_LAYOUTS, cellTransform, inset } from '../engine/grid';
@@ -53,7 +53,9 @@ export function deleteSelected(ripple = false) {
     store.editTimeline((p) => {
       if (ripple) rippleDelete(p, ids);
       else deleteClips(p, ids);
-      p.layers = p.layers.filter((t) => !ids.includes(t.id));
+      // a layer in a group goes with the rest of it
+      const gone = new Set([...ids, ...withGroups(p.layers, ids)]);
+      p.layers = p.layers.filter((t) => !gone.has(t.id));
     });
     store.ui.selectedClips = [];
     return true;
@@ -281,14 +283,21 @@ export function markedRange(): [number, number] | null {
 export { videoClips };
 
 export function duplicateSelected() {
-  const ids = store.ui.selectedClips;
-  if (!ids.length) return false;
+  if (!store.ui.selectedClips.length) return false;
+  // a group is copied whole
+  const ids = [...new Set([...store.ui.selectedClips, ...withGroups(store.project.layers, store.ui.selectedClips)])];
   const created: string[] = [];
   store.editTimeline((p) => {
+    // the copy of a group is a group of its own
+    const groups = new Map<string, string>();
     for (const id of ids) {
       const tx = p.layers.find((x) => x.id === id);
       if (tx) {
-        const d = { ...clone(tx), id: uid(), start: tx.start + tx.duration };
+        const d: Layer = { ...clone(tx), id: uid(), start: tx.start + tx.duration };
+        if (tx.group) {
+          if (!groups.has(tx.group)) groups.set(tx.group, uid());
+          d.group = groups.get(tx.group);
+        }
         p.layers.push(d);
         created.push(d.id);
         continue;
@@ -309,16 +318,21 @@ export function duplicateSelected() {
 }
 
 let clipboard: Clip[] = [];
+let clipboardLayers: Layer[] = [];
 
 export function copySelected() {
   clipboard = store.project.clips.filter((c) => store.ui.selectedClips.includes(c.id)).map(clone);
-  if (clipboard.length) store.toast(`Copied ${clipboard.length} clip${clipboard.length > 1 ? 's' : ''}.`);
-  return clipboard.length > 0;
+  // titles and shapes too, and whole groups of them
+  const lids = withGroups(store.project.layers, store.ui.selectedClips);
+  clipboardLayers = store.project.layers.filter((l) => lids.includes(l.id)).map(clone);
+  const n = clipboard.length + clipboardLayers.length;
+  if (n) store.toast(`Copied ${n} ${clipboardLayers.length && !clipboard.length ? 'layer' : 'clip'}${n > 1 ? 's' : ''}.`);
+  return n > 0;
 }
 
 /** Paste at the playhead: video clips go in at the nearest cut, audio keeps its spacing. */
 export function paste() {
-  if (!clipboard.length) return false;
+  if (!clipboard.length && !clipboardLayers.length) return false;
   const t = store.ui.time;
   const audio = clipboard.filter((c) => c.track !== VIDEO_TRACK);
   const t0 = Math.min(...audio.map((c) => c.start), Infinity);
@@ -337,9 +351,42 @@ export function paste() {
       }
       created.push(d.id);
     }
+    // titles and shapes come in at the playhead, keeping their spacing, each group a new group
+    const l0 = Math.min(...clipboardLayers.map((l) => l.start), Infinity);
+    const groups = new Map<string, string>();
+    for (const l of clipboardLayers) {
+      const d: Layer = { ...clone(l), id: uid(), start: t + (l.start - l0) };
+      if (l.group) {
+        if (!groups.has(l.group)) groups.set(l.group, uid());
+        d.group = groups.get(l.group);
+      }
+      d.row = freeRow(p.layers, d.start, d.start + d.duration);
+      p.layers.push(d);
+      created.push(d.id);
+    }
   });
   store.ui.selectedClips = created;
   return true;
+}
+
+/** Group the selected titles and shapes: they move, copy and delete together. */
+export function groupSelected() {
+  const ids = store.ui.selectedClips.filter((id) => store.project.layers.some((l) => l.id === id));
+  if (ids.length < 2) return store.toast('Select two or more titles or shapes to group.', 'info');
+  const g = uid();
+  store.edit((p) => {
+    for (const l of p.layers) if (ids.includes(l.id)) l.group = g;
+  });
+  store.toast(`Grouped ${ids.length}: they move, copy and delete together.`, 'ok');
+}
+
+/** Take the selected layers (and everything grouped with them) out of their group. */
+export function ungroupSelected() {
+  const ids = withGroups(store.project.layers, store.ui.selectedClips);
+  if (!store.project.layers.some((l) => ids.includes(l.id) && l.group)) return store.toast('That is not in a group.', 'info');
+  store.edit((p) => {
+    for (const l of p.layers) if (ids.includes(l.id)) delete l.group;
+  });
 }
 
 export function detach(id: string) {

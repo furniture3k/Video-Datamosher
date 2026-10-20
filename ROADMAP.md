@@ -145,9 +145,9 @@ unlocks, where it goes in the code, and when it counts as done.
   ornament shot (R1) should take: tap the fox, add a layer, set Depth to "Behind subject".
 - [x] **Subject effects** *(M8: a subject effect is a shape layer made of the matte: Recolour, Outline, Glow, Echo, Blur and Darken (grade) the background or the subject; the last two change the picture under them, so they can't melt)*: recolour solid (R9 red car), fill white or colour (R2), outline, glow,
   duplicate offset (echo of the subject), subject-only grade, background-only grade or blur.
-- [ ] **Make sticker**: freeze the cut-out at a frame into a transparent PNG in the media library
+- [x] **Make sticker** *(M9: from the cut-out's row or the picture's menu: the subject at the playhead, cropped, as a PNG with see-through edges in the media)*: freeze the cut-out at a frame into a transparent PNG in the media library
   (R3's cat).
-- [ ] Subject Guard reads these mattes, so a fox or a car can stay clean while the rest moshes.
+- [x] Subject Guard reads these mattes, *(M9: "A cut-out subject" is a Subject Guard source)* so a fox or a car can stay clean while the rest moshes.
 
 ## Phase 3: Pin to the scene (R7–R9)
 
@@ -187,7 +187,7 @@ unlocks, where it goes in the code, and when it counts as done.
 ### Stickers
 - [x] *(M13: 18 emoji as titles, and drawn hearts, sparkles and starbursts next to the shapes; ornaments, tape and paper scraps are still to do)* Built-in sticker library: emoji, reactions (generic hearts, thumbs, faces), stars, sparkles,
   ornaments/mandalas, line-art drawings, scribbles, arrows, tape, paper scraps.
-- [x] **Face pin** *(M13: Find faces (MediaPipe on the device) makes a track per face; a sticker, label or mark follows it; blur is still to do)*: detect faces on device and pin a sticker or blur to each face automatically
+- [x] **Face pin** *(M13: Find faces (MediaPipe on the device) makes a track per face; a sticker, label or mark follows it. M9: **Blur faces** and **Pixelate faces** follow every face found, as ovals over the picture.)*: detect faces on device and pin a sticker or blur to each face automatically
   (R3's censor star).
 - [x] **Floating particles** *(M13: on any title or shape: rise, fall or burst; on beats is still to do)*: emojis/stickers that rise, fall or burst on beats (R6 reactions).
 
@@ -197,7 +197,7 @@ unlocks, where it goes in the code, and when it counts as done.
 
 ## Phase 5: Make it effortless
 
-- [x] **Tap menu on the player.** *(M14: right-click or long-press: Title here, Box it, Arrow to here, Mark what's here, Find faces, stickers; Cut out, Recolour, Text behind and Make sticker wait for cut-outs)* Tap anything → Cut out · Track · Pin here · Box it · Recolour ·
+- [x] **Tap menu on the player.** *(M14: right-click or long-press: Title here, Box it, Arrow to here, Mark what's here, Find faces, Pin here, stickers; M8/M9: Cut out, Recolour, Text behind and Make sticker)* Tap anything → Cut out · Track · Pin here · Box it · Recolour ·
   Text behind · Sticker on it · Make sticker. This is the main way into Phases 2–4.
 - [x] **Starter templates for each reference style** *(M14: Kinetic lyrics, Scrapbook, Product demo, Red notes, Cinematic, Degraded film, Split screen)*, using the existing template system
   (`src/home/TemplateDialog.svelte`): Red Annotations, Word-per-Beat, Y2K Collage, Behind the
@@ -206,13 +206,13 @@ unlocks, where it goes in the code, and when it counts as done.
   measures cut rhythm (against its beat), shot length, effective frame rate, palette and grade
   (built as a LUT by colour transfer), canvas/inset, text density and position. It turns these into a
   template + kit to apply to your clips. Uses existing beat detection, scene cuts and LUTs.
-- [ ] **Depth stack view.** A small side view above the player showing layers behind or in front
+- [x] **Depth stack view.** *(M14: a slim strip above the player, shown once something is cut out: what is behind the subject and what is in front at the playhead; click to pick, drag a chip onto another or use the arrows to change which is drawn over which, and the side button puts it behind or in front. `src/components/DepthStrip.svelte`.)* A small side view above the player showing layers behind or in front
   of the subject; drag layers between them.
-- [ ] **Randomise and Variations for graphics.** The existing Randomize / Variations / Breed
+- [x] **Randomise and Variations for graphics.** *(M14: `src/engine/graphicschaos.ts`. "Titles & graphics" in Variations, a preference that Randomize follows, and a command that rolls only the graphics: font, size, colour, outline, entrance, place, start on a beat and now and then a new canvas, seeded and repeatable; words, things that follow something, added fonts and subject effects are left alone. Variations and Breed cross the looks of the parents.)* The existing Randomize / Variations / Breed
   (mosh only today) also vary layout, kit, timing and annotation placement.
-- [ ] **Build-up on beats.** Select a group of layers → "reveal one per beat" (R9's marks
+- [x] **Build-up on beats.** *(M14: select layers → **Reveal one per beat** (¼, ½, 1 or 2 beats apart), from the earliest start, all staying up to the latest end; "swap per beat" is the Flipbook.)* Select a group of layers → "reveal one per beat" (R9's marks
   arriving one by one) or "swap per beat".
-- [ ] **Text-first editing.** A script panel: write lines, and they become timed layers; edit the
+- [x] **Text-first editing.** *(M14: **Script** in the palette and the phone's tools: write lines (or words), one after another or on the beats; the titles stay linked, so editing the words, adding or deleting a line updates them and keeps the looks you gave them. `src/engine/script.ts`, `src/dialogs/ScriptDialog.svelte`.)* A script panel: write lines, and they become timed layers; edit the
   words and the layers update.
 
 ---

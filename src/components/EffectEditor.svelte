@@ -186,6 +186,12 @@
         {:else}
           <p class="small warn">Import a picture or video to use as the map (it doesn't need to be on the timeline).</p>
         {/if}
+      {:else if effect.params.source === 'cutout'}
+        {#if store.project.media.some((m) => (m.mattes ?? []).length)}
+          <p class="small faint">The subject cut out of the main track stays clean (flip it with Keep clean). Shows in the Mosh view.</p>
+        {:else}
+          <p class="small warn">Cut a subject out of a clip first (Clip tab › Motion › Cut out a subject): it is the subject kept clean.</p>
+        {/if}
       {:else if effect.params.source === 'depth'}
         <p class="small faint">The depth model (about 25 MB) is downloaded the first time and runs on this device. Near things stay clean; flip it with Keep clean. Shows in the Mosh view.</p>
       {/if}

@@ -109,6 +109,7 @@ export const subjectGuard: PixelEffectDef = {
       default: 'person',
       options: [
         { value: 'person', label: 'People', hint: 'Finds people in the clean footage with a small AI model that runs on this device (downloaded once).' },
+        { value: 'cutout', label: 'A cut-out subject', hint: 'The subject you cut out of the footage (Clip tab › Cut out a subject): it stays clean while the rest moshes.' },
         { value: 'track', label: 'A tracked object', hint: 'An oval around the box you tracked, following it (select the clip, then Clip tab › Track an object).' },
         { value: 'luma', label: 'Bright parts', hint: 'Everything brighter than the threshold. Lower the threshold to keep more.' },
         { value: 'dark', label: 'Dark parts', hint: 'Everything darker than the threshold.' },

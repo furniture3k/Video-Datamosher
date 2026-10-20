@@ -8,9 +8,9 @@ import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
-import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
-import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, type Segment } from '../engine/timeline';
+import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
 import { audioKey, audioKeysNeeded, type MoshAudio } from '../engine/audiofx';
 import { splitJpegs } from '../engine/jpeg';
@@ -22,7 +22,7 @@ import { aspectRatio, reframePath } from '../engine/reframe';
 import { grayFrames } from './analysis';
 import { bitrateFor } from '../engine/social';
 import { encodeRecipe, findRecipe, gifComments, gifWithComment } from '../engine/recipe';
-import type { Frame, MediaItem, Project } from '../engine/types';
+import { clipOn, VIDEO_TRACK, type Frame, type MediaItem, type Project } from '../engine/types';
 import { drawOrder, isEmpty, isStill, layerAlpha, layerEnd, type Layer } from '../engine/layers';
 import { drawLayer, type MatteSource } from './layers';
 import { ensureMattes, matteSourceFor } from './mattes.svelte';
@@ -163,6 +163,70 @@ async function layerOverlays(project: Project, w: number, h: number, mounts: Rec
   return out;
 }
 
+/**
+ * For each clip that goes behind the subject: grey pictures of the main track's subject, one per
+ * timeline frame while the clip is on (the graph cuts the subject out of the main track with them
+ * and puts it back over the clip). Clips with no subject to go behind are left out.
+ */
+async function clipMattePlates(project: Project, w: number, h: number, mounts: Record<string, Blob>, progress?: Progress, signal?: Signal): Promise<ClipMatte[]> {
+  const behind = project.clips.filter((c) => c.depth === 'behind' && c.track !== VIDEO_TRACK && clipOn(c));
+  if (!behind.length) return [];
+  await ensureMattes(project);
+  const src = matteSourceFor(project, 'main');
+  const fps = project.encoder.fps;
+  const mv = project.media.flatMap((m) => (m.mattes ?? []).map((x) => `${x.id}@${x.version}`)).join();
+  const out: ClipMatte[] = [];
+  for (const c of behind) {
+    const l = upperClips(project).find((x) => x.clip.id === c.id);
+    if (!l) continue;
+    const first = Math.ceil(l.start * fps - 1e-6);
+    const count = Math.max(1, Math.ceil(l.end * fps - 1e-6) - first);
+    const key = JSON.stringify({ cm: c.id, w, h, fps, first, count, mv });
+    let seq = seqCache.get(key);
+    if (!seq) {
+      const cv = document.createElement('canvas');
+      cv.width = w;
+      cv.height = h;
+      const g = cv.getContext('2d')!;
+      const white = document.createElement('canvas');
+      white.width = w;
+      white.height = h;
+      const wg = white.getContext('2d')!;
+      const pngs: Blob[] = [];
+      let any = false;
+      for (let k = 0; k < count; k++) {
+        if (k % 8 === 0) {
+          check(signal);
+          progress?.('Cutting out', k / count);
+        }
+        const m = src((first + k) / fps, w, h);
+        g.globalCompositeOperation = 'source-over';
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, w, h);
+        if (m) {
+          any = true;
+          // the subject as white on black: a white picture, kept where the matte is
+          wg.globalCompositeOperation = 'source-over';
+          wg.fillStyle = '#fff';
+          wg.fillRect(0, 0, w, h);
+          wg.globalCompositeOperation = 'destination-in';
+          wg.drawImage(m, 0, 0, w, h);
+          g.drawImage(white, 0, 0);
+        }
+        pngs.push(await canvasPng(cv));
+      }
+      // no subject at all while this clip is on: nothing to go behind
+      if (!any) continue;
+      seq = new Blob(pngs);
+      seqCache.set(key, seq, seq.size);
+    }
+    const name = `cmatte_${c.id}.pngs`;
+    mounts[name] = seq;
+    out.push({ clipId: c.id, path: MOUNT + name, frames: { first, count } });
+  }
+  return out;
+}
+
 /** The canvas's pictures for the prep graph (see CanvasPlates), when the picture is set in. */
 async function canvasPlates(project: Project, w: number, h: number, mounts: Record<string, Blob>): Promise<CanvasPlates | undefined> {
   const c = project.canvas;
@@ -230,6 +294,7 @@ export async function prepare(project: Project, width: number, progress?: Progre
   await ensureFonts(project);
   const overlays = await layerOverlays(project, size.w, size.h, mounts, progress, signal);
   const plates = await canvasPlates(project, size.w, size.h, mounts);
+  const clipMattes = await clipMattePlates(project, size.w, size.h, mounts, progress, signal);
   // Without keyframes at cuts the stream must be encoded in one go (cuts become P-frames).
   const whole = !project.encoder.keyAtCuts;
   const segs: (Segment | null)[] = whole ? [null] : segments(project, fps);
@@ -238,12 +303,12 @@ export async function prepare(project: Project, width: number, progress?: Progre
   let done = 0;
   for (const seg of segs) {
     check(signal);
-    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays, plates), t: project.layers.filter((t) => t.moshed), cv: project.canvas }));
+    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays, plates, clipMattes), t: project.layers.filter((t) => t.moshed), cv: project.canvas }));
     const n = seg ? seg.f1 - seg.f0 : totalFrames;
     let part = preview ? segCache.get(key) : undefined;
     if (!part) {
       const name = disk ? `prep_${parts.length}.avi` : 'prep.avi';
-      const args = seg ? segmentArgs(project, seg, width, name, path, overlays, plates) : prepArgs(project, width, name, path, overlays, plates);
+      const args = seg ? segmentArgs(project, seg, width, name, path, overlays, plates, clipMattes) : prepArgs(project, width, name, path, overlays, plates, clipMattes);
       const base = done;
       const onFrame = (k: number) => progress?.('Preparing clips', Math.min(1, (base + k) / totalFrames));
       let log: string;

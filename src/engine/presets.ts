@@ -1,7 +1,8 @@
 import { EFFECTS, defaultParams, type ParamDef } from './effects';
 import { SCRIPT_EXAMPLES } from './effects/script';
 import type { EffectInstance, EncoderSettings, ParamValue, Project, Automation } from './types';
-import { makeRng, randomSeed, type Rng } from './rng';
+import { hashSeed, makeRng, randomSeed, type Rng } from './rng';
+import { breedGraphics, chaosGraphics, mutateGraphics } from './graphicschaos';
 import { randomSteps } from './effects/bend';
 
 /** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
@@ -366,7 +367,8 @@ function weightedPick(rng: Rng): string {
 }
 
 /** Roll a fresh random effect stack. Locked effects (all params locked) are kept. */
-export function chaos(project: Project, total: number, seed = randomSeed(), intensity = 0.5): Project {
+/** `graphics`: also roll the titles, shapes and canvas (on the beats, if there are `beats`). */
+export function chaos(project: Project, total: number, seed = randomSeed(), intensity = 0.5, graphics?: { beats?: number[] }): Project {
   const rng = makeRng(seed);
   const kept = project.effects.filter((e) => e.locks.includes('__keep'));
   const effects: EffectInstance[] = [...kept];
@@ -386,11 +388,12 @@ export function chaos(project: Project, total: number, seed = randomSeed(), inte
     if (type === 'bloom' && e.params.length === 'count' && rng.chance(0.3)) e.auto.repeats = { kind: 'lfo', shape: rng.pick(['sine', 'random', 'triangle'] as const), rate: rng.int(1, 6), min: 1, max: Math.round(10 + 50 * intensity), phase: rng() };
     effects.push(e);
   }
-  return { ...project, effects };
+  const out = { ...project, effects };
+  return graphics ? { ...out, ...chaosGraphics(out, hashSeed(seed, 'graphics'), Math.min(1, intensity), graphics.beats) } : out;
 }
 
-/** Small random variations of unlocked params. amount 0..1 */
-export function mutate(project: Project, total: number, amount = 0.2, seed = randomSeed()): Project {
+/** Small random variations of unlocked params. amount 0..1 (`graphics`: the titles, shapes and canvas too) */
+export function mutate(project: Project, total: number, amount = 0.2, seed = randomSeed(), graphics = false): Project {
   const rng = makeRng(seed);
   const effects = project.effects.map((e) => {
     const def = EFFECTS[e.type];
@@ -415,7 +418,8 @@ export function mutate(project: Project, total: number, amount = 0.2, seed = ran
     }
     return { ...clone(e), params, start, end, seed: e.locks.includes('__seed') ? e.seed : rng.int(0, 1e9) };
   });
-  return { ...project, effects };
+  const out = { ...project, effects };
+  return graphics ? { ...out, ...mutateGraphics(out, hashSeed(seed, 'graphics'), amount) } : out;
 }
 
 // ---------- breeding ----------
@@ -429,9 +433,9 @@ const FORMAT_KEYS = new Set(['width', 'aspect', 'fps', 'previewWidth', 'keyMarke
  * gets each gene with the share of parents that have it, with settings mixed between them.
  * The first parent supplies the timeline, format and pinned effects.
  */
-export function breed(parents: Project[], total: number, seed = randomSeed(), mutation = 0.12): Project {
+export function breed(parents: Project[], total: number, seed = randomSeed(), mutation = 0.12, graphics = false): Project {
   const base = parents[0];
-  if (parents.length < 2) return mutate(base, total, mutation, seed);
+  if (parents.length < 2) return mutate(base, total, mutation, seed, graphics);
   const rng = makeRng(seed);
   const near = Math.max(1, total * 0.25);
   const mid = (e: EffectInstance) => (e.start + e.end) / 2;
@@ -487,5 +491,7 @@ export function breed(parents: Project[], total: number, seed = randomSeed(), mu
   };
   if (chaosOf === undefined) delete child.chaos;
   else child.chaos = chaosOf;
-  return mutation > 0 ? mutate(child, total, mutation, rng.int(0, 1e9)) : child;
+  // the titles, shapes and canvas cross too, when asked
+  const crossed: Project = graphics ? { ...child, ...breedGraphics(parents, hashSeed(seed, 'graphics'), 0) } : child;
+  return mutation > 0 ? mutate(crossed, total, mutation, rng.int(0, 1e9), graphics) : crossed;
 }

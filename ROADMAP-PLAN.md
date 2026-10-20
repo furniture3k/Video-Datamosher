@@ -341,6 +341,18 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
   synthetic subject is hidden where the matte is white.
 
 ### M9: Cut-outs, part 2
+
+> **Done (with the rest of M14, in the PR for `feat/m9-depth`).** Changes from this plan:
+> - **Clip depth** feeds the matte to FFmpeg as grey PNG pictures, one per timeline frame (made by
+>   the page the same way moving layers' plates are), not as raw grey frames: the page already
+>   knows how a clip's time maps to the source (speed, ramps, reverse), so the pictures line up
+>   with the main track however it was cut. In the graph the main track is split, the subject is
+>   rebuilt with `alphamerge` and overlaid back over the clip (`Clip.depth: 'behind'`). The preview
+>   draws the main track again, cut by the matte, over the clip. Checked on real pixels with
+>   generated mattes in native FFmpeg (`tests/clipdepth.test.ts`), whole and one segment at a time.
+> - **Make sticker**, **Subject Guard** with "A cut-out subject" as its source, and **Blur / Pixelate
+>   faces** (an oval over every face the clip's Find faces found, following each) are done, with
+>   the menu's Cut out, Recolour, Text behind and Make sticker.
 - **Clip depth**: upper-track clips can go behind the subject. In FFmpeg, the matte is fed as raw
   grey frames (`-f rawvideo -pix_fmt gray`), the base is split, the subject is rebuilt with
   `alphamerge` and overlaid back on top. The preview gets the same order.
@@ -438,6 +450,8 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 
 ### M14: Effortless layer
 
+> **Done in full (the second part is in the PR for `feat/m9-depth`):** the depth stack view, graphics in Randomize, Variations and Breed, reveal one per beat, the script panel and groups (the box, arrow and label of a mark are one group: the handles move it, and copy and delete take it whole). Earlier note:
+>
 > **Partly done (PR for `feat/m14-effortless`).** Right-click (long-press on a phone) on the
 > picture: Title here, Box it, Arrow to here, Mark what's here (tracks a box round the point,
 > then box, arrow and label), Find faces, and emoji stickers, all placed where you pointed.

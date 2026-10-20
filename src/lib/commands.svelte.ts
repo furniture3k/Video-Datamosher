@@ -5,6 +5,9 @@ import * as edit from './edit';
 import { startMark, startSurface } from './motion.svelte';
 import { startCutout } from './cutout.svelte';
 import { chaos, mutate } from '../engine/presets';
+import { chaosGraphics } from '../engine/graphicschaos';
+import { revealOnBeats } from './graphicsops.svelte';
+import { beatInfo } from './beatinfo.svelte';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
 import { enableMidi, controls } from './controls.svelte';
@@ -21,7 +24,15 @@ const hasClips = () => store.project.clips.length > 0 || store.project.layers.le
 export function runChaos() {
   if (!store.project.clips.length) return store.toast('Add a clip first.');
   if (store.project.effects.length) takeSnapshot('Before Randomize', true);
-  store.set(chaos($state.snapshot(store.project) as never, store.totalFrames, randomSeed(), store.ui.chaosIntensity));
+  store.set(chaos($state.snapshot(store.project) as never, store.totalFrames, randomSeed(), store.ui.chaosIntensity, store.ui.chaosGraphics ? { beats: beatInfo.beats } : undefined));
+}
+
+/** Roll just the titles, shapes and canvas, leaving the effects as they are. */
+export function runChaosGraphics() {
+  if (!store.project.layers.length && !store.project.canvas) return store.toast('Add a title or a shape first.');
+  takeSnapshot('Before Randomize graphics', true);
+  const p = $state.snapshot(store.project) as never;
+  store.edit((q) => Object.assign(q, chaosGraphics(p, randomSeed(), store.ui.chaosIntensity, beatInfo.beats)));
 }
 
 export function runMutate() {
@@ -126,6 +137,7 @@ const ACTIONS: Record<string, Action> = {
   'add-effect': { run: dialog('addEffect') },
   presets: { run: dialog('presets') },
   randomize: { run: runChaos, when: () => store.project.clips.length > 0 },
+  'randomize-graphics': { run: runChaosGraphics, when: hasClips },
   'nudge-settings': { run: runMutate, when: () => store.project.effects.length > 0 },
   variations: { run: dialog('variations'), when: () => store.project.clips.length > 0 },
   'chaos-up': { run: () => chaosBy(0.25) },
@@ -155,6 +167,10 @@ const ACTIONS: Record<string, Action> = {
   'split-grid': { run: () => edit.arrangeGrid('g2'), when: hasClips },
   flipbook: { run: dialog('flipbook'), when: () => store.project.media.length > 0 },
   'word-beats': { run: dialog('wordBeats'), when: hasClips },
+  script: { run: dialog('script'), when: hasClips },
+  'reveal-beats': { run: () => revealOnBeats(1), when: hasClips },
+  group: { run: () => edit.groupSelected(), when: hasClips },
+  ungroup: { run: () => edit.ungroupSelected(), when: hasClips },
   bake: { run: dialog('bake'), when: hasClips },
   captions: { run: dialog('captions'), when: hasClips },
   live: { run: dialog('live') },
