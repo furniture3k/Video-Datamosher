@@ -16,6 +16,7 @@
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawLayers } from '../lib/layers';
+  import Gizmo from './Gizmo.svelte';
   import { audioCtx } from '../lib/audioctx';
   import { download } from '../lib/storage';
   import type { Project } from '../engine/types';
@@ -584,6 +585,19 @@
     return boxes.length ? { pb: pictureBox(), boxes } : null;
   });
 
+  /** where the handles go (the picture, stage pixels), or null while something else uses the picture */
+  const gizmoBox = $derived.by(() => {
+    // the stage's size first: it's what tells this the stage is there (and when it resizes)
+    void stageSize;
+    if (!wrap || !hasTimeline || store.ui.playing || store.ui.eyedropper || store.ui.trackPick || paintFx || store.ui.compare !== 'off') return null;
+    // the frame letterboxed into the canvases' area (10 px in from the stage's edges), worked out
+    // from its shape so it's right before the canvases have drawn anything
+    const cw = wrap.clientWidth - 20;
+    const ch = wrap.clientHeight - 20;
+    const k = Math.min(cw / guideSize.w, ch / guideSize.h);
+    return { left: 10 + (cw - guideSize.w * k) / 2, top: 10 + (ch - guideSize.h * k) / 2, width: guideSize.w * k, height: guideSize.h * k };
+  });
+
   /** The box being drawn around something to track, in stage pixels. */
   let trackRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
   function drawTrackBox(e: PointerEvent) {
@@ -747,6 +761,9 @@
           <div class="tbox" style="left:{(b.x - b.w / 2) * 100}%;top:{(b.y - b.h / 2) * 100}%;width:{b.w * 100}%;height:{b.h * 100}%"><span class="mono">{b.name}</span></div>
         {/each}
       </div>
+    {/if}
+    {#if gizmoBox}
+      <Gizmo W={guideSize.w} H={guideSize.h} box={gizmoBox} {compact} />
     {/if}
     {#if store.ui.scopes && hasTimeline}
       <Scopes source={() => (mosh ? canvas : editCanvas)} />

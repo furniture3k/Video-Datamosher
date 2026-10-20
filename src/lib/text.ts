@@ -25,6 +25,25 @@ export const FONTS: Record<TextLayer['font'], string> = {
   impact: "Impact, 'Arial Black', 'Helvetica Neue', sans-serif",
 };
 
+const fontOf = (tx: TextLayer, size: number) => `${tx.bold ? 700 : 400} ${size}px ${FONTS[tx.font] ?? FONTS.sans}`;
+
+let measurer: CanvasRenderingContext2D | null = null;
+/**
+ * The box the title takes up in a w×h frame (pixels, before turning), and how far its centre is
+ * across from the title's position (aligned left or right, the position is an edge).
+ */
+export function textBox(tx: TextLayer, w: number, h: number): { w: number; h: number; dx: number } {
+  measurer ??= document.createElement('canvas').getContext('2d')!;
+  const size = Math.max(4, tx.size * h);
+  measurer.font = fontOf(tx, size);
+  const lines = tx.text.split('\n');
+  const pad = tx.box ? size * 0.4 : 0;
+  const bw = Math.max(...lines.map((l) => measurer!.measureText(l).width)) + 2 * pad;
+  const bh = lines.length * size * 1.2 + (tx.box ? size * 0.4 : 0);
+  const dx = tx.align === 'left' ? bw / 2 - pad : tx.align === 'right' ? -bw / 2 + pad : 0;
+  return { w: bw, h: bh, dx };
+}
+
 export function drawText(ctx: CanvasRenderingContext2D, tx: TextLayer, w: number, h: number, alpha: number, t = tx.start) {
   if (alpha <= 0 || !tx.text.trim()) return;
   const [px, py] = layerPos(tx, t);
@@ -36,7 +55,12 @@ export function drawText(ctx: CanvasRenderingContext2D, tx: TextLayer, w: number
   if (alpha <= 0) return;
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.font = `${tx.bold ? 700 : 400} ${size}px ${FONTS[tx.font] ?? FONTS.sans}`;
+  if (tx.rotate) {
+    ctx.translate(px * w, py * h);
+    ctx.rotate((tx.rotate * Math.PI) / 180);
+    ctx.translate(-px * w, -py * h);
+  }
+  ctx.font = fontOf(tx, size);
   ctx.textAlign = tx.align;
   ctx.textBaseline = 'middle';
   const lines = tx.text.split('\n');
