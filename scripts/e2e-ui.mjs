@@ -2223,7 +2223,7 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   // the reference: four different shots (1 s, 1.5 s, 0.5 s, 1.5 s), step-printed at 12 fps, a warm cast, black bars top and bottom
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-steal-'));
   const ref = path.join(dir, 'reference.mp4');
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'rgbtestsrc=s=320x180:r=24:d=1.5', '-f', 'lavfi', '-i', 'smptebars=s=320x180:r=24:d=0.5', '-f', 'lavfi', '-i', 'life=s=320x180:r=24:d=1.5:mold=10:ratio=0.2:death_color=#102040:life_color=#ffd060', '-filter_complex', '[0]format=yuv420p[a];[1]format=yuv420p[b];[2]format=yuv420p[c];[3]format=yuv420p[d];[a][b][c][d]concat=n=4:v=1:a=0,fps=12,fps=24,colorbalance=rs=.25:gs=.05:bs=-.25,pad=320:226:0:23:black', '-pix_fmt', 'yuv420p', '-r', '24', ref]);
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'rgbtestsrc=s=320x180:r=24:d=1.5', '-f', 'lavfi', '-i', 'smptebars=s=320x180:r=24:d=0.5', '-t', '1.5', '-f', 'lavfi', '-i', 'life=s=320x180:r=24:mold=10:ratio=0.2:death_color=#102040:life_color=#ffd060', '-filter_complex', '[0]format=yuv420p[a];[1]format=yuv420p[b];[2]format=yuv420p[c];[3]format=yuv420p[d];[a][b][c][d]concat=n=4:v=1:a=0,fps=12,fps=24,colorbalance=rs=.25:gs=.05:bs=-.25,pad=320:226:0:23:black', '-pix_fmt', 'yuv420p', '-r', '24', ref]);
   // two clips of my own to cut
   await S(async () => {
     const { ffmpeg, media } = window.__moshpit;
@@ -2448,7 +2448,7 @@ await isoStep('looks and cuts: a two-colour line screen in the mosh, the new tra
   await page.getByRole('button', { name: 'Doors open', exact: true }).click();
   await S(() => window.__moshpit.store.edit((p) => p.clips.forEach((c) => delete c.transition)));
   // ---- step print for the whole track
-  await S(() => { const st = window.__moshpit.store; st.ui.selectedClips = [st.project.clips[0].id]; st.edit((p) => (p.clips[0].stepFps = 8)); });
+  await S(() => { const st = window.__moshpit.store; st.selectClip(st.project.clips[0].id); st.edit((p) => (p.clips[0].stepFps = 8)); });
   await page.getByRole('button', { name: 'Same for the whole track' }).click();
   const steps = await S(() => window.__moshpit.store.project.clips.map((c) => c.stepFps));
   if (steps.some((v) => v !== 8)) throw new Error('step print for the track: ' + JSON.stringify(steps));
@@ -2526,8 +2526,9 @@ await isoStep('beat timing: times in beats that follow a tempo change, start on 
     window.__beatId = l.id;
     store.ui.view = 'edit';
   });
+  const beatId = await S(() => window.__beatId);
   await page.locator('.tabs button', { hasText: 'Clip' }).click();
-  const start = page.locator('input[aria-label="Start"]');
+  const start = page.locator('input.val[aria-label="Start"]');
   await start.waitFor();
   // seconds first: 1.2 s is 2.4 beats in; then beats
   await page.getByRole('button', { name: 'Start in seconds: switch' }).click();
@@ -2536,19 +2537,19 @@ await isoStep('beat timing: times in beats that follow a tempo change, start on 
   // typing 4 beats puts it on 2 s (the tempo changes there: the next beat is a second later)
   await start.fill('4');
   await start.press('Enter');
-  await page.waitForFunction((id) => Math.abs(window.__moshpit.store.project.layers.find((l) => l.id === id).start - 2) < 0.01, window.__beatId, { timeout: 5000 });
+  await page.waitForFunction((id) => Math.abs(window.__moshpit.store.project.layers.find((l) => l.id === id).start - 2) < 0.01, beatId, { timeout: 5000 });
   // a length: 1.5 s from 2 s is 1.5 beats at the slow tempo
-  const dur = Number(await page.locator('input[aria-label="Duration"]').inputValue());
+  const dur = Number(await page.locator('input.val[aria-label="Duration"]').inputValue());
   if (Math.abs(dur - 1.5) > 0.01) throw new Error('duration in beats: ' + dur);
   await page.getByRole('button', { name: 'Start in beats: switch' }).click();
   // start on the beat
-  await S((id) => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === id).start = 1.3)), window.__beatId);
+  await S((id) => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === id).start = 1.3)), beatId);
   await page.getByRole('button', { name: 'Start on the beat' }).click();
-  await page.waitForFunction((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).start === 1.5, window.__beatId, { timeout: 5000 });
+  await page.waitForFunction((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).start === 1.5, beatId, { timeout: 5000 });
   // a burst of particles on every beat it is on screen for
-  await S((id) => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === id).particles = { kind: 'burst', count: 8, speed: 0.4, spread: 0.5 })), window.__beatId);
+  await S((id) => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === id).particles = { kind: 'burst', count: 8, speed: 0.4, spread: 0.5 })), beatId);
   await page.locator('[aria-label="Burst on the beats"]').check();
-  const at = await S((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).particles.at, window.__beatId);
+  const at = await S((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).particles.at, beatId);
   if (!at || at.length < 2 || at[0] !== 0) throw new Error('burst times: ' + JSON.stringify(at));
   // a flash on the beats, from the palette
   await S(() => { const st = window.__moshpit.store; st.edit((p) => (p.layers = [])); st.seek(0); });
@@ -2657,10 +2658,12 @@ await isoStep('type and shapes: gradient, line and word looks, polygon, leader l
   await look();
   const leader = await S(() => {
     const px = window.__px();
-    // the line runs from the top left of its box to the bottom right: its ends are at (0.3, 0.3) and (0.7, 0.7) of the frame
+    // the line runs from the top left of its box to the bottom right: its box is square on the screen, 0.4 of the width across
+    const cv = document.querySelector('.stage canvas.edit');
+    const yo = 0.2 * cv.width / cv.height;
     const sq = (cx, cy) => { let n = 0; for (let dy = -0.04; dy <= 0.04; dy += 0.01) for (let dx = -0.025; dx <= 0.025; dx += 0.005) { const [r, g, b] = px.at(cx + dx, cy + dy); if (r + g + b > 450) n++; } return n; };
     const side = (cx, cy) => px.at(cx + 0.018, cy - 0.018).reduce((a, v) => a + v, 0);
-    return { a: sq(0.3, 0.3), b: sq(0.7, 0.7), aside: side(0.3, 0.3), bside: side(0.7, 0.7), mid: px.at(0.5, 0.5).reduce((a, v) => a + v, 0) };
+    return { a: sq(0.3, 0.5 - yo), b: sq(0.7, 0.5 + yo), aside: side(0.3, 0.5 - yo), bside: side(0.7, 0.5 + yo), mid: px.at(0.5, 0.5).reduce((a, v) => a + v, 0) };
   });
   if (!(leader.a > 40 && leader.b > 40 && leader.aside > 450 && leader.bside > 450 && leader.mid > 300)) throw new Error('leader line: ' + JSON.stringify(leader));
   await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
@@ -2683,8 +2686,10 @@ await isoStep('type and shapes: gradient, line and word looks, polygon, leader l
     const cy = 0.5;
     const edge = (u) => px.at(u, cy);
     // along the horizontal axis: inside white, then the red outline, then black
-    const r = 0.1 * h / w;
-    return { inside: edge(0.5 + r * 0.5), ring: edge(0.5 + r + 0.012), outside: edge(0.5 + r + 0.08), shadow: px.at(0.5, 0.5 + 0.1 + 0.05 + 0.02) };
+    // the diamond is 0.2 of the width across and 0.2 of the width tall on the screen
+    const r = 0.1;
+    const hh = 0.1 * (w / h);
+    return { inside: edge(0.5 + r * 0.5), ring: edge(0.5 + r + 0.005), outside: edge(0.5 + r + 0.06), shadow: px.at(0.5, 0.5 + hh + 0.02 + 0.03) };
   });
   if (!(fx.inside[0] > 200 && fx.inside[1] > 200 && fx.ring[0] > 150 && fx.ring[1] < 90 && fx.outside.every((v) => v < 60) && fx.shadow[1] > 150 && fx.shadow[0] < 90)) throw new Error('shadow and outline: ' + JSON.stringify(fx));
   // the shadow and outline controls are in the shape's settings, and a shape style puts a look on it in one click

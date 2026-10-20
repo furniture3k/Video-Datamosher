@@ -5,3 +5,4 @@ public/app/ffmpeg-mt
 *.log
 test-results
 .DS_Store
+demo-output
