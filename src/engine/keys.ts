@@ -152,3 +152,74 @@ export const RAMP_PRESETS: { id: string; name: string; make: (a: number, b: numb
   { id: 'peak', name: 'Rush in the middle', make: (a, b) => [[0, a], [0.45, b], [0.55, b], [1, a]] },
   { id: 'montage', name: 'Montage (bursts)', make: (a, b) => [[0, a], [0.2, a], [0.25, b], [0.45, b], [0.5, a], [0.7, a], [0.75, b], [1, b]] },
 ];
+
+// ---------- pop in on the beat ----------
+
+export type PopMode = 'snap' | 'pop' | 'slide';
+
+export interface PopOptions {
+  mode: PopMode;
+  /** how long it takes to settle (seconds) */
+  dur: number;
+  /** false: straight lines, no easing (hard, mechanical) */
+  ease: boolean;
+  /** slide: which side it comes from */
+  from?: 'left' | 'right' | 'top' | 'bottom';
+}
+
+/**
+ * The keys that make a clip pop in at its start, from where it settles (`rest`: its zoom, x and y
+ * when it is in place). snap: it is just there, with no move; pop: grows past its size and settles
+ * back; slide: comes in from one side. A step is a key with no easing (the third number is 0).
+ */
+export function popKeys(rest: { zoom: number; x: number; y: number }, o: PopOptions): Keys {
+  const lin = (v: [number, number][]): KeyPoint[] => v.map(([t, x]) => (o.ease ? ([t, x] as KeyPoint) : ([t, x, 0] as KeyPoint)));
+  const d = Math.max(0.04, o.dur);
+  if (o.mode === 'snap') return { opacity: [[0, 1, 0]] };
+  if (o.mode === 'pop') {
+    return {
+      zoom: lin([
+        [0, rest.zoom * 0.2],
+        [d * 0.6, rest.zoom * 1.12],
+        [d, rest.zoom],
+      ]),
+      opacity: lin([
+        [0, 0],
+        [d * 0.25, 1],
+      ]),
+    };
+  }
+  const from = o.from ?? 'left';
+  const dx = from === 'left' ? -0.7 : from === 'right' ? 0.7 : 0;
+  const dy = from === 'top' ? -0.7 : from === 'bottom' ? 0.7 : 0;
+  return {
+    ...(dx ? { x: lin([[0, rest.x + dx], [d, rest.x]]) } : {}),
+    ...(dy ? { y: lin([[0, rest.y + dy], [d, rest.y]]) } : {}),
+    opacity: lin([
+      [0, 0],
+      [d * 0.3, 1],
+    ]),
+  };
+}
+
+// ---------- swapping places on the beat ----------
+
+/**
+ * Step keys that move clips between places on the beat: clip `i` sits at place `(i + k) mod n` after
+ * the k-th time in `times` (clip-local seconds, one list for all, the first is where it starts to
+ * swap). A move is a jump: held until a frame before, then there. `places`: the (zoom, x, y) of each place.
+ */
+export function swapKeys(places: { zoom: number; x: number; y: number }[], clip: number, times: number[], frame: number): Keys {
+  const n = places.length;
+  const out: Record<'zoom' | 'x' | 'y', KeyPoint[]> = { zoom: [], x: [], y: [] };
+  const at = (k: number) => places[(((clip + k) % n) + n) % n];
+  const props = ['zoom', 'x', 'y'] as const;
+  for (const p of props) out[p].push([0, at(0)[p], 0]);
+  times.forEach((t, k) => {
+    for (const p of props) {
+      // held until a frame before, then the new place
+      out[p].push([Math.max(0.001, t - frame), at(k)[p], 0], [t, at(k + 1)[p], 0]);
+    }
+  });
+  return out;
+}
