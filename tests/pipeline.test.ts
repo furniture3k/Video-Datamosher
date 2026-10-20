@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { ff, ffLog, hasFfmpeg, tmpdir, fileMedia, clipOf, place } from './helpers';
 import { prepArgs, segmentArgs, decodeToMjpegArgs, audioMixArgs, exportArgs, defaultExport, parseProbe } from '../src/engine/args';
 import { framesFromAvi, applyBitstream, writeMoshed, concatPrepared } from '../src/engine/mosh';
@@ -98,7 +99,10 @@ d('native ffmpeg pipeline', () => {
     const raw = fs.readFileSync(path.join(dir, 'mosh.raw'));
     expect(raw.length / 4 / 44100).toBeCloseTo(4, 1);
     ff(dir, ['-f', 's16le', '-ar', '44100', '-ac', '2', '-i', 'mosh.raw', 'audio.wav']);
-    for (const format of ['mp4', 'gif', 'webm'] as const) {
+    // webm needs libvorbis, which the browser engine has but some native builds (Homebrew's) lack
+    const vorbis = /libvorbis/.test(execFileSync('ffmpeg', ['-hide_banner', '-encoders']).toString());
+    if (!vorbis) console.warn('libvorbis missing in this ffmpeg: skipping the webm export check');
+    for (const format of ['mp4', 'gif', ...(vorbis ? ['webm'] : [])] as ('mp4' | 'gif' | 'webm')[]) {
       const o = { ...defaultExport(), format, width: 160 };
       ff(dir, exportArgs(o, project.decoder, 25, { file: 'prep.avi', mjpeg: false }, 'audio.wav', `out.${format}`));
       expect(fs.statSync(path.join(dir, `out.${format}`)).size).toBeGreaterThan(1000);
