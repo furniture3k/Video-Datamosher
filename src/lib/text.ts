@@ -1,6 +1,7 @@
 // Draws text layers onto a 2D canvas (for the graphics renderer in ./layers): the layout and the
 // animation come from ../engine/textlayout, this turns them into fills, outlines and copies.
-import { layerPos, type TextAnim, type TextLayer } from '../engine/layers';
+import { layerPos, type BuiltinFont, type TextAnim, type TextLayer } from '../engine/layers';
+import { fontCss } from './fonts.svelte';
 import { layoutText, lettersShown, noise, textLookAt, type TextLayout } from '../engine/textlayout';
 
 export const TEXT_ANIMS: { value: TextAnim; label: string; hint: string }[] = [
@@ -17,14 +18,14 @@ export const TEXT_ANIMS: { value: TextAnim; label: string; hint: string }[] = [
 
 const GLYPHS = '!<>-_\\/[]{}=+*^?#%&@$01';
 
-export const FONTS: Record<TextLayer['font'], string> = {
+export const FONTS: Record<BuiltinFont, string> = {
   sans: "-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   serif: "Georgia, 'Times New Roman', serif",
   mono: "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace",
   impact: "Impact, 'Arial Black', 'Helvetica Neue', sans-serif",
 };
 
-const fontOf = (tx: TextLayer, size: number) => `${tx.bold ? 700 : 400} ${size}px ${FONTS[tx.font] ?? FONTS.sans}`;
+const fontOf = (tx: TextLayer, size: number) => `${tx.bold ? 700 : 400} ${size}px ${fontCss(tx.font, FONTS)}`;
 
 let measurer: CanvasRenderingContext2D | null = null;
 /** The title laid out in a w×h frame, measured in its font. */

@@ -7,6 +7,7 @@
   // change its words right there.
   import { store } from '../lib/store.svelte';
   import { layerQuad } from '../lib/layers';
+  import { fontState } from '../lib/fonts.svelte';
   import { centre, pictureQuad, pinch, poseOf, scaleBy, setPose, snapTo, snapTurn, turnBy, turnHandle, type Pose, type Pt, type Quad } from '../engine/gizmo';
   import { pictureMatrix } from '../engine/placement';
   import { baseHidden, layers as upperClips, layoutVideo } from '../engine/timeline';
@@ -30,6 +31,8 @@
 
   /** what can be picked at the playhead, bottom first (later ones are on top) */
   const items = $derived.by(() => {
+    // titles are measured again once their font has loaded
+    void fontState.loaded;
     const p = store.project;
     const t = store.ui.time;
     const out: Item[] = [];

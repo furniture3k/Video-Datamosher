@@ -4,6 +4,7 @@
   import { store } from '../lib/store.svelte';
   import { allStyles, deleteStyle, saveStyle, styleTitles, titleStyles } from '../lib/styles.svelte';
   import { FONTS } from '../lib/text';
+  import { fontCss } from '../lib/fonts.svelte';
   import { BUILTIN_STYLES, hasStyle, styleOf, type TitleStyle } from '../engine/styles';
   import type { TextLayer } from '../engine/layers';
 
@@ -34,7 +35,7 @@
     {#each allStyles() as s (s.id)}
       <div class="chipwrap">
         <button class="chip" class:on={hasStyle(title, s)} onclick={() => styleTitles(ids, s)} title={`${s.name}: put this look on ${ids.length > 1 ? 'the selected titles' : 'the title'}`} aria-pressed={hasStyle(title, s)}>
-          <span class="aa" style="font-family:{FONTS[s.font]};font-weight:{s.bold ? 700 : 400};color:{s.color};background:{swatch(s.color)}">Aa</span>
+          <span class="aa" style="font-family:{fontCss(s.font, FONTS)};font-weight:{s.bold ? 700 : 400};color:{s.color};background:{swatch(s.color)}">Aa</span>
           <span class="nm">{s.name}</span>
         </button>
         {#if !builtin.has(s.id)}

@@ -23,6 +23,7 @@ import { encodeRecipe, findRecipe, gifComments, gifWithComment } from '../engine
 import type { Frame, MediaItem, Project } from '../engine/types';
 import { drawOrder, isEmpty, isStill, layerAlpha, layerEnd, type Layer } from '../engine/layers';
 import { drawLayer } from './layers';
+import { ensureFonts } from './fonts.svelte';
 import { FrameEncoder, encodedSize, hardwareCodec, hardwareProxy } from './webcodecs';
 
 export interface RenderResult {
@@ -192,6 +193,7 @@ export async function prepare(project: Project, width: number, progress?: Progre
   const { mounts, path } = await mountsFor(project, preview);
   const inputs = await lutInputs(project);
   const size = outputSize(project, width);
+  await ensureFonts(project);
   const overlays = await layerOverlays(project, size.w, size.h, mounts, progress, signal);
   // Without keyframes at cuts the stream must be encoded in one go (cuts become P-frames).
   const whole = !project.encoder.keyAtCuts;

@@ -5,6 +5,11 @@ export type TextAnim = 'none' | 'type' | 'words' | 'glitch' | 'slide' | 'pop' | 
 
 export type LayerKind = 'text';
 
+export type BuiltinFont = 'sans' | 'serif' | 'mono' | 'impact';
+
+/** The id of the added font a title uses, if it uses one. */
+export const fontId = (font: string) => (font.startsWith('font:') ? font.slice(5) : null);
+
 interface LayerBase {
   id: string;
   kind: LayerKind;
@@ -22,7 +27,8 @@ export interface TextLayer extends LayerBase {
   /** font size as a fraction of frame height */
   size: number;
   color: string;
-  font: 'sans' | 'serif' | 'mono' | 'impact';
+  /** a built-in typeface, or a font added to the project ("font:" and its id) */
+  font: BuiltinFont | `font:${string}`;
   bold: boolean;
   /** position of the text centre, 0..1 */
   x: number;

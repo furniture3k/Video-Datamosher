@@ -82,7 +82,7 @@ unlocks, where it goes in the code, and when it counts as done.
 ## Phase 1: Type, shapes and collage (R2, R3, R4, R6 and the look of R7–R9)
 
 ### Type 2.0 (`src/lib/text.ts`, `TextClip` → text layers)
-- [ ] Custom fonts: import .ttf/.otf/.woff2 into the media library (stored with the project),
+- [x] Custom fonts: import .ttf/.otf/.woff2 into the media library (stored with the project),
   plus a curated Google Fonts picker. Today there are four built-in families.
 - [x] Stroke (outline-only too, R4), fill, gradient fill, letter spacing, line height, mixed sizes
   and colours per line or word ("What's On The Star? / YUNG FAZO", R4; white over red lines, R6).

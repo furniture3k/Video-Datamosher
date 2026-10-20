@@ -523,6 +523,47 @@ await step('words on the beat: one title per word, on the cuts, in the chosen lo
   if (added.some((l) => l.fit !== 'width' || l.row === 'g1')) throw new Error('look or row: ' + JSON.stringify(added[0]));
 });
 
+await step('fonts: a font file and a Google Font, put on the title, loaded before it is drawn', async () => {
+  // a font file from this machine (the step needs one; FONT_FILE can point at another)
+  const file = process.env.FONT_FILE || '/mnt/skills/examples/canvas-design/canvas-fonts/BigShoulders-Bold.ttf';
+  if (!fs.existsSync(file)) return console.log('(no font file on this machine: skipped) ');
+  const b64 = fs.readFileSync(file).toString('base64');
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.edit((p) => p.layers.push({ id: 'fnt', kind: 'text', row: 'g1', text: 'FONTS', start: 0, duration: 2, size: 0.2, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: true }));
+    st.selectClip('fnt');
+    st.ui.dialog = 'fonts';
+  });
+  try {
+    await page.locator('input[aria-label="Font file"]').setInputFiles(file);
+    await page.waitForFunction(() => window.__moshpit.store.project.layers.find((l) => l.id === 'fnt').font.startsWith('font:'), null, { timeout: 10000 });
+    const ok = await S(() => {
+      const id = window.__moshpit.store.project.layers.find((l) => l.id === 'fnt').font.slice(5);
+      return document.fonts.check(`20px "mp-${id}"`) && [...document.fonts].some((f) => f.family === `mp-${id}` && f.status === 'loaded');
+    });
+    if (!ok) throw new Error('the imported font is not loaded');
+    // a melting title in it renders (the fonts are loaded before drawing)
+    await settle();
+    // Google Fonts, from a fake Google (the tests run offline)
+    await S((b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      window.__moshpit.fonts.setFontFetcher(async (url) => (url.includes('googleapis') ? new Response("/* latin */\n@font-face { font-family: 'Anton'; src: url(https://fonts.gstatic.com/anton.woff2) format('woff2'); }") : new Response(bytes)));
+      window.__moshpit.store.selectClip('fnt');
+      window.__moshpit.store.ui.dialog = 'fonts';
+    }, b64);
+    await page.getByRole('button', { name: 'Add Anton' }).click();
+    await page.waitForFunction(() => window.__moshpit.store.project.fonts?.some((f) => f.google === 'Anton'), null, { timeout: 10000 });
+    const anton = await S(() => window.__moshpit.store.project.fonts.find((f) => f.google === 'Anton').id);
+    if ((await S(() => window.__moshpit.store.project.layers.find((l) => l.id === 'fnt').font)) !== 'font:' + anton) throw new Error('the Google Font is not on the title');
+  } finally {
+    await S(() => {
+      window.__moshpit.fonts.setFontFetcher(null);
+      window.__moshpit.store.ui.dialog = null;
+      window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== 'fnt')));
+    });
+  }
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
