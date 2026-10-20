@@ -17,6 +17,9 @@ export const fontState = $state({ loaded: 0 });
 
 const loading = new Map<string, Promise<boolean>>();
 const ready = new Set<string>();
+/** when a font last failed to load: the preview asks on every frame, so it is tried again only now and then (offline, say) */
+const failedAt = new Map<string, number>();
+const RETRY_MS = 30000;
 
 /** Swap the network fetch (tests use a fake one: they run without the internet). */
 let fetcher: (url: string) => Promise<Response> = (url) => fetch(url);
@@ -61,7 +64,11 @@ export function loadFont(f: FontRef): Promise<boolean> {
       return false;
     });
     loading.set(f.id, p);
-    p.then((ok) => !ok && loading.delete(f.id));
+    p.then((ok) => {
+      if (ok) return failedAt.delete(f.id);
+      loading.delete(f.id);
+      failedAt.set(f.id, performance.now());
+    });
   }
   return p;
 }
@@ -78,7 +85,8 @@ export function fontCss(font: string, builtin: Record<BuiltinFont, string>): str
   if (!id) return builtin[font as BuiltinFont] ?? builtin.sans;
   if (!ready.has(id)) {
     const f = store.project.fonts?.find((x) => x.id === id);
-    if (f) loadFont(f);
+    const failed = failedAt.get(id);
+    if (f && (failed === undefined || performance.now() - failed > RETRY_MS)) loadFont(f);
   }
   return `'${fontFamily(id)}', ${builtin.sans}`;
 }

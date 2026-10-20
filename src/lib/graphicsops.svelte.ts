@@ -97,6 +97,7 @@ export function swapCellsOnBeat(every = 1) {
     times = [];
     for (let x = from + 0.5 * every; x < end - 1e-3; x += 0.5 * every) times.push(x);
   }
+  if (!times.length) return store.toast('There is no time left to swap in: move the playhead back to where the clips start.', 'info', 5000);
   const frame = 1 / store.project.encoder.fps;
   store.edit((q) => {
     clips.forEach((c, i) => {
