@@ -54,3 +54,38 @@ export function markLayers(path: [number, number, number][], bw: number, bh: num
   add(text);
   return out;
 }
+
+/**
+ * A callout at a point (shares of the frame): a box round what is pointed at, a leader line with a
+ * square at each end running out to a title, and small print under it, as one group (they move,
+ * copy and delete together). The title and small print go to whichever side has more room.
+ */
+export function calloutLayers(at: [number, number], aspect: number, look: ShapeLook, layers: Layer[], id: () => string, start: number, duration: number): Layer[] {
+  const side = at[0] < 0.5 ? 1 : -1;
+  const up = at[1] > 0.4 ? -1 : 1;
+  const bw = 0.24 / aspect;
+  const bh = 0.16;
+  // the leader leaves the box's outer corner for the label's corner
+  const from: [number, number] = [at[0] + (side * bw) / 2, at[1] + (up * bh) / 2];
+  const dx = (side * 0.13) / aspect;
+  const dy = up * 0.15;
+  const to: [number, number] = [from[0] + dx, from[1] + dy];
+  const group = id();
+  const out: Layer[] = [];
+  const add = (l: Layer) => {
+    l.group = group;
+    l.row = freeRow([...layers, ...out], l.start, l.start + l.duration);
+    out.push(l);
+  };
+  const box: ShapeLayer = { id: id(), kind: 'shape', row: '', shape: 'rect', start, duration, x: at[0], y: at[1], fade: 0, moshed: false, w: bw, h: bh, ...look };
+  delete box.fill;
+  add(box);
+  const leader: ShapeLayer = { id: id(), kind: 'shape', row: '', shape: 'leader', start, duration, x: (from[0] + to[0]) / 2, y: (from[1] + to[1]) / 2, fade: 0, moshed: false, w: Math.abs(dx), h: Math.abs(dy), head: 0.07, ...look, fill: look.color, flip: dx * dy < 0 };
+  add(leader);
+  const align = side > 0 ? 'left' : 'right';
+  const title: TextLayer = { id: id(), kind: 'text', row: '', text: 'Title', start, duration, size: 0.06, color: look.color, font: 'sans', bold: true, x: to[0] + (side * 0.012) / aspect, y: to[1] + up * 0.04, align, shadow: true, box: false, fade: 0, moshed: false, anim: 'type', animIn: 0.3 };
+  add(title);
+  const small: TextLayer = { id: id(), kind: 'text', row: '', text: 'Small print goes here', start, duration, size: 0.028, color: '#ffffff', font: 'sans', bold: false, x: title.x, y: title.y + up * 0.065, align, shadow: true, box: false, fade: 0, moshed: false };
+  add(small);
+  return out;
+}

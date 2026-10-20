@@ -1,7 +1,7 @@
 <script lang="ts">
   // Right-click (or long-press on a phone) on the picture: add things right where you pointed.
   import { store } from '../lib/store.svelte';
-  import { addEmoji, addShape, addText, EMOJI } from '../lib/edit';
+  import { addCallout, addEmoji, addShape, addText, EMOJI } from '../lib/edit';
   import { findFaces, pictureMap, pinHere, trackClip, trackableAt } from '../lib/motion.svelte';
   import { addSubjectEffect, makeSticker, titleBehind, toggleCutout } from '../lib/cutout.svelte';
   import { mediaOf } from '../engine/timeline';
@@ -33,6 +33,8 @@
     place(a.id, -a.w / 2, -a.h / 2);
   });
   const sticker = (e: string) => run(() => place(addEmoji(e).id))();
+  // a callout pointing at this spot
+  const callout = run(() => addCallout([u, v]));
   // follow what's there: a box round the point, tracked, then boxed, arrowed and labelled
   const mark = run(() => {
     if (!clip) return;
@@ -68,6 +70,7 @@
   <button class="ghost mitem" role="menuitem" onclick={title}><Icon name="text" />Title here</button>
   <button class="ghost mitem" role="menuitem" onclick={box}><Icon name="shape" />Box it</button>
   <button class="ghost mitem" role="menuitem" onclick={arrow}><Icon name="pointer" />Arrow to here</button>
+  <button class="ghost mitem" role="menuitem" onclick={callout} title="A box round this spot, a leader line out to a title, and small print"><Icon name="pointer" />Callout here</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={mark} title="Follows what's here: a box, an arrow and a label that move with it"><Icon name="target" />Mark what's here</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={cut} title="Cuts what's here out of the clip, following it, so titles can go behind it"><Icon name="target" />Cut out</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={recolour} title="The subject as a flat colour: a red car, a white cut-out"><Icon name="shape" />Recolour</button>

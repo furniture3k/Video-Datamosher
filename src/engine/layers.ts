@@ -28,6 +28,8 @@ interface LayerBase {
   fade: number;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
+  /** a drop shadow and an outer stroke round the whole layer, whatever it is */
+  fx?: LayerFx;
   /** layers that share a group move, copy and delete together (the box, arrow and label of a mark) */
   group?: string;
   /** 'behind': under the subject cut out of the footage below (the layer is hidden where the matte is white); 'inside': a track matte, shown only on the subject */
@@ -64,6 +66,12 @@ export function surfaceMatrix(l: Pick<LayerBase, 'surface'>, t: number, w: numbe
   if (!a || !b) return null;
   const px = (q: number[]) => q.map((v, i) => v * (i % 2 ? h : w));
   return quadHomography(px(a), px(b));
+}
+
+/** A drop shadow and an outer stroke for any layer (offsets and blur as shares of the frame height). */
+export interface LayerFx {
+  shadow?: { dx: number; dy: number; blur: number; color: string };
+  outline?: { width: number; color: string };
 }
 
 export interface Trail {
@@ -126,11 +134,25 @@ export interface TextLayer extends LayerBase {
   strobe?: number;
   /** a hand-drawn wobble, 0..1 */
   boil?: number;
+  /** letters filled with a colour that runs from `color` to `to`, at this angle (0: left to right, 90: top to bottom) */
+  gradient?: { to: string; angle: number };
+  /** how each line differs from the rest (the first entry is the first line): its own colour, size (a multiple), typeface, weight */
+  lines?: LineStyle[];
+  /** colours for stretches of the words: letter numbers (counting every letter of the whole text) from–to, and the colour */
+  colourRuns?: { from: number; to: number; color: string }[];
   /** the baseline bent into an arc, −1 (a smile) to 1 (an arch): the letters follow it, turned to suit */
   curve?: number;
 }
 
-export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst' | 'subject';
+/** What is different about one line of a title. */
+export interface LineStyle {
+  color?: string;
+  size?: number;
+  font?: BuiltinFont | `font:${string}`;
+  bold?: boolean;
+}
+
+export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst' | 'subject' | 'polygon' | 'leader';
 
 /** What a subject effect does to the subject cut out of the footage (or, for blur and grade, to everything but it). */
 export interface SubjectFx {
@@ -179,6 +201,10 @@ export interface ShapeLayer extends LayerBase {
   points?: [number, number][];
   /** subject: what it does to the subject cut out of the footage below */
   subject?: SubjectFx;
+  /** polygon: how many sides (3 or more) */
+  sides?: number;
+  /** lines, arrows and leader lines: run from the top right to the bottom left instead */
+  flip?: boolean;
 }
 
 export type Layer = TextLayer | ShapeLayer;

@@ -12,6 +12,8 @@
   import SurfaceSettings from './SurfaceSettings.svelte';
   import TiltSettings from './TiltSettings.svelte';
   import DepthSettings from './DepthSettings.svelte';
+  import EffectsSettings from './EffectsSettings.svelte';
+  import ShapeStylePicker from './ShapeStylePicker.svelte';
   import ParticleSettings from './ParticleSettings.svelte';
 
   let { shape }: { shape: ShapeLayer } = $props();
@@ -62,7 +64,16 @@
   <Field label="Horizontal" min={0} max={1} step={0.01} value={shape.x} help="0 = left edge, 1 = right edge." onchange={(v: number) => set('x', v)} />
   <Field label="Vertical" min={0} max={1} step={0.01} value={shape.y} help="0 = top, 1 = bottom." onchange={(v: number) => set('y', v)} />
   <Field label="Rotation" unit="°" min={-180} max={180} step={0.5} value={shape.rotate ?? 0} help="Turns it about its middle. You can also drag the round handle on the player." onchange={(v: number) => set('rotate', v)} />
-  {#if shape.shape === 'line' || shape.shape === 'arrow'}
+  {#if shape.shape === 'polygon'}
+    <Field label="Sides" min={3} max={12} step={1} value={shape.sides ?? 6} help="How many equal sides: 3 a triangle, 5 a pentagon, 8 a stop sign." onchange={(v: number) => set('sides', Math.round(v))} />
+  {/if}
+  {#if shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'leader'}
+    <Field type="bool" label="Other diagonal" value={!!shape.flip} help="Runs from the top right to the bottom left instead." onchange={(v: boolean) => set('flip', v ? true : undefined)} />
+  {/if}
+  {#if shape.shape === 'leader'}
+    <Field label="End squares" min={0.02} max={0.2} step={0.005} value={shape.head ?? 0.06} help="Size of the squares at each end, as a share of the line's length." onchange={(v: number) => set('head', v)} />
+  {/if}
+  {#if shape.shape === 'line' || shape.shape === 'arrow' || shape.shape === 'leader'}
     <Field label="Bend" min={-1} max={1} step={0.01} value={shape.bend ?? 0} help="Bows the line out into a curve, one way or the other." onchange={(v: number) => set('bend', v)} />
   {/if}
   {#if shape.shape === 'arrow'}
@@ -71,6 +82,7 @@
   {#if shape.shape === 'tunnel'}
     <Field label="Boxes" min={2} max={20} step={1} value={shape.count ?? 6} help="How many boxes, one inside another." onchange={(v: number) => set('count', Math.round(v))} />
   {/if}
+  <ShapeStylePicker {shape} />
   <div class="label">Look</div>
   <Field label="Draws on" unit="s" min={0} max={4} step={0.05} value={shape.drawOn ?? 0} help="Draws itself on, like a pen, over this long (0: appears at once)." onchange={(v: number) => set('drawOn', v)}>
     <BeatChips onpick={(v) => set('drawOn', v)} />
@@ -78,6 +90,7 @@
   <Field label="Glow" min={0} max={1} step={0.01} value={shape.glow ?? 0} help="A soft light around the line, in its colour." onchange={(v: number) => set('glow', v)} />
   <Field label="Hand-drawn" min={0} max={1} step={0.01} value={shape.boil ?? 0} help="Wobbles like it was drawn again on every few frames." onchange={(v: number) => set('boil', v)} />
   <TrailSettings layer={shape} />
+  <EffectsSettings layer={shape} />
   <DepthSettings layer={shape} />
   <TiltSettings layer={shape} />
   <SurfaceSettings layer={shape} />
