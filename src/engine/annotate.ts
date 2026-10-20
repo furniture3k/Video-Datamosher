@@ -89,3 +89,58 @@ export function calloutLayers(at: [number, number], aspect: number, look: ShapeL
   add(small);
   return out;
 }
+
+/**
+ * Selected text with what a phone shows for it: a blue stripe over the words, a selection handle at
+ * each end and a little menu above (Copy, Look up, Share), as one group. `at`: the middle of the words.
+ */
+export function selectionLayers(at: [number, number], aspect: number, layers: Layer[], id: () => string, start: number, duration: number): Layer[] {
+  const group = id();
+  const out: Layer[] = [];
+  const add = (l: Layer) => {
+    l.group = group;
+    l.row = freeRow([...layers, ...out], l.start, l.start + l.duration);
+    out.push(l);
+  };
+  const w = 0.34;
+  const base = { start, duration, fade: 0, moshed: false, width: 0.004 } as const;
+  add({ id: id(), kind: 'shape', row: '', shape: 'highlight', x: at[0], y: at[1], w, h: 0.05, color: '#8ab4ff', ...base } as ShapeLayer);
+  const hw = 0.026 / aspect;
+  const handle = (x: number, flip: boolean) => ({ id: id(), kind: 'shape', row: '', shape: 'handle', x, y: at[1], w: hw, h: 0.07, color: '#1a73e8', fill: '#1a73e8', ...(flip ? { flip: true } : {}), ...base }) as ShapeLayer;
+  add(handle(at[0] - w / 2, false));
+  add(handle(at[0] + w / 2, true));
+  // the menu above, with its three words spread across it
+  const my = at[1] - 0.13;
+  add({ id: id(), kind: 'shape', row: '', shape: 'round', x: at[0], y: my, w: 0.3, h: 0.07, color: '#2b2b30', fill: '#2b2b30', ...base } as ShapeLayer);
+  ['Copy', 'Look up', 'Share'].forEach((label, i) => {
+    add({ id: id(), kind: 'text', row: '', text: label, start, duration, size: 0.026, color: '#ffffff', font: 'sans', bold: false, x: at[0] + (i - 1) * 0.095, y: my, align: 'center', shadow: false, box: false, fade: 0, moshed: false } as TextLayer);
+  });
+  return out;
+}
+
+/**
+ * A notification banner sliding down from the top: a rounded banner, an app icon and two lines of
+ * text, as one group; each slides in over a third of a second.
+ */
+export function notificationLayers(aspect: number, layers: Layer[], id: () => string, start: number, duration: number): Layer[] {
+  const group = id();
+  const out: Layer[] = [];
+  const y = 0.1;
+  const slide = (x: number): [number, number, number][] => [
+    [start, x, y - 0.2],
+    [start + 0.3, x, y],
+  ];
+  const add = (l: Layer) => {
+    l.group = group;
+    l.row = freeRow([...layers, ...out], l.start, l.start + l.duration);
+    l.follow = slide(l.x).map(([t, px], i) => [t, px, y - 0.2 + (i ? 0.2 : 0) + (l.y - y)] as [number, number, number]);
+    out.push(l);
+  };
+  const base = { start, duration, fade: 0, moshed: false } as const;
+  add({ id: id(), kind: 'shape', row: '', shape: 'round', x: 0.5, y, w: 0.92, h: 0.1, color: 'rgba(0,0,0,0.12)', fill: 'rgba(246,246,248,0.97)', width: 0.002, ...base } as ShapeLayer);
+  add({ id: id(), kind: 'shape', row: '', shape: 'round', x: 0.5 - 0.46 + 0.075 / aspect, y, w: 0.06 / aspect, h: 0.06, color: '#34c759', fill: '#34c759', width: 0.002, ...base } as ShapeLayer);
+  const tx = 0.5 - 0.46 + 0.14 / aspect;
+  add({ id: id(), kind: 'text', row: '', text: 'Messages', size: 0.03, color: '#111111', font: 'sans', bold: true, x: tx, y: y - 0.02, align: 'left', shadow: false, box: false, ...base } as TextLayer);
+  add({ id: id(), kind: 'text', row: '', text: 'You have a new message', size: 0.026, color: '#444444', font: 'sans', bold: false, x: tx, y: y + 0.02, align: 'left', shadow: false, box: false, ...base } as TextLayer);
+  return out;
+}

@@ -212,6 +212,12 @@ export interface Clip {
   paths?: { id: string; name: string; pts: [number, number, number][]; size?: [number, number] }[];
   /** tracked surfaces (a screen, a wall, a sign): [source seconds, then the four corners x,y … as shares of the source picture] */
   planes?: { id: string; name: string; quads: number[][] }[];
+  /** upper tracks: how it pops in at its start (the keys it made; kept so it can be changed or taken off) */
+  pop?: import('./keys').PopOptions;
+  /** upper tracks: a card round the picture (a border or a polaroid's paper, rounded corners, a shadow, a caption) */
+  card?: import('./cardmask').ClipCard;
+  /** upper tracks: the picture shows through a shape that can grow, spin or pulse */
+  mask?: import('./cardmask').ClipMask;
   /** upper tracks: 'behind' puts the clip behind the subject cut out of the main track (the subject is drawn over it again) */
   depth?: 'front' | 'behind';
   /** upper tracks: the picture is carried onto a tracked surface (a screen, a sign) instead of being placed by its transform */

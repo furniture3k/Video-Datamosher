@@ -1,7 +1,7 @@
 // FFmpeg argument builders. Pure functions so they can be tested with native ffmpeg.
 import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type DecoderSettings, type EncoderSettings, type Grade, type MediaItem, type Project } from './types';
 import { layerEnd, type Layer } from './layers';
-import { blurRadius, cardRect, hasCanvas, hasChrome, type Canvas } from './canvas';
+import { blurRadius, canvasZoomKeys, cardRect, hasCanvas, hasChrome, type Canvas } from './canvas';
 import { findRecipe } from './recipe';
 import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
@@ -55,6 +55,23 @@ export interface ClipMatte {
   clipId: string;
   path: string;
   frames: { first: number; count: number };
+}
+
+/** The pictures for a clip's card and mask, mounted for the graph (see lib/clipplates.ts). */
+export interface ClipPlates {
+  clipId: string;
+  /** the paper, shadow and caption (a picture the size of the frame) */
+  back?: string;
+  /** a grey picture (white where the picture shows), or `maskFrames` of them one after another */
+  mask?: string;
+  maskFrames?: number;
+}
+
+/** Inputs of a clip's plates in the graph (labels like "3:v"), and how many frames of a mask sequence to skip. */
+interface PlateInputs {
+  back?: string;
+  mask?: string;
+  skip?: number;
 }
 
 export interface LayerOverlay {
@@ -209,7 +226,7 @@ export function windowClip(c: Clip, a: number, b: number): Clip {
  * transparent surroundings; main-track clips are opaque. `offset`: the clip's own local time at
  * the start of this piece (layers are cut where main-track segments meet), for its fades.
  */
-export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: number, src: string | null, out: string, tag: string, layer = false, offset = 0, fullLen = clipLen(c)): string[] {
+export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: number, src: string | null, out: string, tag: string, layer = false, offset = 0, fullLen = clipLen(c), plates?: PlateInputs): string[] {
   const len = r3(clipLen(c));
   if (!src) return [`color=c=black${layer ? '@0' : ''}:s=${w}x${h}:r=${fps}:d=${r3(len + 0.5)},format=${layer ? 'rgba' : 'yuv420p'},setsar=1,trim=duration=${len}[${out}]`];
   const T = transformOf(c);
@@ -252,29 +269,50 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
     const ch = Math.max(2, h - cy - Math.round(h * T.cropB));
     f.push(`crop=${cw}:${ch}:${cx}:${cy}`, `pad=${w}:${h}:${cx}:${cy}:color=${bg}`);
   }
+  const stmts: string[] = [];
+  // a card and a mask: the picture is cut by the mask's grey picture and the paper put behind it, in
+  // the picture's own space, so they zoom, move and turn with it
+  if (plates && layer && src && (plates.back || plates.mask)) {
+    stmts.push(`[${src}]${f.join(',')}[${tag}pic]`);
+    f.length = 0;
+    src = `${tag}pic`;
+    if (plates.mask) {
+      const skip = plates.skip ? `trim=start_frame=${plates.skip},setpts=PTS-STARTPTS,` : '';
+      stmts.push(`[${plates.mask}]${skip}format=gray,scale=${w}:${h}[${tag}mk]`);
+      stmts.push(`[${src}]format=rgba[${tag}pa]`);
+      stmts.push(`[${tag}pa][${tag}mk]alphamerge[${tag}pm]`);
+      src = `${tag}pm`;
+    }
+    if (plates.back) {
+      stmts.push(`[${plates.back}]format=rgba,scale=${w}:${h}[${tag}bk]`);
+      stmts.push(`[${tag}bk][${src}]overlay=0:0:format=auto:shortest=1[${tag}pc]`);
+      src = `${tag}pc`;
+    }
+  }
+  /** the filters so far, as a chain (`null` when there are none: a stream passed on as it is) */
+  const chain = () => (f.length ? f.join(',') : 'null');
   if (T.flipH && !screen) f.push('hflip');
   if (T.flipV && !screen) f.push('vflip');
-  const stmts: string[] = [];
   let cur = `${tag}p`;
   if (screen) {
     f.push(...screenFilters(screen, w, h, fps, offset, bg));
-    stmts.push(`[${src}]${f.join(',')}[${cur}]`);
+    stmts.push(`[${src}]${chain()}[${cur}]`);
   } else if (moving) {
     f.push(...keyedTransform(c.keys!, T, w, h, fps, offset, bg));
-    stmts.push(`[${src}]${f.join(',')}[${cur}]`);
+    stmts.push(`[${src}]${chain()}[${cur}]`);
   } else if (T.zoom !== 1 || T.x || T.y || T.rotate || sliding) {
     f.push(`scale=${even(w * T.zoom)}:${even(h * T.zoom)}:flags=bicubic`);
     if (T.rotate) {
       const a = r3((T.rotate * Math.PI) / 180);
       f.push(`rotate=${a}:ow=rotw(${a}):oh=roth(${a}):c=${bg}`);
     }
-    stmts.push(`[${src}]${f.join(',')}[${tag}fg]`);
+    stmts.push(`[${src}]${chain()}[${tag}fg]`);
     stmts.push(`color=c=${bg}:s=${w}x${h}:r=${fps},format=rgba[${tag}bg]`);
     const tt = `(t+${r3(offset)})`;
     const ox = c.keys?.x?.length ? `(${keysExpr(c.keys.x, tt)})*${w}` : `${r3(T.x * w)}`;
     const oy = c.keys?.y?.length ? `(${keysExpr(c.keys.y, tt)})*${h}` : `${r3(T.y * h)}`;
     stmts.push(`[${tag}bg][${tag}fg]overlay=x='(W-w)/2+${ox}':y='(H-h)/2+${oy}':shortest=1:format=auto,setsar=1[${cur}]`);
-  } else stmts.push(`[${src}]${f.join(',')}[${cur}]`);
+  } else stmts.push(`[${src}]${chain()}[${cur}]`);
   const g: string[] = [];
   if (fading) {
     const e = `clip(${keysExpr(c.keys!.opacity!, `(T+${r3(offset)})`)},0,1)`;
@@ -313,7 +351,7 @@ const BLEND: Record<string, { mode: string; neutral: string }> = {
  * or plain concatenation, then clips on upper video tracks are composited on top. Returns the
  * inputs it needs and its output label.
  */
-function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn, overlays: LayerOverlay[] = [], canvas?: { c: Canvas; plates: CanvasPlates }, clipMattes: ClipMatte[] = []): { inputs: string[]; filter: string[]; label: string; count: number } {
+function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: number, tag: string, path: PathFn, overlays: LayerOverlay[] = [], canvas?: { c: Canvas; plates: CanvasPlates }, clipMattes: ClipMatte[] = [], clipPlates: ClipPlates[] = []): { inputs: string[]; filter: string[]; label: string; count: number } {
   const n = seg.f1 - seg.f0;
   const label = `seg${tag}`;
   const t0 = seg.f0 / fps;
@@ -387,7 +425,20 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     }
     const sub = windowClip(l.clip, a - l.start, b - l.start);
     const src = input(clipInputArgs(sub, l.media, fps, path));
-    filter.push(...clipGraph(sub, l.media, fps, w, h, src, `${lay}r`, `${tag}L${k}`, true, a - l.start, clipLen(l.clip)));
+    // the clip's card and mask pictures, if it has them
+    const cp = clipPlates.find((p) => p.clipId === l.clip.id);
+    let pin: PlateInputs | undefined;
+    if (cp) {
+      const len = r3(b - a + 1);
+      pin = {};
+      if (cp.back) pin.back = input(['-loop', '1', '-framerate', String(fps), '-t', String(len), '-i', cp.back]);
+      if (cp.mask && cp.maskFrames) {
+        pin.mask = input(['-f', 'image2pipe', '-c:v', 'png', '-framerate', String(fps), '-i', cp.mask]);
+        // a piece of the clip that starts part-way in starts part-way through the mask's pictures
+        pin.skip = Math.round((a - l.start) * fps);
+      } else if (cp.mask) pin.mask = input(['-loop', '1', '-framerate', String(fps), '-t', String(len), '-i', cp.mask]);
+    }
+    filter.push(...clipGraph(sub, l.media, fps, w, h, src, `${lay}r`, `${tag}L${k}`, true, a - l.start, clipLen(l.clip), pin));
     const at = r3(a - t0);
     filter.push(`[${lay}r]setpts=PTS+${at}/TB[${lay}]`);
     const next = `${tag}y${k}`;
@@ -448,6 +499,15 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
       filter.push(`[${still(plates.border)}]format=rgba[${tag}cvo]`);
       filter.push(`[${acc}][${tag}cvo]overlay=0:0:shortest=1:format=auto,format=yuv420p[${tag}cvd]`);
       acc = `${tag}cvd`;
+    }
+  }
+  // ---- a camera move into the card (zooming towards the screen)
+  if (canvas && hasCanvas(canvas.c) && canvas.c.zoomIn) {
+    const keys = canvasZoomKeys(canvas.c, w, h, fps, t0, t1);
+    if (keys) {
+      const next = `${tag}cz`;
+      filter.push(`[${acc}]${keyedTransform(keys, { zoom: 1, x: 0, y: 0, rotate: 0 }, w, h, fps, 0, 'black').join(',')},format=yuv420p[${next}]`);
+      acc = next;
     }
   }
   // ---- layers that melt, in drawing order
@@ -532,7 +592,7 @@ export function keyTimes(project: Project): number[] {
 }
 
 /** Prepare the whole timeline in a single pass (used when cuts must not get keyframes). */
-export function prepArgs(project: Project, width: number, out = 'prep.avi', path: PathFn = inputName, overlays: LayerOverlay[] = [], plates?: CanvasPlates, clipMattes: ClipMatte[] = []): string[] {
+export function prepArgs(project: Project, width: number, out = 'prep.avi', path: PathFn = inputName, overlays: LayerOverlay[] = [], plates?: CanvasPlates, clipMattes: ClipMatte[] = [], clipPlates: ClipPlates[] = []): string[] {
   const { w, h } = outputSize(project, width);
   const fps = project.encoder.fps;
   const segs = segments(project, fps);
@@ -541,7 +601,7 @@ export function prepArgs(project: Project, width: number, out = 'prep.avi', path
   const labels: string[] = [];
   let next = 0;
   segs.forEach((s, i) => {
-    const g = segmentGraph(s, fps, w, h, next, `s${i}`, path, overlays, canvasOf(project, plates), clipMattes);
+    const g = segmentGraph(s, fps, w, h, next, `s${i}`, path, overlays, canvasOf(project, plates), clipMattes, clipPlates);
     next += g.count;
     inputs.push(...g.inputs);
     filter.push(...g.filter);
@@ -554,10 +614,10 @@ export function prepArgs(project: Project, width: number, out = 'prep.avi', path
 const canvasOf = (p: Project, plates?: CanvasPlates) => (plates && hasCanvas(p.canvas) ? { c: p.canvas, plates } : undefined);
 
 /** Prepare one segment on its own (starts with a keyframe). Keyframe times are relative to it. */
-export function segmentArgs(project: Project, seg: Segment, width: number, out: string, path: PathFn = inputName, overlays: LayerOverlay[] = [], plates?: CanvasPlates, clipMattes: ClipMatte[] = []): string[] {
+export function segmentArgs(project: Project, seg: Segment, width: number, out: string, path: PathFn = inputName, overlays: LayerOverlay[] = [], plates?: CanvasPlates, clipMattes: ClipMatte[] = [], clipPlates: ClipPlates[] = []): string[] {
   const { w, h } = outputSize(project, width);
   const fps = project.encoder.fps;
-  const g = segmentGraph(seg, fps, w, h, 0, 'a', path, overlays, canvasOf(project, plates), clipMattes);
+  const g = segmentGraph(seg, fps, w, h, 0, 'a', path, overlays, canvasOf(project, plates), clipMattes, clipPlates);
   const t0 = seg.f0 / fps;
   const t1 = seg.f1 / fps;
   const keys = keyTimes(project)
@@ -590,7 +650,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
 /** Everything about a clip's picture besides its timing. */
 function clipLook(c: Clip) {
   // everything clipGraph draws from, so a change re-prepares the segment
-  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab, sp: c.stepFps, sc: c.screen, dp: c.depth };
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab, sp: c.stepFps, sc: c.screen, dp: c.depth, cd: c.card, mk: c.mask };
 }
 
 /**

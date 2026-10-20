@@ -150,6 +150,80 @@ function drawDevice(ctx: CanvasRenderingContext2D, device: NonNullable<Canvas['d
       roundRect(ctx, R.x + (R.w - aw) / 2, top + bar * 0.22, aw, bar * 0.56, bar * 0.28);
       ctx.fill();
     }
+  } else if (device === 'music' || device === 'chat') {
+    // a panel round the picture that goes on under it: a music player's controls, or a chat bubble with its tail
+    const music = device === 'music';
+    const side = u * 0.026;
+    const below = music ? u * 0.25 : u * 0.05;
+    const s = document.createElement('canvas');
+    s.width = W;
+    s.height = H;
+    const g = s.getContext('2d')!;
+    g.fillStyle = music ? 'rgba(20,20,26,0.93)' : '#1982fc';
+    const px = R.x - b - side;
+    const py = R.y - b - side;
+    const pw = R.w + 2 * (b + side);
+    const ph = R.h + 2 * (b + side) + below;
+    roundRect(g, px, py, pw, ph, u * (music ? 0.045 : 0.06));
+    g.fill();
+    if (!music) {
+      // the tail, bottom right
+      g.beginPath();
+      g.moveTo(px + pw - u * 0.1, py + ph - u * 0.02);
+      g.quadraticCurveTo(px + pw - u * 0.03, py + ph + u * 0.01, px + pw + u * 0.012, py + ph + u * 0.035);
+      g.quadraticCurveTo(px + pw - u * 0.012, py + ph - u * 0.012, px + pw - u * 0.012, py + ph - u * 0.1);
+      g.closePath();
+      g.fill();
+    }
+    g.globalCompositeOperation = 'destination-out';
+    roundRect(g, R.x - b, R.y - b, R.w + 2 * b, R.h + 2 * b, R.r ? R.r + b : 0);
+    g.fill();
+    g.globalCompositeOperation = 'source-over';
+    if (music) {
+      const y0 = R.y + R.h + b + side;
+      g.fillStyle = '#f2f2f5';
+      roundRect(g, R.x, y0, R.w * 0.46, u * 0.02, u * 0.01);
+      g.fill();
+      g.fillStyle = 'rgba(242,242,245,0.5)';
+      roundRect(g, R.x, y0 + u * 0.032, R.w * 0.3, u * 0.014, u * 0.007);
+      g.fill();
+      // the progress line and its knob
+      const ly = y0 + u * 0.085;
+      g.fillStyle = 'rgba(255,255,255,0.28)';
+      roundRect(g, R.x, ly, R.w, u * 0.008, u * 0.004);
+      g.fill();
+      g.fillStyle = '#ffffff';
+      roundRect(g, R.x, ly, R.w * 0.38, u * 0.008, u * 0.004);
+      g.fill();
+      g.beginPath();
+      g.arc(R.x + R.w * 0.38, ly + u * 0.004, u * 0.012, 0, Math.PI * 2);
+      g.fill();
+      // previous, play, next
+      const cy = y0 + u * 0.16;
+      const cx = R.x + R.w / 2;
+      const tri = (x: number, dir: number, size: number) => {
+        g.beginPath();
+        g.moveTo(x + dir * size, cy);
+        g.lineTo(x - dir * size * 0.6, cy - size * 0.8);
+        g.lineTo(x - dir * size * 0.6, cy + size * 0.8);
+        g.closePath();
+        g.fill();
+      };
+      tri(cx - R.w * 0.2, -1, u * 0.02);
+      tri(cx + R.w * 0.2, 1, u * 0.02);
+      g.beginPath();
+      g.arc(cx, cy, u * 0.036, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = 'rgba(20,20,26,0.95)';
+      tri(cx + u * 0.004, 1, u * 0.02);
+    } else {
+      // "Delivered" under the bubble, in the corner
+      g.fillStyle = 'rgba(0,0,0,0.38)';
+      g.font = `${Math.round(u * 0.022)}px sans-serif`;
+      g.textAlign = 'right';
+      g.fillText('Delivered', px + pw - u * 0.03, py + ph + u * 0.042);
+    }
+    ctx.drawImage(s, 0, 0);
   } else if (device === 'laptop') {
     const f = u * 0.02;
     bezel(f, '#1b1b1f', (R.r || u * 0.01) + b + f);

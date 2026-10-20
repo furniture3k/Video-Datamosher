@@ -2,7 +2,7 @@
   // Pick a shape to add at the playhead, draw one with the pen, or mark something that moves (a
   // box, arrow and label that follow it). Each button shows the shape as it will be drawn.
   import { store } from '../lib/store.svelte';
-  import { addCallout, addEmoji, addShape, EMOJI } from '../lib/edit';
+  import { addCallout, addEmoji, addNotification, addSelection, addShape, EMOJI } from '../lib/edit';
   import { startMark } from '../lib/motion.svelte';
   import { SHAPES, newShape, shapeStrokes } from '../engine/shapes';
   import type { ShapeKind } from '../engine/layers';
@@ -36,6 +36,12 @@
   </div>
   <button class="kind wide" title="A box round something, a leader line out to a title, and small print: one group" aria-label="Add a callout" onclick={() => (addCallout(), done())}>
     <Icon name="pointer" size={20} /><span>Callout</span>
+  </button>
+  <button class="kind wide" title="Selected text with a handle at each end and a little menu above it, as a phone shows it" aria-label="Add selected text with a menu" onclick={() => (addSelection(), done())}>
+    <Icon name="text" size={20} /><span>Text selection</span>
+  </button>
+  <button class="kind wide" title="A notification banner that slides down from the top" aria-label="Add a notification" onclick={() => (addNotification(), done())}>
+    <Icon name="screen" size={20} /><span>Notification</span>
   </button>
   <button class="kind wide" class:on={store.ui.trackThen === 'mark'} title="Box something that moves: it's tracked, then boxed, arrowed and labelled, and they all follow it" aria-label="Mark something moving" onclick={() => (startMark(), done())}>
     <Icon name="target" size={20} /><span>Mark something moving</span>

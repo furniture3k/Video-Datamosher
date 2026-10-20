@@ -28,7 +28,9 @@ export interface Canvas {
   /** drop shadow under the card, 0..1 */
   shadow?: number;
   /** a device drawn round the picture: a phone, a browser or app window, a laptop (generic ones, no brands) */
-  device?: 'phone' | 'browser' | 'window' | 'laptop';
+  device?: 'phone' | 'browser' | 'window' | 'laptop' | 'music' | 'chat';
+  /** a camera move: from `at` (timeline seconds) it zooms in over `dur` seconds, towards the card, and stays there (`to`: how far; the card filling the frame if not given) */
+  zoomIn?: { at: number; dur: number; to?: number };
 }
 
 /** Anything drawn round the card on top of it (a border or a device)? */
@@ -46,6 +48,8 @@ export const CANVAS_PRESETS: { id: string; name: string; canvas: Canvas }[] = [
   { id: 'browser', name: 'Browser', canvas: { bg: 'color', color: '#dfe6f0', inset: 0.07, shift: 0.025, radius: 0.012, shadow: 0.4, device: 'browser' } },
   { id: 'window', name: 'App window', canvas: { bg: 'gradient', color: '#2a2d6e', color2: '#0b0b14', angle: 0, inset: 0.07, shift: 0.025, radius: 0.012, shadow: 0.6, device: 'window' } },
   { id: 'laptop', name: 'Laptop', canvas: { bg: 'color', color: '#f2f2f2', inset: 0.13, shift: -0.03, radius: 0.01, shadow: 0.3, device: 'laptop' } },
+  { id: 'music', name: 'Music player', canvas: { bg: 'gradient', color: '#3a1c71', color2: '#d76d77', angle: 20, inset: 0.17, shift: -0.1, radius: 0.05, shadow: 0.5, device: 'music' } },
+  { id: 'chat', name: 'Chat bubble', canvas: { bg: 'color', color: '#eef1f6', inset: 0.15, shift: -0.04, radius: 0.05, shadow: 0.3, device: 'chat' } },
   { id: 'night', name: 'Night', canvas: { bg: 'gradient', color: '#0b1a3a', color2: '#000000', angle: 0, inset: 0.05, radius: 0.03, border: 0.004, borderColor: '#ffffff', shadow: 0 } },
 ];
 
@@ -103,4 +107,39 @@ export function cardScale(c: Canvas | undefined, W: number, H: number): [number,
   if (!hasCanvas(c)) return [1, 1];
   const R = cardRect(c, W, H);
   return [R.w / R.crop.w, R.h / R.crop.h];
+}
+
+/** How far the camera is zoomed in at timeline time t (1: not at all), and the card's middle it zooms towards (shares of the frame). */
+export function canvasZoomAt(c: Canvas | undefined, W: number, H: number, t: number): { z: number; cx: number; cy: number } {
+  if (!hasCanvas(c) || !c.zoomIn) return { z: 1, cx: 0.5, cy: 0.5 };
+  const R = cardRect(c, W, H);
+  const to = Math.max(1, Math.min(8, c.zoomIn.to ?? Math.max(W / R.w, H / R.h)));
+  const u = Math.max(0, Math.min(1, (t - c.zoomIn.at) / Math.max(0.04, c.zoomIn.dur)));
+  const e = u * u * (3 - 2 * u);
+  return { z: 1 + (to - 1) * e, cx: (R.x + R.w / 2) / W, cy: (R.y + R.h / 2) / H };
+}
+
+/**
+ * The zoom as keys for FFmpeg's perspective filter over a stretch of the timeline [t0, t1] (key times
+ * relative to t0): a key every frame while it moves, one at each end otherwise. Null if the camera
+ * doesn't move or is still in the start position the whole stretch.
+ */
+export function canvasZoomKeys(c: Canvas | undefined, W: number, H: number, fps: number, t0: number, t1: number): { zoom: [number, number, 0][]; x: [number, number, 0][]; y: [number, number, 0][] } | null {
+  if (!hasCanvas(c) || !c.zoomIn || t1 <= c.zoomIn.at) return null;
+  const end = c.zoomIn.at + Math.max(0.04, c.zoomIn.dur);
+  const times = [0];
+  for (let t = Math.max(t0, c.zoomIn.at); t < Math.min(t1, end); t += 1 / fps) times.push(t - t0);
+  times.push(t1 - t0);
+  const ts = [...new Set(times.map((v) => Math.round(Math.max(0, v) * 1000) / 1000))].sort((a, b) => a - b);
+  const zoom: [number, number, 0][] = [];
+  const x: [number, number, 0][] = [];
+  const y: [number, number, 0][] = [];
+  for (const k of ts) {
+    const { z, cx, cy } = canvasZoomAt(c, W, H, t0 + k);
+    zoom.push([k, Math.round(z * 1e5) / 1e5, 0]);
+    // zooming towards a point other than the middle moves the picture the other way
+    x.push([k, Math.round((cx - 0.5) * (1 - z) * 1e5) / 1e5, 0]);
+    y.push([k, Math.round((cy - 0.5) * (1 - z) * 1e5) / 1e5, 0]);
+  }
+  return { zoom, x, y };
 }

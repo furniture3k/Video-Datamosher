@@ -78,3 +78,56 @@ describe('swapping places on the beat', () => {
     expect(evalKeys(c, 3.5)).toBe(0.3);
   });
 });
+
+describe('fake phone UI', async () => {
+  const { rippleRings, shapeStrokes } = await import('../src/engine/shapes');
+  const { selectionLayers, notificationLayers } = await import('../src/engine/annotate');
+  let n = 0;
+  const id = () => 'u' + ++n;
+  it('spreads ripple rings out and fades them, each starting a little after the last', () => {
+    expect(rippleRings(0)).toEqual([]);
+    const early = rippleRings(0.2);
+    expect(early.length).toBe(1);
+    const mid = rippleRings(0.5);
+    expect(mid.length).toBe(3);
+    // earlier rings are bigger and fainter
+    expect(mid[0].r).toBeGreaterThan(mid[1].r);
+    expect(mid[0].alpha).toBeLessThan(mid[1].alpha);
+    // all done by the end
+    expect(rippleRings(1)).toEqual([]);
+    expect(rippleRings(0.95).length).toBeLessThanOrEqual(1);
+  });
+  it('draws a selection handle as a line with a ball, and the ball goes to the other end when flipped', () => {
+    const base = { w: 0.03, h: 0.1, count: undefined, head: undefined, bend: undefined, points: undefined, sides: undefined };
+    const up = shapeStrokes({ ...base, shape: 'handle' }, 1000, 1000);
+    const down = shapeStrokes({ ...base, shape: 'handle', flip: true }, 1000, 1000);
+    expect(up.length).toBe(2);
+    const cy = (s: (typeof up)[number]) => s.pts.reduce((a, p) => a + p[1], 0) / s.pts.length;
+    expect(cy(up[1])).toBeLessThan(-50);
+    expect(cy(down[1])).toBeGreaterThan(50);
+  });
+  it('makes a selection: a stripe, two handles, a menu and three words, one group', () => {
+    const s = selectionLayers([0.5, 0.6], 16 / 9, [], id, 1, 3);
+    expect(s.map((l) => (l.kind === 'shape' ? l.shape : (l as { text: string }).text))).toEqual(['highlight', 'handle', 'handle', 'round', 'Copy', 'Look up', 'Share']);
+    expect(new Set(s.map((l) => l.group)).size).toBe(1);
+    // the handles are at the two ends of the stripe, one with its ball up and one down
+    expect(s[1].x).toBeLessThan(0.5);
+    expect(s[2].x).toBeGreaterThan(0.5);
+    expect((s[1] as { flip?: boolean }).flip).toBeUndefined();
+    expect((s[2] as { flip?: boolean }).flip).toBe(true);
+    // the menu is above the words
+    expect(s[3].y).toBeLessThan(0.6);
+  });
+  it('makes a notification that slides down from above the top and settles', () => {
+    const nl = notificationLayers(16 / 9, [], id, 2, 3);
+    expect(nl.length).toBe(4);
+    expect(new Set(nl.map((l) => l.group)).size).toBe(1);
+    for (const l of nl) {
+      expect(l.follow!.length).toBe(2);
+      // at its start it is above where it ends up, and it ends where it is placed
+      expect(l.follow![0][2]).toBeLessThan(l.follow![1][2]);
+      expect(l.follow![1][2]).toBeCloseTo(l.y, 6);
+      expect(l.follow![1][0]).toBeCloseTo(2.3, 6);
+    }
+  });
+});

@@ -6,6 +6,7 @@
   import { CANVAS_PRESETS, DEFAULT_CANVAS, hasCanvas, type Canvas } from '../engine/canvas';
   import { GRID_LAYOUTS } from '../engine/grid';
   import { arrangeGrid } from '../lib/edit';
+  import { swapCellsOnBeat } from '../lib/graphicsops.svelte';
 
   const c = $derived(store.project.canvas);
   const on = $derived(hasCanvas(c));
@@ -81,11 +82,21 @@
       { value: 'browser', label: 'Browser window' },
       { value: 'window', label: 'App window' },
       { value: 'laptop', label: 'Laptop' },
+      { value: 'music', label: 'Music player' },
+      { value: 'chat', label: 'Chat bubble' },
     ]}
     help="Draws a generic device round the picture, so it looks like it's playing on a screen."
     onchange={(v: string) => set('device', v === 'none' ? undefined : (v as Canvas['device']))}
   />
   <Field label="Shadow" min={0} max={1} step={0.01} value={c.shadow ?? 0} help="A soft shadow under the picture." onchange={(v: number) => set('shadow', v || undefined)} />
+  <div class="row btns">
+    <button class="small" onclick={() => set('zoomIn', { at: Math.round(store.ui.time * 100) / 100, dur: 1, to: undefined })} title="From the playhead the camera zooms in until the picture fills the frame">Zoom into the screen</button>
+    {#if c.zoomIn}<button class="small ghost" onclick={() => set('zoomIn', undefined)}>Remove the zoom</button>{/if}
+  </div>
+  {#if c.zoomIn}
+    <Field label="Zoom starts" unit="s" min={0} max={Math.max(1, store.duration)} step={0.05} value={c.zoomIn.at} help="When the camera starts to zoom." onchange={(v: number) => set('zoomIn', { ...c.zoomIn!, at: v })} />
+    <Field label="Zoom takes" unit="s" min={0.1} max={6} step={0.05} value={c.zoomIn.dur} help="How long the zoom takes." onchange={(v: number) => set('zoomIn', { ...c.zoomIn!, dur: v })} />
+  {/if}
 {/if}
 
 <div class="label sect">Split screen</div>
@@ -99,6 +110,7 @@
     </button>
   {/each}
 </div>
+<button class="small" onclick={() => swapCellsOnBeat(1)} title="The clips trade cells on every beat (for layouts with equal cells: side by side, stacked, 2 × 2, 3 × 3)">Swap places on the beat</button>
 <Field label="Gap" min={0} max={0.06} step={0.002} value={gap} help="Space between the cells, as a share of the frame's shorter side (set it before picking a layout)." onchange={(v: number) => (gap = v)} />
 
 <style>

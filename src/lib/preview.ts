@@ -6,6 +6,8 @@ import { getPcm } from './media';
 import { proxyKey } from './renderer';
 import { drawLayers, drawWarpedImage } from './layers';
 import { screenCorners } from '../engine/screen';
+import { drawCardBack, drawPictureShape } from './clipplates';
+import { canvasZoomAt } from '../engine/canvas';
 import { matteSourceFor } from './mattes.svelte';
 import { drawCanvas } from './canvas';
 import { hasCanvas } from '../engine/canvas';
@@ -19,7 +21,7 @@ import { gradeCurve, gradeMatrix } from '../engine/args';
 import { outputSize } from '../engine/args';
 import { SAMPLE_RATE } from '../engine/audio';
 import { audioCtx } from './audioctx';
-import { clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type MediaItem, type Project } from '../engine/types';
+import { VIDEO_TRACK, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, transformOf, type Clip, type MediaItem, type Project } from '../engine/types';
 
 const COMPOSITE: Record<string, GlobalCompositeOperation> = {
   normal: 'source-over',
@@ -342,6 +344,20 @@ export class EditPreview {
       const bm = p.canvas.bg === 'image' ? p.media.find((m) => m.id === p.canvas!.image) : undefined;
       const im = bm && this.image(bm);
       drawCanvas(ctx, p.canvas, w, h, im ? { src: im, w: im.naturalWidth, h: im.naturalHeight } : undefined);
+      // a camera move into the card
+      const zm = canvasZoomAt(p.canvas, w, h, t);
+      if (zm.z > 1.0001) {
+        const g = this.surface(0, w, h);
+        g.clearRect(0, 0, w, h);
+        g.drawImage(ctx.canvas, 0, 0);
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.translate(zm.cx * w, zm.cy * h);
+        ctx.scale(zm.z, zm.z);
+        ctx.translate(-zm.cx * w, -zm.cy * h);
+        ctx.drawImage(g.canvas, 0, 0);
+        ctx.restore();
+      }
     }
     drawLayers(ctx, p.layers, t, w, h, 'all', matteSourceFor(p));
     if (waiting || unavailable) {
@@ -446,7 +462,8 @@ export class EditPreview {
         target.translate(-(x + dw / 2), -(y + dh / 2));
       }
       try {
-        target.drawImage(pic, x, y, dw, dh);
+        if ((c.card || c.mask) && c.track !== VIDEO_TRACK) this.paintCard(target, pic, c, [x, y, dw, dh], w, h, local);
+        else target.drawImage(pic, x, y, dw, dh);
       } catch {
         /* not ready */
       }
@@ -468,6 +485,31 @@ export class EditPreview {
     ctx.globalCompositeOperation = op;
     ctx.drawImage(this.graded, 0, 0);
     ctx.restore();
+  }
+
+  /** Three frame-sized pictures kept for drawing cards and masks: the picture, the shape it shows through, and a spare. */
+  private cardSurfaces: HTMLCanvasElement[] = [];
+  private surface(i: number, w: number, h: number): CanvasRenderingContext2D {
+    const cv = (this.cardSurfaces[i] ??= document.createElement('canvas'));
+    if (cv.width !== w || cv.height !== h) ((cv.width = w), (cv.height = h));
+    const g = cv.getContext('2d')!;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    return g;
+  }
+
+  /** A picture with a card round it and/or a shape it shows through, in the clip's own space (as the render makes it). */
+  private paintCard(target: CanvasRenderingContext2D, pic: CanvasImageSource, c: Clip, R: [number, number, number, number], w: number, h: number, local: number) {
+    if (c.card) drawCardBack(target, c.card, R, h);
+    const g = this.surface(0, w, h);
+    g.clearRect(0, 0, w, h);
+    g.drawImage(pic, R[0], R[1], R[2], R[3]);
+    const shape = this.surface(1, w, h);
+    drawPictureShape(shape, c, R, local, w, h, () => this.surface(2, w, h));
+    g.globalCompositeOperation = 'destination-in';
+    g.drawImage(shape.canvas, 0, 0);
+    g.globalCompositeOperation = 'source-over';
+    target.drawImage(g.canvas, 0, 0);
   }
 
   /** A clip's picture put onto the surface it is pinned to (its four corners, in frame pixels). */
