@@ -19,7 +19,7 @@ const root = `http://localhost:${server.address().port}/`;
 const axe = fs.readFileSync(path.resolve('node_modules/axe-core/axe.min.js'), 'utf8');
 // this container's Chromium, else the one Playwright installed (CI)
 const local = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
-const exe = process.env.CHROMIUM || (fs.existsSync(local) ? local : undefined);
+const exe = process.env.CHROMIUM || (fs.existsSync(local) ? local : chromium.executablePath());
 const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 
 const LEVELS = process.env.A11Y_ALL ? ['minor', 'moderate', 'serious', 'critical'] : ['serious', 'critical'];

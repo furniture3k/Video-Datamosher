@@ -25,7 +25,8 @@ const server = http
   .listen(0);
 // the editor (the website is at the root)
 const url = `http://localhost:${server.address().port}/app/`;
-const exe = process.env.CHROMIUM || ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => fs.existsSync(p));
+// CHROMIUM, else the cloud container's, else the one Playwright installed (`npx playwright-core install chromium`)
+const exe = process.env.CHROMIUM || ['/opt/pw-browsers/chromium-1194/chrome-linux/chrome'].find((p) => fs.existsSync(p)) || chromium.executablePath();
 const browser = await chromium.launch({
   executablePath: exe,
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],

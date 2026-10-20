@@ -21,7 +21,9 @@ const server = http
 const root = `http://localhost:${server.address().port}/`;
 // the editor; the website is at the root
 const url = root + 'app/';
-const exe = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+// CHROMIUM, else the cloud container's, else the one Playwright installed (`npx playwright-core install chromium`)
+const cloud = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const exe = process.env.CHROMIUM || (fs.existsSync(cloud) ? cloud : chromium.executablePath());
 const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, permissions: ['clipboard-read', 'clipboard-write', 'midi'] });
 // start in the editor (not the home screen), without the first-run tour or the automatic first mosh
@@ -525,7 +527,7 @@ await step('words on the beat: one title per word, on the cuts, in the chosen lo
 
 await step('fonts: a font file and a Google Font, put on the title, loaded before it is drawn', async () => {
   // a font file from this machine (the step needs one; FONT_FILE can point at another)
-  const file = process.env.FONT_FILE || '/mnt/skills/examples/canvas-design/canvas-fonts/BigShoulders-Bold.ttf';
+  const file = process.env.FONT_FILE || ['/mnt/skills/examples/canvas-design/canvas-fonts/BigShoulders-Bold.ttf', path.resolve('tests/fixtures/BigShoulders-Bold.ttf')].find((p) => fs.existsSync(p)) || '';
   if (!fs.existsSync(file)) return console.log('(no font file on this machine: skipped) ');
   const b64 = fs.readFileSync(file).toString('base64');
   await S(() => {
