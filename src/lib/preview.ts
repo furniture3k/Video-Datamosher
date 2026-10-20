@@ -6,6 +6,7 @@ import { getPcm } from './media';
 import { proxyKey } from './renderer';
 import { drawLayers, drawWarpedImage } from './layers';
 import { screenCorners } from '../engine/screen';
+import { matteSourceFor } from './mattes.svelte';
 import { drawCanvas } from './canvas';
 import { hasCanvas } from '../engine/canvas';
 import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
@@ -324,7 +325,7 @@ export class EditPreview {
       const im = bm && this.image(bm);
       drawCanvas(ctx, p.canvas, w, h, im ? { src: im, w: im.naturalWidth, h: im.naturalHeight } : undefined);
     }
-    drawLayers(ctx, p.layers, t, w, h, 'all');
+    drawLayers(ctx, p.layers, t, w, h, 'all', matteSourceFor(p));
     if (waiting || unavailable) {
       const msg = unavailable ? "this browser can't preview this file live (the mosh view works)" : 'preparing preview…';
       ctx.font = '12px sans-serif';

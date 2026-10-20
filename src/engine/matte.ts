@@ -58,7 +58,7 @@ export async function unpackMatte(bytes: Uint8Array, w: number, h: number): Prom
  * The matte at source time t: the two frames either side of it blended (so a matte made at 12
  * frames a second is smooth at any frame rate). Null outside the seconds it covers.
  */
-export function matteAt(m: Pick<MatteRef, 'from' | 'to' | 'fps'>, frames: Uint8Array[], t: number): Uint8Array | null {
+export function matteAt(m: Pick<MatteRef, 'from' | 'to' | 'fps'> & Partial<Pick<MatteRef, 'w' | 'h'>>, frames: Uint8Array[], t: number): Uint8Array | null {
   if (!frames.length || t < m.from - 0.5 / m.fps || t > m.to + 0.5 / m.fps) return null;
   const pos = Math.max(0, Math.min(frames.length - 1, (t - m.from) * m.fps));
   const i = Math.floor(pos);
@@ -67,10 +67,45 @@ export function matteAt(m: Pick<MatteRef, 'from' | 'to' | 'fps'>, frames: Uint8A
   const b = frames[Math.min(frames.length - 1, i + 1)];
   if (k < 1e-6 || a === b) return a;
   if (k > 1 - 1e-6) return b;
+  if (m.w && m.h && a.length === m.w * m.h) return blendMoving(a, b, k, m.w, m.h);
   const out = new Uint8Array(a.length);
   for (let p = 0; p < a.length; p++) out[p] = a[p] + (b[p] - a[p]) * k;
   return out;
 }
+
+/**
+ * Two frames of a subject blended `k` of the way from a to b. Where the subject moved between
+ * them, each frame is first slid along its movement (the shift of its middle) to where it is at
+ * `k`, so the result is the subject in between, not two half-strength copies. A subject that
+ * jumped too far, or appeared or vanished, is blended as it is.
+ */
+export function blendMoving(a: Uint8Array, b: Uint8Array, k: number, w: number, h: number): Uint8Array {
+  const sa = maskStats(a, w, h);
+  const sb = maskStats(b, w, h);
+  let dx = 0;
+  let dy = 0;
+  if (sa && sb && sa.area / sb.area < 2 && sb.area / sa.area < 2) {
+    dx = (sb.cx - sa.cx) * w;
+    dy = (sb.cy - sa.cy) * h;
+    // too far to be the same thing moving
+    if (Math.hypot(dx, dy) > 0.3 * Math.max(w, h)) dx = dy = 0;
+  }
+  const out = new Uint8Array(a.length);
+  // a slid by k·d, b by −(1−k)·d (whole pixels): both land where the subject is at k
+  const ax = Math.round(k * dx);
+  const ay = Math.round(k * dy);
+  const bx = -Math.round((1 - k) * dx);
+  const by = -Math.round((1 - k) * dy);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const pa = pixel(a, w, h, x - ax, y - ay);
+      const pb = pixel(b, w, h, x - bx, y - by);
+      out[y * w + x] = pa + (pb - pa) * k;
+    }
+  return out;
+}
+
+const pixel = (f: Uint8Array, w: number, h: number, x: number, y: number) => (x < 0 || y < 0 || x >= w || y >= h ? 0 : f[y * w + x]);
 
 /** The box round the subject (x0, y0, x1, y1 as shares of the frame), or null when there is none. */
 export function maskBox(a: Uint8Array, w: number, h: number, threshold = 128): [number, number, number, number] | null {

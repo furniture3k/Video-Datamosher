@@ -8,6 +8,7 @@
   import TrailSettings from './TrailSettings.svelte';
   import SurfaceSettings from './SurfaceSettings.svelte';
   import TiltSettings from './TiltSettings.svelte';
+  import DepthSettings from './DepthSettings.svelte';
   import ParticleSettings from './ParticleSettings.svelte';
   import type { TextAnim, TextLayer } from '../engine/layers';
 
@@ -77,6 +78,7 @@
   {/if}
 {/if}
 <TrailSettings layer={title} />
+<DepthSettings layer={title} />
 <TiltSettings layer={title} />
 <SurfaceSettings layer={title} />
 <ParticleSettings layer={title} />

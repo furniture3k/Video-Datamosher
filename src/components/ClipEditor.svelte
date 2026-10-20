@@ -15,6 +15,7 @@ import { store } from '../lib/store.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
+  import { cutoutJob, deleteMatte, titleBehind, toggleCutout } from '../lib/cutout.svelte';
   import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, toggleSurfacePick, titleOnSurface, putClipOnSurface, takeClipOffSurface, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
@@ -417,6 +418,18 @@ import { store } from '../lib/store.svelte';
         <div class="row btns">
           <button class="small" class:on={store.ui.surfacePick === c.id} disabled={motionJob.running} onclick={() => toggleSurfacePick(c.id)} title="Then drag four corners on the player onto a flat surface (a screen, a wall, a sign) so titles and shapes can be pinned to it">{store.ui.surfacePick === c.id ? 'Cancel' : 'Track a surface'}</button>
         </div>
+        <div class="row btns">
+          <button class="small" class:on={store.ui.cutout?.clipId === c.id} disabled={motionJob.running || cutoutJob.running} onclick={() => toggleCutout(c.id)} title="Then tap the thing on the player: it is followed through the clip, so titles can go behind it">{store.ui.cutout?.clipId === c.id ? 'Cancel' : 'Cut out a subject'}</button>
+          {#if cutoutJob.running}<span class="small faint">{Math.round(cutoutJob.progress * 100)}%</span><button class="small ghost" onclick={() => (cutoutJob.cancel = true)}>Stop</button>{/if}
+        </div>
+        {#each media?.mattes ?? [] as mt (mt.id)}
+          <div class="pathrow">
+            <span class="small grow">{mt.name} · {(mt.to - mt.from).toFixed(1)} s</span>
+            <button class="small" onclick={() => titleBehind(c.id)} title="Add a big title behind the subject">Title behind</button>
+            <button class="icon ghost" aria-label="Delete cut-out" title="Delete cut-out" onclick={() => deleteMatte(media!.id, mt.id)}><Icon name="x" size={12} /></button>
+          </div>
+        {/each}
+        {#if store.ui.cutout?.clipId === c.id}<p class="small faint">Tap the subject on the player (tap more to add parts, long-press to leave something out), then press Cut out through clip.</p>{/if}
         {#if store.ui.trackPick === c.id}<p class="small faint">Drag a box on the player around something with clear detail. It is followed forwards and backwards from this frame.</p>{/if}
         {#if store.ui.surfacePick === c.id}<p class="small faint">Drag the four corners onto the surface, then press Track it. Pick a flat surface with detail on it (a screen with content, a poster, a wall with marks).</p>{/if}
         {#each c.planes ?? [] as plane (plane.id)}

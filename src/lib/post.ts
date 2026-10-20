@@ -21,6 +21,7 @@ import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project } from '../engine/types';
 import { isEmpty, type Layer } from '../engine/layers';
 import { anyLayerAt, drawLayers } from './layers';
+import { ensureMattes, matteSourceFor } from './mattes.svelte';
 import { ensureFonts } from './fonts.svelte';
 import { Cancelled } from './ffmpeg';
 
@@ -439,7 +440,11 @@ export class PostRunner {
   /** jpegs[i] is output frame offset + i */
   async run(jpegs: Uint8Array[], frames: Pick<Frame, 'src' | 'at'>[], offset: number, onProgress?: (p: number) => void, signal?: { cancelled: boolean }): Promise<Uint8Array[]> {
     if (!this.active || !jpegs.length) return jpegs;
-    if (this.layers.length) await ensureFonts(this.project);
+    if (this.layers.length) {
+      await ensureFonts(this.project);
+      await ensureMattes(this.project);
+    }
+    const matte = matteSourceFor(this.project);
     const out: Uint8Array[] = [];
     for (let i = 0; i < jpegs.length; i++) {
       if (signal?.cancelled) throw new Cancelled();
@@ -464,7 +469,7 @@ export class PostRunner {
             this.c2d.height = bmp.height;
             const ctx = this.c2d.getContext('2d')!;
             ctx.drawImage(src, 0, 0);
-            drawLayers(ctx, this.layers, t, bmp.width, bmp.height, 'clean');
+            drawLayers(ctx, this.layers, t, bmp.width, bmp.height, 'clean', matte);
             src = this.c2d;
           }
         }

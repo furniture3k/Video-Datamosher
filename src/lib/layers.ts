@@ -86,8 +86,34 @@ function drawWarped(ctx: CanvasRenderingContext2D, l: Layer, H: Mat3, w: number,
   ctx.restore();
 }
 
-/** Draw one layer at timeline time t with opacity `alpha` (its fades are the caller's). */
-export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number) {
+/** The matte of the footage on screen at timeline time t, as a w×h picture whose opacity is the subject; null when there is none. */
+export type MatteSource = (t: number, w: number, h: number) => CanvasImageSource | null;
+
+let behind: { w: number; h: number; c?: CanvasImageSource; g?: Cx } = { w: 0, h: 0 };
+
+/**
+ * Draw one layer at timeline time t with opacity `alpha` (its fades are the caller's). A layer that
+ * is behind the subject is drawn on a picture of its own, the subject's matte cuts it out of that,
+ * and the rest goes on.
+ */
+export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number, matte?: MatteSource) {
+  const cut = l.depth === 'behind' && matte ? matte(t, w, h) : null;
+  if (!cut) return drawBent(ctx, l, w, h, alpha, t);
+  if (behind.w !== w || behind.h !== h || !behind.g) {
+    const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+    behind = { w, h, c, g: c.getContext('2d') as Cx };
+  }
+  const g = behind.g!;
+  g.clearRect(0, 0, w, h);
+  drawBent(g as CanvasRenderingContext2D, l, w, h, alpha, t);
+  g.globalCompositeOperation = 'destination-out';
+  g.drawImage(cut, 0, 0, w, h);
+  g.globalCompositeOperation = 'source-over';
+  ctx.drawImage(behind.c!, 0, 0);
+}
+
+/** A layer as it is drawn flat or, if it is tilted or pinned to a surface, warped. */
+function drawBent(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number) {
   const H = layerMatrix(l, t, w, h);
   if (H) return drawWarped(ctx, l, H, w, h, alpha, t);
   drawFlat(ctx, l, w, h, alpha, t);
@@ -127,8 +153,8 @@ function drawFlat(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number,
 }
 
 /** Draw every layer of `which` on screen at timeline time t, bottom row first. */
-export function drawLayers(ctx: CanvasRenderingContext2D, layers: Layer[], t: number, w: number, h: number, which: LayerSet = 'all') {
-  for (const l of drawOrder(layers)) if (inSet(l, which)) drawLayer(ctx, l, w, h, layerAlpha(l, t), t);
+export function drawLayers(ctx: CanvasRenderingContext2D, layers: Layer[], t: number, w: number, h: number, which: LayerSet = 'all', matte?: MatteSource) {
+  for (const l of drawOrder(layers)) if (inSet(l, which)) drawLayer(ctx, l, w, h, layerAlpha(l, t), t, matte);
 }
 
 /** Is any layer of `which` on screen at timeline time t? */

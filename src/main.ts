@@ -65,8 +65,9 @@ Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline
 import * as planar from './engine/planar';
 import * as objectseg from './lib/objectseg';
 import * as faces from './lib/faces';
+import * as mattesMod from './lib/mattes.svelte';
 import { layerQuad } from './lib/layers';
-Object.assign((window as unknown as { __moshpit: object }).__moshpit, { planar, layerQuad, objectseg, faces });
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { planar, layerQuad, objectseg, faces, mattes: mattesMod });
 import * as report from './lib/report';
 import * as incoming from './lib/incoming';
 import * as recovery from './lib/recovery';

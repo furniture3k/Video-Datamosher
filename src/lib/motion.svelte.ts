@@ -45,7 +45,7 @@ function placement(p: Project, c: Clip, local: number) {
 
 export const clipStart = (p: Project, c: Clip) => (c.track === VIDEO_TRACK ? (layoutVideo(p).find((pl) => pl.clip.id === c.id)?.start ?? 0) : c.start);
 
-async function busy<T>(stage: string, fn: () => Promise<T>): Promise<T> {
+export async function busy<T>(stage: string, fn: () => Promise<T>): Promise<T> {
   motionJob.running = true;
   motionJob.stage = stage;
   store.status.engine = stage + '…';
@@ -58,7 +58,7 @@ async function busy<T>(stage: string, fn: () => Promise<T>): Promise<T> {
 }
 
 /** Frames `from`..`to` (exclusive) copied into one buffer, to hand to a worker. */
-function framesBuffer(g: Gray, from: number, to: number): ArrayBuffer {
+export function framesBuffer(g: Gray, from: number, to: number): ArrayBuffer {
   const n = g.w * g.h;
   const out = new Uint8Array(n * (to - from));
   for (let k = from; k < to; k++) out.set(g.frames[k], (k - from) * n);
@@ -66,7 +66,7 @@ function framesBuffer(g: Gray, from: number, to: number): ArrayBuffer {
 }
 
 /** Run an analysis in its own worker (so two can run side by side); on the page if workers fail. */
-function inWorker<T>(job: TrackJob, inline: () => T): Promise<T> {
+export function inWorker<T>(job: TrackJob, inline: () => T): Promise<T> {
   let w: Worker;
   try {
     w = new Worker(new URL('./track.worker.ts', import.meta.url), { type: 'module' });
@@ -191,6 +191,24 @@ export async function trackClip(id: string, box: [number, number, number, number
   const got = pts[pts.length - 1][0] - pts[0][0];
   if (res.whole) store.toast(`${name}: followed it through the whole clip.`, 'ok');
   else store.toast(`${name}: followed it for ${got.toFixed(1)} s of ${res.len.toFixed(1)} s, then lost it (hidden, blurred or out of frame).`, 'info', 5000);
+}
+
+/**
+ * Where a clip's own picture is in the output frame at timeline time `t`: points of the picture
+ * (0..1) to points of the frame (0..1, on the card when there is a canvas) and back.
+ */
+export function pictureMap(clipId: string, t = store.ui.time) {
+  const p = store.project;
+  const c = p.clips.find((x) => x.id === clipId);
+  if (!c) return null;
+  const local = Math.max(0, Math.min(clipLen(c), t - clipStart(p, c)));
+  const m = placement(p, c, local);
+  const inv = invert(m);
+  const [W, H] = frameSize(p);
+  return {
+    toFrame: (u: number, v: number): [number, number] => framed(p, ...apply(m, u, v)),
+    toPicture: (x: number, y: number): [number, number] => apply(inv, ...offCard(p.canvas, W, H, x, y)),
+  };
 }
 
 /** The corners picked for a surface start as a rectangle in the middle of the picture. */

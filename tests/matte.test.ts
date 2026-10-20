@@ -150,3 +150,30 @@ describe('cutting out through a clip', () => {
     expect(masks[30].every((v) => v === 0)).toBe(true);
   });
 });
+
+describe('a matte between frames of a moving subject', () => {
+  const w = 120;
+  const h = 80;
+  it('puts the subject in between, not two half-strength copies', () => {
+    const a = square(20, 30, 20, w, h);
+    const b = square(50, 30, 20, w, h);
+    const mid = matteAt({ from: 0, to: 1, fps: 1, w, h }, [a, b], 0.5)!;
+    expect(iou(mid, square(35, 30, 20, w, h))).toBeGreaterThan(0.9);
+    // and at a quarter of the way
+    const q = matteAt({ from: 0, to: 1, fps: 1, w, h }, [a, b], 0.25)!;
+    expect(iou(q, square(28, 30, 20, w, h))).toBeGreaterThan(0.85);
+    // no half-grey strips: every pixel is nearly black or white
+    expect([...mid].filter((v) => v > 40 && v < 215).length).toBeLessThan(40);
+  });
+  it('blends as it is when the subject jumps, appears or vanishes', () => {
+    const a = square(5, 30, 20, w, h);
+    const far = square(95, 30, 20, w, h);
+    const m = matteAt({ from: 0, to: 1, fps: 1, w, h }, [a, far], 0.5)!;
+    expect(m[35 * w + 15]).toBeGreaterThan(100);
+    expect(m[35 * w + 15]).toBeLessThan(150);
+    const none = new Uint8Array(w * h);
+    const appear = matteAt({ from: 0, to: 1, fps: 1, w, h }, [none, a], 0.5)!;
+    expect(appear[35 * w + 15]).toBeGreaterThan(120);
+    expect(appear[35 * w + 15]).toBeLessThan(135);
+  });
+});

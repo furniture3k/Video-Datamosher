@@ -136,7 +136,7 @@
       return;
     }
     if (e.key === 'Escape' && !typing && !(e.ctrlKey || e.metaKey || e.altKey)) {
-      if (store.ui.trackPick || store.ui.surfacePick || store.ui.eyedropper || store.ui.paintEffect || store.ui.pen) ((store.ui.trackPick = null), (store.ui.surfacePick = null), (store.ui.surfaceThen = null), (store.ui.trackThen = null), (store.ui.eyedropper = false), (store.ui.paintEffect = null), (store.ui.pen = false));
+      if (store.ui.trackPick || store.ui.surfacePick || store.ui.cutout || store.ui.eyedropper || store.ui.paintEffect || store.ui.pen) ((store.ui.trackPick = null), (store.ui.surfacePick = null), (store.ui.surfaceThen = null), (store.ui.cutout = null), (store.ui.trackThen = null), (store.ui.eyedropper = false), (store.ui.paintEffect = null), (store.ui.pen = false));
       else if (store.ui.dialog) closeDialog();
       else if (store.ui.tool !== 'select') store.ui.tool = 'select';
       else if (store.ui.selectedClips.length || store.ui.selectedTransition) {

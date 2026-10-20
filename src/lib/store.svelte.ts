@@ -85,6 +85,8 @@ class Store {
     trackThen: null as null | 'mark',
     /** id of the clip whose surface is being picked: four corners on the player, then it is tracked */
     surfacePick: null as string | null,
+    /** cutting a subject out of a clip: the taps on the playhead's frame (shares of the clip's own picture; 1 = it, 0 = not it) */
+    cutout: null as null | { clipId: string; points: [number, number, 0 | 1][] },
     /** what happens once the surface is tracked: 'title' pins a new title to it */
     surfaceThen: null as null | 'title',
     /** the four corners of the surface being picked, clockwise from the top left (shares of the frame) */
@@ -584,7 +586,7 @@ class Store {
     const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
     // preview copies are kept under the media item's id, not its file's
     const snapProxies = snapshots.list.flatMap((s) => s.project.media.filter((m) => m.source.kind === 'file').map((m) => proxyKey(m.id)));
-    const lutFiles = [...(this.project.luts ?? []).map((l) => 'lut:' + l.id), ...(this.project.fonts ?? []).map((f) => 'font:' + f.id)];
+    const lutFiles = [...(this.project.luts ?? []).map((l) => 'lut:' + l.id), ...(this.project.fonts ?? []).map((f) => 'font:' + f.id), ...this.project.media.flatMap((m) => (m.mattes ?? []).map((x) => x.fileId))];
     // every saved project's media too, not just the open one's
     const others = (await loadIndex().catch(() => [])).flatMap((m) => m.files);
     return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapProxies];

@@ -28,6 +28,8 @@ interface LayerBase {
   fade: number;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
+  /** 'behind': under the subject cut out of the footage below (the layer is hidden where the matte is white) */
+  depth?: 'front' | 'behind';
   /** leaned back or to the side in perspective: degrees about the horizontal and the vertical axis through its position */
   tilt?: [number, number];
   /** pinned to a tracked surface: it is drawn where it is on `refT`, then carried along with the surface */
@@ -228,7 +230,8 @@ export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.sha
  * single picture of it can stand in for every frame (fades are applied on top of that picture).
  */
 export function isStill(l: Layer): boolean {
-  if (l.follow?.length || l.surface || l.trail || l.particles) return false;
+  // (behind the subject changes with the footage's matte from frame to frame)
+  if (l.follow?.length || l.surface || l.trail || l.particles || l.depth === 'behind') return false;
   if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress';
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }

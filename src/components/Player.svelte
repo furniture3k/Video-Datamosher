@@ -10,12 +10,15 @@
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
-  import { trackClip, pathOnTimeline, pathSize, pathAt, guardPath, confirmSurface } from '../lib/motion.svelte';
+  import { trackClip, pathOnTimeline, pathSize, pathAt, guardPath, confirmSurface, pictureMap } from '../lib/motion.svelte';
+  import { cutoutJob, frameAt, sourceAt, cutOutThroughClip } from '../lib/cutout.svelte';
+  import { openFrame, resizeMask, type FrameSession, type ObjectMask } from '../lib/objectseg';
   import { rasterizeField, type Stroke } from '../engine/flowfield';
   import { drawMask, type MaskStroke } from '../lib/maps';
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawLayers } from '../lib/layers';
+  import { matteState, matteSourceFor } from '../lib/mattes.svelte';
   import Gizmo from './Gizmo.svelte';
   import QuickMenu from './QuickMenu.svelte';
   import { addPen } from '../lib/edit';
@@ -117,7 +120,7 @@
       ctx.drawImage(b, 0, 0, w, h);
     } else ctx.drawImage(a, 0, 0, w, h);
     // clean titles sit on top of the mosh (they're baked in only on export)
-    if (mode !== 'hold' && store.project.layers.length) drawLayers(ctx, store.project.layers, src / r.fps, w, h, 'clean');
+    if (mode !== 'hold' && store.project.layers.length) drawLayers(ctx, store.project.layers, src / r.fps, w, h, 'clean', matteSourceFor(store.project));
     // prefetch
     for (let k = 1; k < 8; k++) bitmap(r.jpegs, i + k, 'm');
   }
@@ -129,6 +132,7 @@
     void store.ui.split;
     void originals;
     void layersSig;
+    void matteState.version;
     if (mosh) draw();
   });
 
@@ -165,6 +169,7 @@
     void canvasSig;
     void lutState.loaded;
     void fontState.loaded;
+    void matteState.version;
     if (!mosh && !store.ui.playing) untrack(drawEdit);
   });
   $effect(() => {
@@ -597,7 +602,7 @@
   const gizmoBox = $derived.by(() => {
     // the stage's size first: it's what tells this the stage is there (and when it resizes)
     void stageSize;
-    if (!wrap || !hasTimeline || store.ui.playing || store.ui.eyedropper || store.ui.trackPick || store.ui.surfacePick || store.ui.pen || paintFx || store.ui.compare !== 'off') return null;
+    if (!wrap || !hasTimeline || store.ui.playing || store.ui.eyedropper || store.ui.trackPick || store.ui.surfacePick || store.ui.cutout || store.ui.pen || paintFx || store.ui.compare !== 'off') return null;
     // the frame letterboxed into the canvases' area (10 px in from the stage's edges), worked out
     // from its shape so it's right before the canvases have drawn anything
     const cw = wrap.clientWidth - 20;
@@ -659,6 +664,165 @@
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
+  }
+
+  // ---- cutting a subject out: taps on the frame, a live mask, then the whole clip
+  let cutCanvas = $state<HTMLCanvasElement>();
+  let cutSession: FrameSession | null = null;
+  // (kept until the session closes: a model may look at it later)
+  let cutBmp: ImageBitmap | null = null;
+  let cutKey = '';
+  let cutMask = $state<ObjectMask | null>(null);
+  let cutState = $state<'loading' | 'ready' | 'thinking' | 'error'>('loading');
+  let cutError = $state('');
+  let cutSeq = 0;
+  function closeCut() {
+    cutSession?.close();
+    cutSession = null;
+    cutBmp?.close();
+    cutBmp = null;
+    cutKey = '';
+    cutMask = null;
+    cutSeq++;
+  }
+  async function prepareCut(clipId: string, srcT: number, key: string) {
+    if (key === cutKey) return;
+    // the first picture keeps taps it was opened with (from the menu); a new picture starts again
+    const fresh = cutKey === '';
+    closeCut();
+    cutKey = key;
+    cutState = 'loading';
+    if (store.ui.cutout && !fresh) store.ui.cutout.points = [];
+    const mine = key;
+    try {
+      const c = store.project.clips.find((x) => x.id === clipId);
+      if (!c) return;
+      const bmp = await frameAt(c, $state.snapshot(store.project) as typeof store.project, srcT);
+      if (cutKey !== mine) return bmp.close();
+      const s = await openFrame(bmp);
+      if (cutKey !== mine) {
+        s.close();
+        return bmp.close();
+      }
+      cutBmp = bmp;
+      cutSession = s;
+      cutState = 'ready';
+      if (store.ui.cutout?.points.length) void updateCutMask();
+    } catch (err) {
+      if (cutKey === mine) {
+        cutState = 'error';
+        cutError = (err as Error).message;
+      }
+    }
+  }
+  async function updateCutMask() {
+    const cut = store.ui.cutout;
+    if (!cut || !cutSession) return;
+    const seq = ++cutSeq;
+    if (!cut.points.some((q) => q[2] === 1)) {
+      cutMask = null;
+      return;
+    }
+    cutState = 'thinking';
+    try {
+      const m = await cutSession.mask({ points: cut.points.map((q) => [...q] as [number, number, 0 | 1]) });
+      if (seq !== cutSeq) return;
+      cutMask = m;
+      cutState = 'ready';
+    } catch (err) {
+      if (seq !== cutSeq) return;
+      cutState = 'error';
+      cutError = (err as Error).message;
+    }
+  }
+  $effect(() => {
+    const cut = store.ui.cutout;
+    const t = store.ui.time;
+    if (!cut) return untrack(closeCut);
+    const c = store.project.clips.find((x) => x.id === cut.clipId);
+    const srcT = c ? sourceAt(store.project, c, t) : null;
+    if (!c || srcT == null) return;
+    untrack(() => prepareCut(c.id, srcT, `${c.id}:${Math.round(srcT * 12)}`));
+  });
+  // the mask over the picture, tinted, placed where the clip's picture is in the frame
+  $effect(() => {
+    const cut = store.ui.cutout;
+    void stageSize;
+    void store.ui.time;
+    const m = cutMask;
+    const cv = cutCanvas;
+    if (!cut || !cv) return;
+    const g = cv.getContext('2d')!;
+    cv.width = 360;
+    cv.height = Math.max(2, Math.round((360 * guideSize.h) / guideSize.w));
+    g.clearRect(0, 0, cv.width, cv.height);
+    const map = pictureMap(cut.clipId);
+    if (!m || !map) return;
+    const tint = document.createElement('canvas');
+    tint.width = m.w;
+    tint.height = m.h;
+    const tg = tint.getContext('2d')!;
+    const id = tg.createImageData(m.w, m.h);
+    for (let i = 0; i < m.data.length; i++) id.data.set([34, 211, 238, m.data[i] >= 128 ? 120 : 0], i * 4);
+    tg.putImageData(id, 0, 0);
+    const [x0, y0] = map.toFrame(0, 0);
+    const [x1, y1] = map.toFrame(1, 0);
+    const [x2, y2] = map.toFrame(0, 1);
+    g.setTransform((cv.width * (x1 - x0)) / m.w, (cv.height * (y1 - y0)) / m.w, (cv.width * (x2 - x0)) / m.h, (cv.height * (y2 - y0)) / m.h, cv.width * x0, cv.height * y0);
+    g.drawImage(tint, 0, 0);
+  });
+  /** the taps as dots on the player (shares of the frame) */
+  const cutDots = $derived.by(() => {
+    const cut = store.ui.cutout;
+    void stageSize;
+    const map = cut ? pictureMap(cut.clipId) : null;
+    return cut && map ? cut.points.map(([u, v, label]) => ({ at: map.toFrame(u, v), label })) : [];
+  });
+  /** a tap includes, a long press, a right click or Alt-click leaves out, a tap on a dot takes it away */
+  function cutPointer(e: PointerEvent) {
+    const cut = store.ui.cutout;
+    if (!cut) return;
+    e.preventDefault();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const rightish = e.button === 2 || e.altKey || e.ctrlKey;
+    let fired = false;
+    const act = (ev: { clientX: number; clientY: number }, label: 0 | 1) => {
+      fired = true;
+      const map = pictureMap(cut.clipId);
+      const [fu, fv] = pictureUV(ev);
+      if (!map || fu < 0 || fu > 1 || fv < 0 || fv > 1) return;
+      const [u, v] = map.toPicture(fu, fv);
+      if (u < 0 || u > 1 || v < 0 || v > 1) return;
+      const near = cut.points.findIndex(([pu, pv]) => Math.hypot(pu - u, pv - v) < 0.03);
+      if (near >= 0) cut.points.splice(near, 1);
+      else cut.points.push([Math.round(u * 1e4) / 1e4, Math.round(v * 1e4) / 1e4, label]);
+      void updateCutMask();
+    };
+    const timer = window.setTimeout(() => act({ clientX: x0, clientY: y0 }, 0), 550);
+    const up = (ev: PointerEvent) => {
+      clearTimeout(timer);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (fired || ev.type === 'pointercancel' || Math.hypot(ev.clientX - x0, ev.clientY - y0) > 10) return;
+      act(ev, rightish ? 0 : 1);
+    };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+  async function runCutout() {
+    const cut = store.ui.cutout;
+    if (!cut || !cut.points.some((q) => q[2] === 1)) return store.toast('Tap the thing to cut out first.', 'error');
+    const c = store.project.clips.find((x) => x.id === cut.clipId);
+    const srcT = c ? sourceAt(store.project, c, store.ui.time) : null;
+    if (!c || srcT == null) return;
+    const points = cut.points.map((q) => [...q] as [number, number, 0 | 1]);
+    store.ui.cutout = null;
+    try {
+      await cutOutThroughClip(c.id, points, srcT);
+    } catch (err) {
+      store.toast('Cut-out failed: ' + (err as Error).message, 'error');
+    }
   }
 
   /** Drag one corner of the surface being picked (0–3), or the whole shape ('all'). Arrow keys nudge a corner. */
@@ -779,7 +943,7 @@
   <div
     class="stage"
     class:compact
-    class:picking={store.ui.eyedropper || !!store.ui.trackPick || !!store.ui.surfacePick || store.ui.pen || !!paintFx}
+    class:picking={store.ui.eyedropper || !!store.ui.trackPick || !!store.ui.surfacePick || !!store.ui.cutout || store.ui.pen || !!paintFx}
     bind:this={wrap}
     onpointerdown={(e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
@@ -787,6 +951,7 @@
       if (store.ui.trackPick) return drawTrackBox(e);
       // the corners of a surface are dragged by their own handles
       if (store.ui.surfacePick) return;
+      if (store.ui.cutout) return cutPointer(e);
       if (store.ui.pen) return penStroke(e);
       if (paintFx) return paintStroke(e);
       if (compact && hasTimeline && store.ui.compare === 'off') {
@@ -814,6 +979,7 @@
     }}
     onpointercancel={() => ((draggingSplit = false), (tapAt = null), clearTimeout(holdTimer))}
     oncontextmenu={(e) => {
+      if (store.ui.cutout) return e.preventDefault();
       if (!hasTimeline || store.ui.trackPick || store.ui.surfacePick || store.ui.pen || paintFx) return;
       e.preventDefault();
       openQuick(e);
@@ -864,6 +1030,24 @@
       <div class="stage-note mono picknote surfacebar">
         <span>drag the corners onto a flat surface (a screen, a wall, a sign) · Esc to cancel</span>
         <button class="sftrack" onclick={() => confirmSurface()}>Track it</button>
+      </div>
+    {/if}
+    {#if store.ui.cutout && hasTimeline}
+      {@const pb = pictureBoxAt(stageSize)}
+      <canvas class="cutmask" bind:this={cutCanvas} style="left:{pb.left}px;top:{pb.top}px;width:{pb.width}px;height:{pb.height}px" aria-hidden="true"></canvas>
+      <div class="cutdots" style="left:{pb.left}px;top:{pb.top}px;width:{pb.width}px;height:{pb.height}px" aria-hidden="true">
+        {#each cutDots as d}<span class="cutdot" class:out={d.label === 0} style="left:{d.at[0] * 100}%;top:{d.at[1] * 100}%"></span>{/each}
+      </div>
+      <div class="stage-note mono picknote surfacebar">
+        <span>{cutState === 'loading' ? 'getting the picture…' : cutState === 'thinking' ? 'finding it…' : cutState === 'error' ? cutError : cutDots.length ? 'tap more to add or take away · long-press or Alt-click to leave something out' : 'tap the thing to cut out'} · Esc to cancel</span>
+        <button class="sftrack" disabled={!cutMask} onclick={runCutout}>Cut out through clip</button>
+        {#if cutDots.length}<button class="sftrack ghostbtn" onclick={() => ((store.ui.cutout!.points = []), (cutMask = null))}>Clear</button>{/if}
+      </div>
+    {/if}
+    {#if cutoutJob.running}
+      <div class="stage-note mono picknote surfacebar">
+        <span>cutting out… {Math.round(cutoutJob.progress * 100)}%</span>
+        <button class="sftrack" onclick={() => (cutoutJob.cancel = true)}>Cancel</button>
       </div>
     {/if}
     {#if store.ui.trackPick && !trackRect}
@@ -1103,6 +1287,32 @@
     stroke: var(--accent);
     stroke-width: 3px;
     vector-effect: non-scaling-stroke;
+  }
+  .cutmask,
+  .cutdots {
+    position: absolute;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .cutdot {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    margin: -7px 0 0 -7px;
+    border-radius: 50%;
+    border: 2px solid #fff;
+    background: #22c55e;
+  }
+  .cutdot.out {
+    background: #ef4444;
+  }
+  .sftrack:disabled {
+    opacity: 0.45;
+  }
+  .sftrack.ghostbtn {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--line-2);
   }
   .surfacelayer {
     position: absolute;
