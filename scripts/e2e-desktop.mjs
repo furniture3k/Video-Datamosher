@@ -9,6 +9,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import dgram from 'node:dgram';
+import { layoutProblems, pictureProblem } from './layout-check.mjs';
 
 const app = path.resolve(process.argv[2] ?? `src-tauri/target/debug/moshpit${process.platform === 'win32' ? '.exe' : ''}`);
 const shots = path.resolve('test-results/desktop');
@@ -318,6 +319,38 @@ try {
     await waitFor(() => document.querySelectorAll('.card.project').length === 0, 5000);
     await run(() => window.__moshpit.projects.startProject());
     await waitFor(() => !window.__moshpit.store.ui.home, 5000);
+  });
+  await step('every window size lays out cleanly, with every picture shape', async () => {
+    await run(async () => {
+      const m = window.__moshpit;
+      m.store.ui.home = false;
+      m.store.ui.dialog = null;
+      if (!m.store.project.clips.length) await m.media.loadExample();
+    });
+    await waitFor(() => [...document.querySelectorAll('.stage canvas')].some((c) => !c.classList.contains('hidden') && c.width > 0), 60000);
+    const bad = [];
+    // from the smallest the window can be to the largest the test screen holds
+    for (const [width, height] of [[900, 560], [1024, 640], [1280, 720], [1366, 768], [1440, 900], [1600, 1000]]) {
+      await wd('POST', `/session/${sid}/window/rect`, { x: 0, y: 0, width, height }).catch(() => {});
+      await new Promise((r) => setTimeout(r, 600));
+      const [iw, ih] = await exec(() => [innerWidth, innerHeight]);
+      for (const a of ['auto', '9:16', '1:1', '21:9']) {
+        await exec((a) => (window.__moshpit.store.project.encoder.aspect = a), a);
+        await new Promise((r) => setTimeout(r, 300));
+        const found = [...(await exec(layoutProblems)), (await exec(pictureProblem)) ?? []].flat();
+        if (found.length) bad.push(`${iw}×${ih} ${a}:\n    ${found.slice(0, 8).join('\n    ')}`);
+      }
+      for (const d of ['export', 'help', 'addEffect']) {
+        await exec((d) => (window.__moshpit.store.ui.dialog = d), d);
+        await new Promise((r) => setTimeout(r, 300));
+        const found = await exec(layoutProblems);
+        if (found.length) bad.push(`${iw}×${ih} ${d} dialog:\n    ${found.slice(0, 8).join('\n    ')}`);
+        await exec(() => (window.__moshpit.store.ui.dialog = null));
+      }
+      if (width === 900) await shot('5-smallest-window.png');
+    }
+    await exec(() => (window.__moshpit.store.project.encoder.aspect = 'auto'));
+    if (bad.length) throw new Error('layout problems:\n  ' + bad.join('\n  '));
   });
   if (process.env.LONG_FILE) {
     // A long video imported from disk like a user would (e.g. made with

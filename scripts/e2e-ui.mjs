@@ -7,7 +7,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { chromium } from 'playwright-core';
 
-const dist = path.resolve('dist');
+const dist = path.resolve(process.env.DIST || 'dist');
 const types = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.html': 'text/html', '.css': 'text/css', '.json': 'application/json', '.webm': 'video/webm', '.png': 'image/png', '.jpg': 'image/jpeg' };
 const server = http
   .createServer((req, res) => {
@@ -2263,8 +2263,9 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   // the picture really is warmer than before: the LUT pushes grey towards the reference's cast
   const warm = await S(async () => {
     const { store, storage } = window.__moshpit;
-    const lut = store.project.luts[0];
-    const text = await (await storage.getFile('lut:' + lut.id)).text();
+    // the LUT the cut clips use (the project can have others from before)
+    const id = store.project.clips.find((c) => c.track === 'v1').grade.lut;
+    const text = await (await storage.getFile('lut:' + id)).text();
     const rows = text.split('\n').filter((l) => /^[-+.\d]/.test(l.trim()));
     const size = Number((/LUT_3D_SIZE\s+(\d+)/.exec(text) ?? [])[1]);
     const mid = Math.floor(size / 2);

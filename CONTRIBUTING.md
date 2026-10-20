@@ -23,6 +23,7 @@ Before opening a pull request:
 npm run check            # type check
 npm test                 # engine and pipeline tests (uses native ffmpeg if installed)
 npm run build && npm run test:e2e   # drives the built app in Chromium (slow)
+npm run test:screens     # just the layout at every window size and picture shape
 ```
 
 CI runs the same checks plus the desktop app's WebDriver test on Linux.
