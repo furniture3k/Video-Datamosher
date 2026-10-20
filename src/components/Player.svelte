@@ -152,6 +152,7 @@
   // deep signatures of the timeline: worked out again only when it changes, not on every frame
   const clipsSig = $derived(JSON.stringify(store.project.clips));
   const layersSig = $derived(JSON.stringify(store.project.layers));
+  const canvasSig = $derived(JSON.stringify(store.project.canvas ?? null));
   const soundSig = $derived(JSON.stringify(store.project.tracks) + clipsSig);
   $effect(() => {
     // redraw when the time or anything on the timeline changes (while paused)
@@ -160,6 +161,7 @@
     void layersSig;
     void store.project.media.length;
     void store.project.encoder.aspect;
+    void canvasSig;
     void lutState.loaded;
     void fontState.loaded;
     if (!mosh && !store.ui.playing) untrack(drawEdit);

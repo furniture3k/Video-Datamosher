@@ -10,6 +10,7 @@ import { VIDEO_TRACK, type Clip, type Project } from '../engine/types';
 import { FIRST_ROW, type TextLayer } from '../engine/layers';
 import type { TrackJob } from './track.worker';
 import { markLayers } from '../engine/annotate';
+import { cardScale, offCard, onCard } from '../engine/canvas';
 import { shapeLook } from './edit';
 
 export const motionJob = $state({ running: false, stage: '' });
@@ -23,6 +24,13 @@ export function pictureRect(c: Clip, p: Project): { x: number; y: number; w: num
   const [x, y, w, h] = fitRect(c.fit, m?.width || W, m?.height || H, W, H);
   return { x, y, w, h, W, H };
 }
+
+const frameSize = (p: Project): [number, number] => {
+  const { w, h } = outputSize(p, p.encoder.previewWidth);
+  return [w, h];
+};
+/** A point of the picture to where it shows in the frame (on the card, with a canvas). */
+const framed = (p: Project, u: number, v: number) => onCard(p.canvas, ...frameSize(p), u, v);
 
 /** Map from a clip's source picture (0..1) to the output frame (0..1) at `local` seconds into it. */
 function placement(p: Project, c: Clip, local: number) {
@@ -137,9 +145,11 @@ export async function trackClip(id: string, box: [number, number, number, number
   const fps = p.encoder.fps;
   const local = Math.max(0, Math.min(clipLen(c) - 1e-3, store.ui.time - clipStart(p, c)));
   const srcT = sourceTime(c, local);
-  // the box from the output frame into the clip's own picture (undoing its zoom, move, turn and stabilization)
+  // the box from the output frame into the clip's own picture (undoing the canvas, and its zoom, move, turn and stabilization)
   const inv = invert(placement(p, c, local));
-  const corners = [apply(inv, box[0], box[1]), apply(inv, box[2], box[1]), apply(inv, box[0], box[3]), apply(inv, box[2], box[3])];
+  const [W, H] = frameSize(p);
+  const pic = (x: number, y: number) => apply(inv, ...offCard(p.canvas, W, H, x, y));
+  const corners = [pic(box[0], box[1]), pic(box[2], box[1]), pic(box[0], box[3]), pic(box[2], box[3])];
   const clamp = (v: number) => Math.max(0, Math.min(1, v));
   const u0 = clamp(Math.min(...corners.map((q) => q[0])));
   const u1 = clamp(Math.max(...corners.map((q) => q[0])));
@@ -179,8 +189,11 @@ export async function trackClip(id: string, box: [number, number, number, number
   else store.toast(`${name}: followed it for ${got.toFixed(1)} s of ${res.len.toFixed(1)} s, then lost it (hidden, blurred or out of frame).`, 'info', 5000);
 }
 
-/** A path as timeline positions [timeline seconds, x, y in the output frame 0..1], simplified. */
-export function pathOnTimeline(p: Project, c: Clip, pathId: string): [number, number, number][] {
+/**
+ * A path as timeline positions [timeline seconds, x, y in the output frame 0..1], simplified.
+ * 'picture': where it is in the picture before a canvas sets it in (for moving clips with it).
+ */
+export function pathOnTimeline(p: Project, c: Clip, pathId: string, space: 'frame' | 'picture' = 'frame'): [number, number, number][] {
   const path = c.paths?.find((x) => x.id === pathId);
   if (!path) return [];
   const start = clipStart(p, c);
@@ -191,7 +204,7 @@ export function pathOnTimeline(p: Project, c: Clip, pathId: string): [number, nu
     // parts trimmed off the clip aren't on the timeline
     if (local < -1e-6 || local > len + 1e-6) continue;
     const [u, v] = apply(placement(p, c, local), x, y);
-    pts.push([start + local, u, v]);
+    pts.push([start + local, ...(space === 'frame' ? framed(p, u, v) : [u, v])] as [number, number, number]);
   }
   pts.sort((a, b) => a[0] - b[0]);
   if (!pts.length) return [];
@@ -210,7 +223,8 @@ export function pathSize(p: Project, c: Clip, pathId: string): [number, number] 
   const path = c.paths?.find((x) => x.id === pathId);
   if (!path?.size) return null;
   const m = placement(p, c, 0);
-  return [path.size[0] * Math.hypot(m[0], m[1]), path.size[1] * Math.hypot(m[2], m[3])];
+  const [kx, ky] = cardScale(p.canvas, ...frameSize(p));
+  return [path.size[0] * Math.hypot(m[0], m[1]) * kx, path.size[1] * Math.hypot(m[2], m[3]) * ky];
 }
 
 /** Value of [t, x, y] points at t (binary search; held at the ends). */
@@ -296,7 +310,7 @@ export function clipFollows(clipId: string, pathId: string, followerId: string) 
   const c = p.clips.find((x) => x.id === clipId);
   const f = p.clips.find((x) => x.id === followerId);
   if (!c || !f) return;
-  const path = pathOnTimeline(p, c, pathId).filter(([t]) => t >= f.start - 1e-6 && t <= f.start + clipLen(f) + 1e-6);
+  const path = pathOnTimeline(p, c, pathId, 'picture').filter(([t]) => t >= f.start - 1e-6 && t <= f.start + clipLen(f) + 1e-6);
   if (!path.length) return store.toast("That clip isn't on screen while the object is tracked.", 'error');
   store.edit((q) => {
     const x = q.clips.find((y) => y.id === followerId);

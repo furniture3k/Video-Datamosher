@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from '../lib/store.svelte';
   import Field from './Field.svelte';
+  import CanvasPanel from './CanvasPanel.svelte';
   import type { EncoderSettings, DecoderSettings } from '../engine/types';
   const e = $derived(store.project.encoder);
   const d = $derived(store.project.decoder);
@@ -103,6 +104,7 @@
     help="Shape of the output video."
     onchange={setE('aspect')}
   />
+  <CanvasPanel />
   <Field type="select" label="Frame rate" value={e.fps} options={[8, 12, 15, 24, 25, 30, 50, 60].map((f) => ({ value: f, label: `${f} fps` }))} help="Lower frame rates make every mosh step bigger and choppier." onchange={(v: number) => store.editTimeline((p) => (p.encoder.fps = v))} />
 
   <div class="row small">

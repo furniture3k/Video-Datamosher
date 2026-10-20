@@ -6,7 +6,9 @@ import { getFile } from './storage';
 import { lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
-import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { backdropPlate, borderPlate, maskPlate } from './canvas';
+import { cardRect, hasCanvas } from '../engine/canvas';
+import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
@@ -156,6 +158,24 @@ async function layerOverlays(project: Project, w: number, h: number, mounts: Rec
   return out;
 }
 
+/** The canvas's pictures for the prep graph (see CanvasPlates), when the picture is set in. */
+async function canvasPlates(project: Project, w: number, h: number, mounts: Record<string, Blob>): Promise<CanvasPlates | undefined> {
+  const c = project.canvas;
+  if (!hasCanvas(c)) return undefined;
+  const R = cardRect(c, w, h);
+  mounts['canvas_bg.png'] = await canvasPng(backdropPlate(c, w, h));
+  const out: CanvasPlates = { bg: MOUNT + 'canvas_bg.png' };
+  if (R.r > 0) {
+    mounts['canvas_mask.png'] = await canvasPng(maskPlate(R));
+    out.mask = MOUNT + 'canvas_mask.png';
+  }
+  if ((c.border ?? 0) > 0) {
+    mounts['canvas_border.png'] = await canvasPng(borderPlate(c, w, h));
+    out.border = MOUNT + 'canvas_border.png';
+  }
+  return out;
+}
+
 const canvasPng = (c: HTMLCanvasElement) => new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('drawing a layer failed'))), 'image/png'));
 
 function layerPng(l: Layer, w: number, h: number): Promise<Blob> {
@@ -195,6 +215,7 @@ export async function prepare(project: Project, width: number, progress?: Progre
   const size = outputSize(project, width);
   await ensureFonts(project);
   const overlays = await layerOverlays(project, size.w, size.h, mounts, progress, signal);
+  const plates = await canvasPlates(project, size.w, size.h, mounts);
   // Without keyframes at cuts the stream must be encoded in one go (cuts become P-frames).
   const whole = !project.encoder.keyAtCuts;
   const segs: (Segment | null)[] = whole ? [null] : segments(project, fps);
@@ -203,12 +224,12 @@ export async function prepare(project: Project, width: number, progress?: Progre
   let done = 0;
   for (const seg of segs) {
     check(signal);
-    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays), t: project.layers.filter((t) => t.moshed) }));
+    const key = (preview ? 'p' : 'x') + width + (seg ? segmentKey(project, seg, width, path) : JSON.stringify({ whole: prepArgs(project, width, 'o', path, overlays, plates), t: project.layers.filter((t) => t.moshed), cv: project.canvas }));
     const n = seg ? seg.f1 - seg.f0 : totalFrames;
     let part = preview ? segCache.get(key) : undefined;
     if (!part) {
       const name = disk ? `prep_${parts.length}.avi` : 'prep.avi';
-      const args = seg ? segmentArgs(project, seg, width, name, path, overlays) : prepArgs(project, width, name, path, overlays);
+      const args = seg ? segmentArgs(project, seg, width, name, path, overlays, plates) : prepArgs(project, width, name, path, overlays, plates);
       const base = done;
       const onFrame = (k: number) => progress?.('Preparing clips', Math.min(1, (base + k) / totalFrames));
       let log: string;

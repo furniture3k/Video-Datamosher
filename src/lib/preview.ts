@@ -5,6 +5,8 @@ import { mediaState } from './mediastate.svelte';
 import { getPcm } from './media';
 import { proxyKey } from './renderer';
 import { drawLayers } from './layers';
+import { drawCanvas } from './canvas';
+import { hasCanvas } from '../engine/canvas';
 import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
 import { keyedValue } from '../engine/keys';
 import { linearAt } from '../engine/track';
@@ -297,6 +299,8 @@ export class EditPreview {
     }
     for (const v of this.videos.values()) if (!used.has(v) && !v.paused) v.pause();
 
+    // the picture as a card on its backdrop; graphics go over the whole frame
+    if (hasCanvas(p.canvas)) drawCanvas(ctx, p.canvas, w, h);
     drawLayers(ctx, p.layers, t, w, h, 'all');
     if (waiting || unavailable) {
       const msg = unavailable ? "this browser can't preview this file live (the mosh view works)" : 'preparing preview…';
