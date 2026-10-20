@@ -2386,10 +2386,12 @@ await isoStep('type and shapes: gradient, line and word looks, polygon, leader l
   await look();
   const leader = await S(() => {
     const px = window.__px();
-    // the line runs from the top left of its box to the bottom right: its ends are at (0.3, 0.3) and (0.7, 0.7) of the frame
+    // the line runs from the top left of its box to the bottom right: its box is square on the screen, 0.4 of the width across
+    const cv = document.querySelector('.stage canvas.edit');
+    const yo = 0.2 * cv.width / cv.height;
     const sq = (cx, cy) => { let n = 0; for (let dy = -0.04; dy <= 0.04; dy += 0.01) for (let dx = -0.025; dx <= 0.025; dx += 0.005) { const [r, g, b] = px.at(cx + dx, cy + dy); if (r + g + b > 450) n++; } return n; };
     const side = (cx, cy) => px.at(cx + 0.018, cy - 0.018).reduce((a, v) => a + v, 0);
-    return { a: sq(0.3, 0.3), b: sq(0.7, 0.7), aside: side(0.3, 0.3), bside: side(0.7, 0.7), mid: px.at(0.5, 0.5).reduce((a, v) => a + v, 0) };
+    return { a: sq(0.3, 0.5 - yo), b: sq(0.7, 0.5 + yo), aside: side(0.3, 0.5 - yo), bside: side(0.7, 0.5 + yo), mid: px.at(0.5, 0.5).reduce((a, v) => a + v, 0) };
   });
   if (!(leader.a > 40 && leader.b > 40 && leader.aside > 450 && leader.bside > 450 && leader.mid > 300)) throw new Error('leader line: ' + JSON.stringify(leader));
   await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
@@ -2412,8 +2414,10 @@ await isoStep('type and shapes: gradient, line and word looks, polygon, leader l
     const cy = 0.5;
     const edge = (u) => px.at(u, cy);
     // along the horizontal axis: inside white, then the red outline, then black
-    const r = 0.1 * h / w;
-    return { inside: edge(0.5 + r * 0.5), ring: edge(0.5 + r + 0.012), outside: edge(0.5 + r + 0.08), shadow: px.at(0.5, 0.5 + 0.1 + 0.05 + 0.02) };
+    // the diamond is 0.2 of the width across and 0.2 of the width tall on the screen
+    const r = 0.1;
+    const hh = 0.1 * (w / h);
+    return { inside: edge(0.5 + r * 0.5), ring: edge(0.5 + r + 0.005), outside: edge(0.5 + r + 0.06), shadow: px.at(0.5, 0.5 + hh + 0.02 + 0.03) };
   });
   if (!(fx.inside[0] > 200 && fx.inside[1] > 200 && fx.ring[0] > 150 && fx.ring[1] < 90 && fx.outside.every((v) => v < 60) && fx.shadow[1] > 150 && fx.shadow[0] < 90)) throw new Error('shadow and outline: ' + JSON.stringify(fx));
   // the shadow and outline controls are in the shape's settings, and a shape style puts a look on it in one click
