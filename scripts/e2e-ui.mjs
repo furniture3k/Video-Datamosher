@@ -2292,6 +2292,144 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   await S(() => (window.__moshpit.store.ui.home = false));
 });
 
+await isoStep('type and shapes: gradient, line and word looks, polygon, leader line, callout, shadow and outline, shape styles', async () => {
+  // titles over black, so what is drawn is what is there; the pixels are read off the live edit picture
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.ui.view = 'edit';
+    st.ui.playing = false;
+    st.edit((p) => (p.layers = []));
+    window.__px = (spec) => {
+      const cv = document.querySelector('.stage canvas.edit');
+      const g = cv.getContext('2d');
+      const d = g.getImageData(0, 0, cv.width, cv.height).data;
+      const out = { w: cv.width, h: cv.height, red: 0, blue: 0, white: 0, any: 0, rows: [], at: (x, y) => { const i = (Math.round(y * cv.height) * cv.width + Math.round(x * cv.width)) * 4; return [d[i], d[i + 1], d[i + 2]]; } };
+      for (let y = 0; y < cv.height; y++) {
+        let row = 0;
+        for (let x = 0; x < cv.width; x++) {
+          const i = (y * cv.width + x) * 4;
+          if (d[i] + d[i + 1] + d[i + 2] > 90) (out.any++, row++);
+        }
+        out.rows.push(row);
+      }
+      return out;
+    };
+    st.seek(0.5);
+  });
+  const add = (l) => S((l) => window.__moshpit.store.edit((p) => p.layers.push({ id: l.id ?? 'x' + p.layers.length, kind: 'text', row: 'g' + (p.layers.length + 1), start: 0, duration: 2, size: 0.3, color: '#ffffff', font: 'impact', bold: false, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, ...l })), l);
+  const look = async () => { await page.waitForTimeout(450); };
+  // ---- a gradient: the top of the letters is red and the bottom is blue
+  await add({ id: 'gr', text: 'WWWW', size: 0.45, color: '#ff0000', gradient: { to: '#0000ff', angle: 90 } });
+  await look();
+  const grad = await S(() => {
+    const cv = document.querySelector('.stage canvas.edit');
+    const g = cv.getContext('2d');
+    const d = g.getImageData(0, 0, cv.width, cv.height).data;
+    let y0 = 1e9, y1 = -1;
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) if (d[(y * cv.width + x) * 4] + d[(y * cv.width + x) * 4 + 2] > 120) (y0 = Math.min(y0, y)), (y1 = Math.max(y1, y));
+    const avg = (ya, yb) => { let r = 0, b = 0, n = 0; for (let y = ya; y <= yb; y++) for (let x = 0; x < cv.width; x++) { const i = (y * cv.width + x) * 4; if (d[i] + d[i + 2] > 120) (r += d[i]), (b += d[i + 2]), n++; } return n ? [r / n, b / n] : [0, 0]; };
+    const h = y1 - y0;
+    return { top: avg(y0, y0 + Math.floor(h * 0.25)), bottom: avg(y1 - Math.floor(h * 0.25), y1) };
+  });
+  if (!(grad.top[0] > grad.top[1] * 2 && grad.bottom[1] > grad.bottom[0] * 2)) throw new Error('gradient: ' + JSON.stringify(grad));
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  // ---- a line with a look of its own: the second line twice the size and green
+  await add({ id: 'ln', text: 'IIII\nIIII', size: 0.12, lines: [{}, { size: 2, color: '#00ff00' }] });
+  await look();
+  const lines = await S(() => {
+    const cv = document.querySelector('.stage canvas.edit');
+    const g = cv.getContext('2d');
+    const d = g.getImageData(0, 0, cv.width, cv.height).data;
+    const rows = [];
+    for (let y = 0; y < cv.height; y++) { let c = 0, gr = 0; for (let x = 0; x < cv.width; x++) { const i = (y * cv.width + x) * 4; if (d[i] + d[i + 1] + d[i + 2] > 120) (c++, d[i + 1] > 150 && d[i] < 100 && gr++); } rows.push([c, gr]); }
+    // two bands of rows with pixels, and the green ones are in the lower band
+    const bands = []; let cur = null;
+    rows.forEach(([c], y) => { if (c) (cur ??= { y0: y, y1: y }), (cur.y1 = y); else if (cur) (bands.push(cur), (cur = null)); });
+    if (cur) bands.push(cur);
+    const green = rows.reduce((s, r) => s + r[1], 0);
+    return { bands: bands.map((b) => b.y1 - b.y0 + 1), green, H: cv.height };
+  });
+  if (!(lines.bands.length === 2 && lines.bands[1] > lines.bands[0] * 1.6 && lines.green > 50)) throw new Error('lines: ' + JSON.stringify(lines));
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  // ---- a word in a colour of its own
+  await add({ id: 'wd', text: 'RED WORD', size: 0.3, colourRuns: [{ from: 0, to: 3, color: '#ff0000' }] });
+  await look();
+  const words = await S(() => {
+    const cv = document.querySelector('.stage canvas.edit');
+    const g = cv.getContext('2d');
+    const d = g.getImageData(0, 0, cv.width, cv.height).data;
+    let left = [0, 0, 0], right = [0, 0, 0];
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) { const i = (y * cv.width + x) * 4; if (d[i] + d[i + 1] + d[i + 2] < 150) continue; const t = x < cv.width * 0.42 ? left : right; t[0] += d[i]; t[1] += d[i + 1]; t[2] += d[i + 2]; }
+    return { left, right };
+  });
+  if (!(words.left[0] > words.left[1] * 3 && words.right[1] > words.right[0] * 0.8)) throw new Error('word colours: ' + JSON.stringify(words));
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  // ---- the settings are there: gradient, line looks and word colours show for the right titles
+  await add({ id: 'ui', text: 'ONE TWO\nTHREE', size: 0.12 });
+  await S(() => window.__moshpit.store.selectClip('ui'));
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  await page.getByRole('group', { name: 'Words to colour' }).waitFor();
+  await page.getByLabel('Line 2 colour').waitFor();
+  await page.getByLabel('Line 1 typeface').waitFor();
+  await page.getByText('Shadow and outline').waitFor();
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  // ---- polygon: a triangle fills less of its box than an octagon
+  const shape = (l) => S((l) => window.__moshpit.store.edit((p) => p.layers.push({ id: l.id, kind: 'shape', row: 'g1', shape: 'polygon', start: 0, duration: 2, x: 0.5, y: 0.5, w: 0.4, h: 0.4 * 16 / 9, color: '#ffffff', width: 0.006, fill: '#ffffff', fade: 0, moshed: false, ...l })), l);
+  const filled = async () => { await look(); return S(() => window.__px().any); };
+  await shape({ id: 'pg', sides: 3 });
+  const tri = await filled();
+  await S(() => window.__moshpit.store.edit((p) => (p.layers[0].sides = 8)));
+  const oct = await filled();
+  if (!(oct > tri * 1.35)) throw new Error(`polygon: triangle ${tri}, octagon ${oct}`);
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  // ---- leader line: a filled square at each end, wider than the line
+  await shape({ id: 'ld', shape: 'leader', w: 0.4, h: 0.4 * 16 / 9, width: 0.004, head: 0.08 });
+  await look();
+  const leader = await S(() => {
+    const px = window.__px();
+    // the line runs from the top left of its box to the bottom right: its box is square on the screen, 0.4 of the width across
+    const cv = document.querySelector('.stage canvas.edit');
+    const yo = 0.2 * cv.width / cv.height;
+    const sq = (cx, cy) => { let n = 0; for (let dy = -0.04; dy <= 0.04; dy += 0.01) for (let dx = -0.025; dx <= 0.025; dx += 0.005) { const [r, g, b] = px.at(cx + dx, cy + dy); if (r + g + b > 450) n++; } return n; };
+    const side = (cx, cy) => px.at(cx + 0.018, cy - 0.018).reduce((a, v) => a + v, 0);
+    return { a: sq(0.3, 0.5 - yo), b: sq(0.7, 0.5 + yo), aside: side(0.3, 0.5 - yo), bside: side(0.7, 0.5 + yo), mid: px.at(0.5, 0.5).reduce((a, v) => a + v, 0) };
+  });
+  if (!(leader.a > 40 && leader.b > 40 && leader.aside > 450 && leader.bside > 450 && leader.mid > 300)) throw new Error('leader line: ' + JSON.stringify(leader));
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  // ---- a callout from the palette: four layers, one group, the title picked
+  await page.keyboard.press('Control+p');
+  await page.locator('.pal input').waitFor();
+  await page.keyboard.type('add a callout');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.length === 4, null, { timeout: 5000 });
+  const co = await S(() => { const st = window.__moshpit.store; return { kinds: st.project.layers.map((l) => l.shape ?? 'text'), groups: new Set(st.project.layers.map((l) => l.group)).size, picked: st.project.layers.find((l) => l.id === st.ui.selectedClips[0])?.text }; });
+  if (co.kinds.join() !== 'rect,leader,text,text' || co.groups !== 1 || co.picked !== 'Title') throw new Error('callout: ' + JSON.stringify(co));
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+  // ---- a shadow and an outer stroke on a shape
+  await shape({ id: 'fx', sides: 4, w: 0.2, h: 0.2 * 16 / 9, fill: '#ffffff', fx: { outline: { width: 0.02, color: '#ff0000' }, shadow: { dx: 0, dy: 0.05, blur: 0.0, color: '#00ff00' } } });
+  await look();
+  const fx = await S(() => {
+    const px = window.__px();
+    // the square has half-width 0.1 of the frame height → a polygon with 4 sides is a diamond: use the middle of its right corner region
+    const h = px.h, w = px.w;
+    const cy = 0.5;
+    const edge = (u) => px.at(u, cy);
+    // along the horizontal axis: inside white, then the red outline, then black
+    // the diamond is 0.2 of the width across and 0.2 of the width tall on the screen
+    const r = 0.1;
+    const hh = 0.1 * (w / h);
+    return { inside: edge(0.5 + r * 0.5), ring: edge(0.5 + r + 0.005), outside: edge(0.5 + r + 0.06), shadow: px.at(0.5, 0.5 + hh + 0.02 + 0.03) };
+  });
+  if (!(fx.inside[0] > 200 && fx.inside[1] > 200 && fx.ring[0] > 150 && fx.ring[1] < 90 && fx.outside.every((v) => v < 60) && fx.shadow[1] > 150 && fx.shadow[0] < 90)) throw new Error('shadow and outline: ' + JSON.stringify(fx));
+  // the shadow and outline controls are in the shape's settings, and a shape style puts a look on it in one click
+  await S(() => window.__moshpit.store.selectClip('fx'));
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  await page.getByRole('group', { name: 'Shape styles' }).waitFor();
+  await page.getByRole('button', { name: /^Neon/ }).click();
+  await page.waitForFunction(() => { const l = window.__moshpit.store.project.layers.find((x) => x.id === 'fx'); return l.color === '#22d3ee' && l.glow === 0.8 && !l.fx; }, null, { timeout: 5000 });
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = [])));
+});
+
 await isoStep('type: text bent into an arch follows the arc, and a title leaned back shrinks towards the top, in the preview and the render', async () => {
   // where the white pixels of a picture are, by columns (the ends against the middle) and by rows (top against bottom)
   await S(() => {

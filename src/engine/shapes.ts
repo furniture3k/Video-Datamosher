@@ -18,8 +18,10 @@ export const SHAPES: { value: ShapeKind; label: string; hint: string }[] = [
   { value: 'circle', label: 'Circle', hint: 'A ring or a dot.' },
   { value: 'triangle', label: 'Triangle', hint: 'Points up.' },
   { value: 'star', label: 'Star', hint: 'Five points.' },
+  { value: 'polygon', label: 'Polygon', hint: 'Three or more equal sides: a pentagon, a hexagon, a stop sign.' },
   { value: 'line', label: 'Line', hint: 'From one corner to the other; bend it into a curve.' },
   { value: 'arrow', label: 'Arrow', hint: 'Points at something; bend it into a curve.' },
+  { value: 'leader', label: 'Leader line', hint: 'A line with a small square at each end, to point at something and carry a note.' },
   { value: 'bracket', label: 'Corners', hint: 'Four corner marks, like a camera focusing.' },
   { value: 'underline', label: 'Underline', hint: 'A hand-drawn line under a word.' },
   { value: 'highlight', label: 'Highlighter', hint: 'A see-through marker stripe.' },
@@ -83,10 +85,29 @@ const box = (w: number, h: number): Pt[] => [
  * The shape's lines in a W×H frame, in pixels about its position (before turning). `w` and `h`
  * are the shape's box; lines and arrows go from its top-left corner to its bottom-right one.
  */
-export function shapeStrokes(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' | 'head' | 'bend' | 'points'>, W: number, H: number): Stroke[] {
+export function shapeStrokes(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' | 'head' | 'bend' | 'points' | 'sides' | 'flip'>, W: number, H: number): Stroke[] {
+  const out = strokesOf(s, W, H);
+  // the line kinds can run the other diagonal
+  if (s.flip && (s.shape === 'line' || s.shape === 'arrow' || s.shape === 'leader')) return out.map((st) => ({ ...st, pts: st.pts.map(([x, y]) => [-x, y] as Pt) }));
+  return out;
+}
+
+function strokesOf(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' | 'head' | 'bend' | 'points' | 'sides'>, W: number, H: number): Stroke[] {
   const w = s.w * W;
   const h = s.h * H;
   switch (s.shape) {
+    case 'polygon': {
+      const n = Math.max(3, Math.min(24, Math.round(s.sides ?? 5)));
+      return [{ pts: ring(n, (a) => [(Math.sin(a) * w) / 2, (-Math.cos(a) * h) / 2]), closed: true }];
+    }
+    case 'leader': {
+      // a line with a small square at each end, to point at something and carry a note
+      const a: Pt = [-w / 2, -h / 2];
+      const b: Pt = [w / 2, h / 2];
+      const q = Math.max(4, Math.hypot(w, h) * (s.head ?? 0.06)) / 2;
+      const sq = (c: Pt): Stroke => ({ pts: [[c[0] - q, c[1] - q], [c[0] + q, c[1] - q], [c[0] + q, c[1] + q], [c[0] - q, c[1] + q]], closed: true });
+      return [{ pts: bow(a, b, s.bend ?? 0), closed: false }, sq(a), sq(b)];
+    }
     case 'rect':
       return [{ pts: box(w, h), closed: true }];
     case 'round':
@@ -248,9 +269,12 @@ export function newShape(shape: ShapeKind, id: string, row: string, start: numbe
   // a side of `k` frame heights, as shares of the width and the height
   const sq = (k: number): [number, number] => [Math.min(0.9, k / aspect), k];
   const [w, h] =
-    shape === 'underline' ? [0.4, 0.03] : shape === 'highlight' ? [0.4, 0.06] : shape === 'line' || shape === 'arrow' ? sq(0.22) : shape === 'tunnel' ? sq(0.6) : sq(0.3);
+    shape === 'underline' ? [0.4, 0.03] : shape === 'highlight' ? [0.4, 0.06] : shape === 'line' || shape === 'arrow' || shape === 'leader' ? sq(0.22) : shape === 'tunnel' ? sq(0.6) : sq(0.3);
   const s: ShapeLayer = { id, kind: 'shape', row, shape, start, duration: 3, x: 0.5, y: 0.5, fade: 0, moshed: false, w, h, ...look };
   if (shape === 'tunnel') s.count = 6;
+  if (shape === 'polygon') s.sides = 6;
+  // the squares at the ends of a leader line are filled with its colour
+  if (shape === 'leader') Object.assign(s, { fill: look.color, head: 0.06 });
   if (shape === 'cursor') Object.assign(s, { w: sq(0.06)[0], h: 0.06 * 1.4, color: '#000000', fill: '#ffffff', width: 0.003, drawOn: undefined });
   if (shape === 'heart') Object.assign(s, { color: '#ff2d55', fill: '#ff2d55', drawOn: undefined });
   if (shape === 'sparkle') Object.assign(s, { color: '#fff6c9', fill: '#ffffff', glow: 0.7, drawOn: undefined, w: sq(0.18)[0], h: 0.18 });

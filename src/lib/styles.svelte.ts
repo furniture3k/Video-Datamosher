@@ -4,8 +4,8 @@ import { store } from './store.svelte';
 import { askText } from './ask';
 import { localGet, localSet } from './storage';
 import { uid } from '../engine/presets';
-import { BUILTIN_STYLES, applyStyle, styleOf, type TitleStyle } from '../engine/styles';
-import type { TextLayer } from '../engine/layers';
+import { BUILTIN_SHAPE_STYLES, BUILTIN_STYLES, applyShapeStyle, applyStyle, shapeStyleOf, styleOf, type ShapeStyle, type TitleStyle } from '../engine/styles';
+import type { ShapeLayer, TextLayer } from '../engine/layers';
 
 export const titleStyles = $state({
   saved: localGet<TitleStyle[]>('titleStyles', []),
@@ -46,4 +46,37 @@ export function deleteStyle(id: string) {
   titleStyles.saved = titleStyles.saved.filter((s) => s.id !== id);
   localSet('titleStyles', titleStyles.saved);
   if (titleStyles.last === id) remember(null);
+}
+
+// ---------------------------------------------------------------- styles for shapes and stickers
+
+export const shapeStyles = $state({ saved: localGet<ShapeStyle[]>('shapeStyles', []) });
+
+export const allShapeStyles = (): ShapeStyle[] => [...BUILTIN_SHAPE_STYLES, ...shapeStyles.saved];
+
+/** Put a style on these shapes (one undo step); new shapes take the look from now on. */
+export function styleShapes(ids: string[], s: ShapeStyle) {
+  store.edit((p) => {
+    for (const l of p.layers) if (l.kind === 'shape' && l.shape !== 'subject' && ids.includes(l.id)) applyShapeStyle(l, s);
+  });
+  // new shapes get the look too (the same memory the shape settings use)
+  const last = store.project.layers.find((l): l is ShapeLayer => l.kind === 'shape' && ids.includes(l.id));
+  if (last) {
+    const { color, width, fill, glow, drawOn, boil } = last;
+    localSet('shapeLook', { color, width, fill, glow, drawOn, boil });
+  }
+}
+
+/** Save a shape's look as a style of your own. */
+export async function saveShapeStyle(l: ShapeLayer) {
+  const name = (await askText('Name this style', 'My marks'))?.trim();
+  if (!name) return;
+  shapeStyles.saved = [...shapeStyles.saved, shapeStyleOf(l, uid(), name)];
+  localSet('shapeStyles', shapeStyles.saved);
+  store.toast(`Saved the style “${name}” for shapes and stickers.`, 'ok');
+}
+
+export function deleteShapeStyle(id: string) {
+  shapeStyles.saved = shapeStyles.saved.filter((s) => s.id !== id);
+  localSet('shapeStyles', shapeStyles.saved);
 }

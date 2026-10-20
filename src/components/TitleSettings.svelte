@@ -9,8 +9,10 @@
   import SurfaceSettings from './SurfaceSettings.svelte';
   import TiltSettings from './TiltSettings.svelte';
   import DepthSettings from './DepthSettings.svelte';
+  import EffectsSettings from './EffectsSettings.svelte';
+  import { setColourRun, wordSpans } from '../engine/textlayout';
   import ParticleSettings from './ParticleSettings.svelte';
-  import type { TextAnim, TextLayer } from '../engine/layers';
+  import type { LineStyle, TextAnim, TextLayer } from '../engine/layers';
 
   let { title }: { title: TextLayer } = $props();
 
@@ -27,7 +29,80 @@
       'title' + String(k) + id,
     );
   }
+
+  const lines = $derived(title.text.split('\n'));
+  const words = $derived(wordSpans(title.text));
+  let pickWord = $state(0);
+  const wordColour = (i: number) => title.colourRuns?.find((r) => words[i] && r.from <= words[i].from && r.to >= words[i].to)?.color;
+
+  /** change one line's own look (an empty look is taken away) */
+  function setLine(i: number, patch: Partial<LineStyle>) {
+    const id = title.id;
+    store.edit(
+      (p) => {
+        const l = p.layers.find((x) => x.id === id);
+        if (l?.kind !== 'text') return;
+        const arr: LineStyle[] = [...(l.lines ?? [])];
+        while (arr.length <= i) arr.push({});
+        const next: Record<string, unknown> = { ...arr[i], ...patch };
+        for (const k of Object.keys(next)) if (next[k] === undefined || (k === 'size' && next[k] === 1)) delete next[k];
+        arr[i] = next as LineStyle;
+        while (arr.length && !Object.keys(arr[arr.length - 1]).length) arr.pop();
+        if (arr.length) l.lines = arr;
+        else delete l.lines;
+      },
+      'line' + i + id,
+    );
+  }
+  /** colour the picked word (null: back to the title's colour) */
+  function colourWord(color: string | null) {
+    const w = words[pickWord];
+    const id = title.id;
+    if (!w) return;
+    store.edit(
+      (p) => {
+        const l = p.layers.find((x) => x.id === id);
+        if (l?.kind !== 'text') return;
+        const runs = setColourRun(l.colourRuns, w.from, w.to, color);
+        if (runs.length) l.colourRuns = runs;
+        else delete l.colourRuns;
+      },
+      'wordcolour' + pickWord + id,
+    );
+  }
 </script>
+
+<div class="label">Colour</div>
+<Field type="bool" label="Gradient" value={!!title.gradient} help="The letters shade from the title's colour into a second one." onchange={(v: boolean) => set('gradient', v ? { to: '#ff2a6d', angle: 90 } : undefined)} />
+{#if title.gradient}
+  <label class="row small">Ends in <input type="color" value={title.gradient.to} oninput={(e) => set('gradient', { ...title.gradient!, to: (e.target as HTMLInputElement).value })} aria-label="Gradient end colour" /></label>
+  <Field label="Gradient angle" unit="°" min={0} max={360} step={1} value={title.gradient.angle} help="0 shades from left to right, 90 from the top down." onchange={(v: number) => set('gradient', { ...title.gradient!, angle: v })} />
+{/if}
+{#if words.length > 1}
+  <div class="chips" role="group" aria-label="Words to colour">
+    {#each words as w, i (i)}
+      <button class="chip small" class:on={pickWord === i} style="color:{wordColour(i) ?? 'inherit'}" aria-pressed={pickWord === i} onclick={() => (pickWord = i)}>{w.word}</button>
+    {/each}
+  </div>
+  <div class="row">
+    <label class="row small grow">Colour of “{words[Math.min(pickWord, words.length - 1)]?.word}” <input type="color" value={wordColour(Math.min(pickWord, words.length - 1)) ?? title.color} oninput={(e) => colourWord((e.target as HTMLInputElement).value)} aria-label="Colour of the word" /></label>
+    <button class="small ghost" onclick={() => colourWord(null)}>Clear</button>
+  </div>
+{/if}
+{#if lines.length > 1}
+  <div class="label">Lines</div>
+  {#each lines as ln, i (i)}
+    <div class="lnrow">
+      <span class="small grow ln">{i + 1}. {ln || '(empty)'}</span>
+      <input type="color" value={title.lines?.[i]?.color ?? title.color} oninput={(e) => setLine(i, { color: (e.target as HTMLInputElement).value })} aria-label="Line {i + 1} colour" />
+      <select class="small" value={title.lines?.[i]?.font ?? ''} aria-label="Line {i + 1} typeface" onchange={(e) => setLine(i, { font: ((e.target as HTMLSelectElement).value || undefined) as LineStyle['font'] })}>
+        <option value="">Same</option>
+        {#each ['sans', 'serif', 'mono', 'impact'] as f}<option value={f}>{f}</option>{/each}
+      </select>
+    </div>
+    <Field label="Line {i + 1} size" unit="×" min={0.3} max={3} step={0.05} value={title.lines?.[i]?.size ?? 1} help="This line's size, as a multiple of the title's." onchange={(v: number) => setLine(i, { size: v })} />
+  {/each}
+{/if}
 
 <div class="label">Letters</div>
 <Field label="Letter spacing" min={-0.1} max={1} step={0.01} value={title.spacing ?? 0} help="Space between letters, as a share of the letter size." onchange={(v: number) => set('spacing', v)} />
@@ -78,6 +153,7 @@
   {/if}
 {/if}
 <TrailSettings layer={title} />
+<EffectsSettings layer={title} />
 <DepthSettings layer={title} />
 <TiltSettings layer={title} />
 <SurfaceSettings layer={title} />
@@ -88,5 +164,29 @@
     margin-top: 6px;
     font-size: 12px;
     color: var(--text-2);
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .chip {
+    padding: 2px 8px;
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    background: var(--surface-2);
+  }
+  .chip.on {
+    border-color: var(--accent);
+  }
+  .lnrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ln {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

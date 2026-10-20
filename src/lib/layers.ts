@@ -90,30 +90,67 @@ function drawWarped(ctx: CanvasRenderingContext2D, l: Layer, H: Mat3, w: number,
 /** The matte of the footage on screen at timeline time t, as a w×h picture whose opacity is the subject; null when there is none. */
 export type MatteSource = (t: number, w: number, h: number) => CanvasImageSource | null;
 
-let behind: { w: number; h: number; c?: CanvasImageSource; g?: Cx } = { w: 0, h: 0 };
+/** Pictures the size of the frame for a layer drawn on its own before it goes on (cut by a matte, outlined, shadowed). */
+let stage: { w: number; h: number; c?: CanvasImageSource; g?: Cx; tint?: CanvasImageSource; tg?: Cx; comp?: CanvasImageSource; cg?: Cx } = { w: 0, h: 0 };
+function stages(w: number, h: number) {
+  if (stage.w !== w || stage.h !== h || !stage.g) {
+    const make = (): [CanvasImageSource, Cx] => {
+      const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+      return [c, c.getContext('2d') as Cx];
+    };
+    const [c, g] = make();
+    const [tint, tg] = make();
+    const [comp, cg] = make();
+    stage = { w, h, c, g, tint, tg, comp, cg };
+  }
+  return stage as Required<typeof stage>;
+}
 
 /**
  * Draw one layer at timeline time t with opacity `alpha` (its fades are the caller's). A layer that
- * is behind the subject is drawn on a picture of its own, the subject's matte cuts it out of that,
- * and the rest goes on.
+ * is behind the subject (or only on it) is drawn on a picture of its own and cut by the subject's
+ * matte; one with an outer stroke or a drop shadow gets those round it. Then the rest goes on.
  */
 export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number, matte?: MatteSource) {
   // a subject effect is made of the matte itself
   if (l.kind === 'shape' && l.shape === 'subject') return drawSubject(ctx, l, w, h, alpha, t, matte);
   const cut = (l.depth === 'behind' || l.depth === 'inside') && matte ? matte(t, w, h) : null;
-  if (!cut) return drawBent(ctx, l, w, h, alpha, t);
-  if (behind.w !== w || behind.h !== h || !behind.g) {
-    const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
-    behind = { w, h, c, g: c.getContext('2d') as Cx };
+  const fx = l.fx && (l.fx.shadow || l.fx.outline) ? l.fx : null;
+  if (!cut && !fx) return drawBent(ctx, l, w, h, alpha, t);
+  const s = stages(w, h);
+  s.g.clearRect(0, 0, w, h);
+  drawBent(s.g as CanvasRenderingContext2D, l, w, h, alpha, t);
+  if (cut) {
+    // behind: the subject is cut out of the layer; inside (a track matte): only the subject is left of it
+    s.g.globalCompositeOperation = l.depth === 'inside' ? 'destination-in' : 'destination-out';
+    s.g.drawImage(cut, 0, 0, w, h);
+    s.g.globalCompositeOperation = 'source-over';
   }
-  const g = behind.g!;
-  g.clearRect(0, 0, w, h);
-  drawBent(g as CanvasRenderingContext2D, l, w, h, alpha, t);
-  // behind: the subject is cut out of the layer; inside (a track matte): only the subject is left of it
-  g.globalCompositeOperation = l.depth === 'inside' ? 'destination-in' : 'destination-out';
-  g.drawImage(cut, 0, 0, w, h);
-  g.globalCompositeOperation = 'source-over';
-  ctx.drawImage(behind.c!, 0, 0);
+  let shown: CanvasImageSource = s.c;
+  if (fx?.outline && fx.outline.width > 0) {
+    // the layer's shape in the outline's colour, spread out in a ring, with the layer on top
+    s.tg.clearRect(0, 0, w, h);
+    s.tg.globalCompositeOperation = 'source-over';
+    s.tg.fillStyle = fx.outline.color;
+    s.tg.fillRect(0, 0, w, h);
+    s.tg.globalCompositeOperation = 'destination-in';
+    s.tg.drawImage(s.c, 0, 0);
+    s.tg.globalCompositeOperation = 'source-over';
+    s.cg.clearRect(0, 0, w, h);
+    const r = Math.max(1, fx.outline.width * h);
+    for (let i = 0; i < 16; i++) s.cg.drawImage(s.tint, Math.cos((i / 16) * Math.PI * 2) * r, Math.sin((i / 16) * Math.PI * 2) * r);
+    s.cg.drawImage(s.c, 0, 0);
+    shown = s.comp;
+  }
+  ctx.save();
+  if (fx?.shadow) {
+    ctx.shadowColor = fx.shadow.color;
+    ctx.shadowBlur = Math.max(0, fx.shadow.blur * h);
+    ctx.shadowOffsetX = fx.shadow.dx * h;
+    ctx.shadowOffsetY = fx.shadow.dy * h;
+  }
+  ctx.drawImage(shown, 0, 0);
+  ctx.restore();
 }
 
 /** A layer as it is drawn flat or, if it is tilted or pinned to a surface, warped. */

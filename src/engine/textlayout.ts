@@ -1,11 +1,18 @@
 // Laying out a title and working out how it looks at a moment of its animation (pure: text is
 // measured through a function the caller passes, so this runs anywhere, tests included).
-import { layerEnd, type TextAnim, type TextLayer } from './layers';
+import { layerEnd, type LineStyle, type TextAnim, type TextLayer } from './layers';
 
-/** Width of a string drawn at 100 px in the title's font (widths scale with the size). */
-export type Measure = (s: string) => number;
+/** Width of a string drawn at 100 px in the title's font (or the line's own, if it has one): widths scale with the size. */
+export type Measure = (s: string, line?: LineStyle) => number;
 
 export interface TextLine {
+  /** this line's own size (pixels), typeface, weight and colour, when it differs from the title's */
+  size: number;
+  /** extra space after each letter on this line (pixels) */
+  spacing: number;
+  font?: LineStyle['font'];
+  bold?: boolean;
+  color?: string;
   text: string;
   /** left edge and middle, relative to the title's position (pixels) */
   x: number;
@@ -61,29 +68,52 @@ export const FIT_WIDTH = 0.94;
 /** Lay out a title in a W×H frame. */
 export function layoutText(tx: TextLayer, W: number, H: number, measure: Measure): TextLayout {
   const lines = tx.text.split('\n');
-  const widthAt = (s: string, size: number) => (measure(s) * size) / 100 + Math.max(0, [...s].length - 1) * (tx.spacing ?? 0) * size;
+  const spec = (i: number): LineStyle | undefined => tx.lines?.[i];
+  const mult = (i: number) => Math.max(0.1, spec(i)?.size ?? 1);
+  /** width of line i at a base size (its own multiple applied) */
+  const widthAt = (s: string, i: number, size: number) => (measure(s, spec(i)) * size * mult(i)) / 100 + Math.max(0, [...s].length - 1) * (tx.spacing ?? 0) * size * mult(i);
   let size = Math.max(4, tx.size * H);
   if (tx.fit === 'width') {
-    const widest = Math.max(...lines.map((l) => widthAt(l, size)));
+    const widest = Math.max(...lines.map((l, i) => widthAt(l, i, size)));
     if (widest > 0) size *= (W * FIT_WIDTH) / widest;
   }
   const spacing = (tx.spacing ?? 0) * size;
-  const lineHeight = size * (tx.lineHeight ?? 1.2);
+  const lh = tx.lineHeight ?? 1.2;
+  const lineHeight = size * lh;
   const n = lines.length;
+  const heights = lines.map((_, i) => size * mult(i) * lh);
+  const total = heights.reduce((s, v) => s + v, 0);
+  let cursor = -total / 2;
   const out: TextLine[] = lines.map((text, i) => {
-    const width = widthAt(text, size);
+    const ls = size * mult(i);
+    const sp = (tx.spacing ?? 0) * ls;
+    const width = widthAt(text, i, size);
     const x = tx.align === 'left' ? 0 : tx.align === 'right' ? -width : -width / 2;
     const chars = [...text];
-    const letters = chars.map((_, k) => (measure(chars.slice(0, k).join('')) * size) / 100 + k * spacing);
-    return { text, x, y: (i - (n - 1) / 2) * lineHeight, width, letters };
+    const letters = chars.map((_, k) => (measure(chars.slice(0, k).join(''), spec(i)) * ls) / 100 + k * sp);
+    const y = cursor + heights[i] / 2;
+    cursor += heights[i];
+    const s = spec(i);
+    return { text, x, y, width, letters, size: ls, spacing: sp, ...(s?.font ? { font: s.font } : {}), ...(s?.bold !== undefined ? { bold: s.bold } : {}), ...(s?.color ? { color: s.color } : {}) };
   });
   const pad = tx.box ? size * 0.4 : 0;
   const x0 = Math.min(...out.map((l) => l.x)) - pad;
   const x1 = Math.max(...out.map((l) => l.x + l.width)) + pad;
-  const h = n * lineHeight + (tx.box ? size * 0.4 : 0);
+  const h = total + (tx.box ? size * 0.4 : 0);
+  void n;
   // a bent line's ends drop (an arch) or rise (a smile): the box grows that way to hold them
   const sag = tx.curve ? sagOf(Math.max(...out.map((l) => l.width)), tx.curve) : 0;
   return { size, lineHeight, spacing, lines: out, box: { x: x0, y: -h / 2 - Math.max(0, -sag), w: x1 - x0, h: h + Math.abs(sag) } };
+}
+
+/** The two ends of a colour gradient across a box (`angle` 0: left to right, 90: top to bottom). */
+export function gradientLine(box: { x: number; y: number; w: number; h: number }, angle: number): [number, number, number, number] {
+  const a = (angle * Math.PI) / 180;
+  const [dx, dy] = [Math.cos(a), Math.sin(a)];
+  const half = Math.abs((box.w / 2) * dx) + Math.abs((box.h / 2) * dy);
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  return [cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half];
 }
 
 // ---------- how it looks at a moment ----------
@@ -195,4 +225,35 @@ export function lettersShown(line: string, before: number, total: number, share:
   let k = upTo;
   while (k > 0 && chars[k] && chars[k].trim()) k--;
   return k;
+}
+
+/**
+ * The words of a title with the letter numbers they cover (counting every letter of the whole text, spaces
+ * included but not line breaks, the way colour runs are counted): [from, to) for each.
+ */
+export function wordSpans(text: string): { word: string; from: number; to: number }[] {
+  const out: { word: string; from: number; to: number }[] = [];
+  let n = 0;
+  for (const line of text.split('\n')) {
+    const chars = [...line];
+    let i = 0;
+    while (i < chars.length) {
+      if (!chars[i].trim()) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < chars.length && chars[j].trim()) j++;
+      out.push({ word: chars.slice(i, j).join(''), from: n + i, to: n + j });
+      i = j;
+    }
+    n += chars.length;
+  }
+  return out;
+}
+
+/** The runs with `color` put on [from, to), over whatever colours were there (a run of the same stretch is replaced); null colour takes the stretch's colour away. */
+export function setColourRun(runs: { from: number; to: number; color: string }[] | undefined, from: number, to: number, color: string | null): { from: number; to: number; color: string }[] {
+  const kept = (runs ?? []).filter((r) => r.to <= from || r.from >= to);
+  return color ? [...kept, { from, to, color }].sort((a, b) => a.from - b.from) : kept;
 }

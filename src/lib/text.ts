@@ -2,7 +2,7 @@
 // animation come from ../engine/textlayout, this turns them into fills, outlines and copies.
 import { layerPos, type BuiltinFont, type TextAnim, type TextLayer } from '../engine/layers';
 import { fontCss } from './fonts.svelte';
-import { layoutText, lettersShown, noise, onCurve, textLookAt, type TextLayout } from '../engine/textlayout';
+import { gradientLine, layoutText, lettersShown, noise, onCurve, textLookAt, type TextLayout } from '../engine/textlayout';
 
 export const TEXT_ANIMS: { value: TextAnim; label: string; hint: string }[] = [
   { value: 'none', label: 'None', hint: 'Just appears (or fades, with Fade).' },
@@ -31,9 +31,12 @@ let measurer: CanvasRenderingContext2D | null = null;
 /** The title laid out in a w×h frame, measured in its font. */
 export function textLayout(tx: TextLayer, w: number, h: number): TextLayout {
   measurer ??= document.createElement('canvas').getContext('2d')!;
-  measurer.font = fontOf(tx, 100);
   const m = measurer;
-  return layoutText(tx, w, h, (s) => m.measureText(s).width);
+  // a line may have a typeface or weight of its own
+  return layoutText(tx, w, h, (s, line) => {
+    m.font = fontOf(line?.font || line?.bold !== undefined ? { ...tx, font: line.font ?? tx.font, bold: line.bold ?? tx.bold } : tx, 100);
+    return m.measureText(s).width;
+  });
 }
 
 /**
@@ -107,11 +110,13 @@ function drawOne(ctx: CanvasRenderingContext2D, tx: TextLayer, L: TextLayout, lo
     ctx.shadowOffsetY = size * 0.05;
   }
   const stroke = (tx.stroke ?? 0) > 0 || tx.strokeOnly;
-  const strokeW = Math.max(1, (tx.stroke || 0.04) * size);
   ctx.strokeStyle = tx.strokeColor ?? '#000000';
+  // the colour that runs across the whole title, if it has one
+  const grad = tx.gradient ? (() => { const [x0, y0, x1, y1] = gradientLine(L.box, tx.gradient.angle); const g = ctx.createLinearGradient(x0, y0, x1, y1); g.addColorStop(0, tx.color); g.addColorStop(1, tx.gradient.to); return g; })() : null;
   // the outline goes behind the fill (so it grows outwards); outline-only titles draw it centred
-  ctx.lineWidth = tx.strokeOnly ? strokeW : strokeW * 2;
-  const paint = (s: string, x: number, y: number, colour: string) => {
+  let strokeW = Math.max(1, (tx.stroke || 0.04) * size);
+  const paint = (s: string, x: number, y: number, colour: string | CanvasGradient) => {
+    ctx.lineWidth = tx.strokeOnly ? strokeW : strokeW * 2;
     if (stroke) ctx.strokeText(s, x, y);
     if (!tx.strokeOnly) {
       ctx.fillStyle = colour;
@@ -124,13 +129,17 @@ function drawOne(ctx: CanvasRenderingContext2D, tx: TextLayer, L: TextLayout, lo
   const total = L.lines.reduce((n, l) => n + [...l.text].length, 0);
   const frame = Math.floor(t * 24);
   // letter by letter when anything needs single letters; whole lines keep the font's kerning
-  const byLetter = karaoke || look.letters < 1 || look.glitch > 0 || L.spacing !== 0 || !!tx.curve;
+  const byLetter = karaoke || look.letters < 1 || look.glitch > 0 || L.spacing !== 0 || !!tx.curve || !!tx.colourRuns?.length;
   let before = 0;
   let k = 0;
   for (const line of L.lines) {
     const chars = [...line.text];
+    // this line's own typeface, size and colour
+    ctx.font = fontOf(line.font || line.bold !== undefined ? { ...tx, font: line.font ?? tx.font, bold: line.bold ?? tx.bold } : tx, line.size);
+    strokeW = Math.max(1, (tx.stroke || 0.04) * line.size);
+    const base: string | CanvasGradient = line.color ?? grad ?? tx.color;
     if (!byLetter) {
-      paint(line.text, line.x, line.y, tx.color);
+      paint(line.text, line.x, line.y, base);
       before += chars.length;
       continue;
     }
@@ -142,7 +151,10 @@ function drawOne(ctx: CanvasRenderingContext2D, tx: TextLayer, L: TextLayout, lo
       const ch = chars[i];
       if (karaoke && i > 0 && !ch.trim() && chars[i - 1].trim()) word++;
       if (i >= shown) continue;
-      let colour = tx.color;
+      let colour: string | CanvasGradient = base;
+      // a stretch of the words in a colour of its own
+      const run = tx.colourRuns?.find((r) => before + i >= r.from && before + i < r.to);
+      if (run) colour = run.color;
       if (karaoke) {
         const wd = tx.words![word];
         if (wd && local >= wd.t0 && local < wd.t1 + 0.05) colour = tx.highlight!;
@@ -167,7 +179,7 @@ function drawOne(ctx: CanvasRenderingContext2D, tx: TextLayer, L: TextLayout, lo
       }
       if (tx.curve) {
         // on a bent baseline: each letter set on the arc by its middle and turned to the slope there
-        const adv = (i + 1 < chars.length ? line.letters[i + 1] - L.spacing : line.width) - line.letters[i];
+        const adv = (i + 1 < chars.length ? line.letters[i + 1] - line.spacing : line.width) - line.letters[i];
         const at = onCurve(line.width, line.letters[i] + adv / 2, tx.curve);
         ctx.save();
         ctx.translate(line.x + line.width / 2 + at.x + dx, line.y + at.y + dy);
