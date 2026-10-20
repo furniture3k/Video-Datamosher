@@ -32,6 +32,7 @@ export function filesOf(p: Project): string[] {
     ...p.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])),
     ...(p.luts ?? []).map((l) => 'lut:' + l.id),
     ...(p.fonts ?? []).map((f) => 'font:' + f.id),
+    ...p.media.flatMap((m) => (m.mattes ?? []).map((x) => x.fileId)),
   ];
 }
 

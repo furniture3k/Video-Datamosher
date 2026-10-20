@@ -63,6 +63,48 @@ const step = async (name, fn) => {
   }
 };
 
+/**
+ * Run a step on a bare project (no clips, titles, effects or canvas), then put back what was there
+ * and clear every mode it may have left on, whether it passed or not. The steps that draw things
+ * and read their pixels use this, so what earlier steps left behind can't move the picture.
+ */
+const isolated = async (fn) => {
+  const keep = await S(() => {
+    const st = window.__moshpit.store;
+    const p = st.project;
+    const copy = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+    const k = { clips: copy(p.clips), layers: copy(p.layers), effects: copy(p.effects), canvas: copy(p.canvas), tracks: copy(p.tracks) };
+    st.edit((q) => {
+      q.clips = [];
+      q.layers = [];
+      q.effects = [];
+      delete q.canvas;
+    });
+    st.ui.selectedClips = [];
+    st.ui.dialog = null;
+    return k;
+  });
+  try {
+    await fn();
+  } finally {
+    await S((k) => {
+      const st = window.__moshpit.store;
+      st.edit((q) => {
+        q.clips = k.clips;
+        q.layers = k.layers;
+        q.effects = k.effects;
+        q.tracks = k.tracks;
+        if (k.canvas) q.canvas = k.canvas;
+        else delete q.canvas;
+      });
+      Object.assign(st.ui, { selectedClips: [], dialog: null, cutout: null, surfacePick: null, surfaceThen: null, trackPick: null, view: 'auto' });
+      window.__moshpit.objectseg.setObjectSegmenter(null);
+    }, keep);
+    await settle().catch(() => {});
+  }
+};
+const isoStep = (name, fn) => step(name, () => isolated(fn));
+
 await page.goto(url);
 // no model downloads in the sweep: a fake people segmenter (everything is a person)
 await S(() => window.__moshpit.segment.setPersonSegmenter(async () => {
@@ -1364,7 +1406,7 @@ await step('analysis: track an object, title follows, stabilize', async () => {
   await settle();
 });
 
-await step('surface: four corners on a leaning screen are tracked; a shape, a title and a clip pinned to it follow it in the preview and the render', async () => {
+await isoStep('surface: four corners on a leaning screen are tracked; a shape, a title and a clip pinned to it follow it in the preview and the render', async () => {
   // the footage: a noisy square ("a screen") sliding and leaning on a grey wall, drawn per pixel here
   // (from a known homography each frame) and encoded by the page's own FFmpeg
   const truth = await S(async () => {
@@ -1648,7 +1690,232 @@ await step('surface: four corners on a leaning screen are tracked; a shape, a ti
   await settle();
 });
 
-await step('type: text bent into an arch follows the arc, and a title leaned back shrinks towards the top, in the preview and the render', async () => {
+await isoStep('cut out: tap a moving subject, follow it through the clip, put a layer behind it, in the preview and the render', async () => {
+  // the footage: a bright square sliding and bobbing over a dim noisy background (frames drawn here, encoded by the page's FFmpeg)
+  const gen = await S(async () => {
+    const { ffmpeg, media } = window.__moshpit;
+    const W = 320, H = 240, N = 72;
+    const out = new Uint8Array(W * H * N);
+    let a = 5;
+    const centre = (t) => [80 + 60 * t, 120 + 20 * Math.sin(2 * t)];
+    for (let k = 0; k < N; k++) {
+      const [cx, cy] = centre(k / 24);
+      for (let y = 0; y < H; y++)
+        for (let x = 0; x < W; x++) {
+          const bright = Math.abs(x - cx) < 40 && Math.abs(y - cy) < 40;
+          a = (a * 1664525 + 1013904223) >>> 0;
+          out[k * W * H + y * W + x] = bright ? 235 : 30 + (a >>> 28);
+        }
+    }
+    const r = await ffmpeg.run(['-f', 'rawvideo', '-pix_fmt', 'gray', '-s', `${W}x${H}`, '-r', '24', '-i', 'subj.gray', '-pix_fmt', 'yuv420p', '-t', '3', 'subject.mp4'], { outputs: ['subject.mp4'], inputs: { 'subj.gray': async () => out } });
+    await media.addFiles([new File([r.out['subject.mp4']], 'subject.mp4', { type: 'video/mp4' })], { track: 'v1', index: 0 });
+  });
+  void gen;
+  await idle();
+  const id = await S(() => window.__moshpit.store.project.clips.find((c) => c.track === 'v1' && window.__moshpit.store.project.media.find((m) => m.id === c.mediaId)?.source.name === 'subject.mp4').id);
+  const centreAt = (t) => [80 + 60 * t, 120 + 20 * Math.sin(2 * t)];
+  // no model download: a fake one that finds the bright thing in the picture it is given
+  await S(() => {
+    window.__moshpit.objectseg.setObjectSegmenter(async (img, prompt) => {
+      const c = new OffscreenCanvas(img.width, img.height);
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, img.width, img.height).data;
+      const data = new Uint8Array(img.width * img.height);
+      for (let i = 0; i < data.length; i++) data[i] = d[i * 4] > 150 ? 255 : 0;
+      // only if a tap that says "this" is on it
+      const on = prompt.points.some(([x, y, l]) => l === 1 && data[Math.min(img.height - 1, Math.floor(y * img.height)) * img.width + Math.min(img.width - 1, Math.floor(x * img.width))] === 255);
+      return on ? { w: img.width, h: img.height, data } : null;
+    });
+    const { store } = window.__moshpit;
+    store.ui.selectedClips = [store.project.clips.find((c) => c.track === 'v1' && store.project.media.find((m) => m.id === c.mediaId)?.source.name === 'subject.mp4').id];
+    store.ui.view = 'edit';
+    store.seek(1.0);
+  });
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  await settle();
+  const onScreen = (pts) => S(({ id, pts }) => {
+    const { store, motion } = window.__moshpit;
+    const p = store.project;
+    const c = p.clips.find((x) => x.id === id);
+    const r = motion.pictureRect(c, p);
+    const shown = [...document.querySelectorAll('.stage canvas')].find((cv) => !cv.classList.contains('hidden') && cv.classList.contains('edit'));
+    const rc = shown.getBoundingClientRect();
+    const k = Math.min(rc.width / shown.width, rc.height / shown.height);
+    const ox = rc.left + (rc.width - shown.width * k) / 2;
+    const oy = rc.top + (rc.height - shown.height * k) / 2;
+    return pts.map(([x, y]) => {
+      const u = (r.x + (x / 320) * r.w) / r.W;
+      const v = (r.y + (y / 240) * r.h) / r.H;
+      return { u, v, sx: ox + u * shown.width * k, sy: oy + v * shown.height * k };
+    });
+  }, { id, pts });
+  await page.getByRole('button', { name: 'Cut out a subject' }).click();
+  await page.locator('.cutmask').waitFor();
+  // tap the square (a click on the player), and the live mask covers it and not the background
+  const [tap] = await onScreen([centreAt(1.0)]);
+  await page.waitForFunction(() => document.querySelector('.stage-note')?.textContent?.includes('tap'), null, { timeout: 30000 });
+  await page.mouse.click(tap.sx, tap.sy);
+  await page.waitForFunction(() => window.__moshpit.store.ui.cutout?.points.length === 1, null, { timeout: 5000 });
+  await page.waitForFunction(() => { const c = document.querySelector('.cutmask'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true; return false; }, null, { timeout: 15000 });
+  const probe = await S(([tu, tv, bu, bv]) => {
+    const c = document.querySelector('.cutmask');
+    const g = c.getContext('2d');
+    const at = (u, v) => g.getImageData(Math.round(u * c.width), Math.round(v * c.height), 1, 1).data[3];
+    return { onSubject: at(tu, tv), onBackground: at(bu, bv) };
+  }, [tap.u, tap.v, 0.05, 0.9]);
+  if (!(probe.onSubject > 50 && probe.onBackground === 0)) throw new Error('the live mask is wrong: ' + JSON.stringify(probe));
+  // an Alt-click adds a "leave out" dot; a click on a dot takes it away
+  const [bg] = await onScreen([[290, 30]]);
+  await page.keyboard.down('Alt');
+  await page.mouse.click(bg.sx, bg.sy);
+  await page.keyboard.up('Alt');
+  await page.waitForFunction(() => window.__moshpit.store.ui.cutout?.points.length === 2, null, { timeout: 5000 });
+  const labels = await S(() => window.__moshpit.store.ui.cutout.points.map((q) => q[2]).join());
+  if (labels !== '1,0') throw new Error('Alt-click did not add a leave-out dot: ' + labels);
+  await page.mouse.click(bg.sx, bg.sy);
+  await page.waitForFunction(() => window.__moshpit.store.ui.cutout?.points.length === 1, null, { timeout: 5000 });
+  // through the clip
+  await page.getByRole('button', { name: 'Cut out through clip' }).click();
+  await page.waitForFunction((id) => { const st = window.__moshpit.store; const m = st.project.media.find((x) => x.id === st.project.clips.find((c) => c.id === id).mediaId); return m.mattes?.length || st.toasts.some((t) => t.kind === 'error'); }, id, { timeout: 180000 });
+  await idle();
+  const cerr = await S(() => window.__moshpit.store.toasts.find((t) => t.kind === 'error')?.text);
+  if (cerr) throw new Error('cut-out: ' + cerr);
+  const ref = await S((id) => { const st = window.__moshpit.store; const m = st.project.media.find((x) => x.id === st.project.clips.find((c) => c.id === id).mediaId); return JSON.parse(JSON.stringify(m.mattes[0])); }, id);
+  if (!(ref.fps === 12 && ref.to - ref.from > 2.9 && ref.prompts.length === 1)) throw new Error('the matte is not as expected: ' + JSON.stringify({ ...ref, prompts: ref.prompts.length }));
+  // the matte follows the square: its middle on the first, a middle and the last frame, against where the square is
+  const follow = await S(async (ref) => {
+    const { mattes } = window.__moshpit;
+    await mattes.loadMatte(ref);
+    const f = mattes.matteFramesNow(ref);
+    return [0, 18, f.length - 1].map((i) => {
+      let sx = 0, sy = 0, n = 0;
+      for (let y = 0; y < ref.h; y++) for (let x = 0; x < ref.w; x++) if (f[i][y * ref.w + x] >= 128) (sx += x), (sy += y), n++;
+      return { i, cx: n ? (sx / n / ref.w) * 320 : -1, cy: n ? (sy / n / ref.h) * 240 : -1, area: n / (ref.w * ref.h), t: ref.from + i / ref.fps };
+    });
+  }, ref);
+  for (const m of follow) {
+    const [ex, ey] = centreAt(m.t);
+    if (!(Math.abs(m.cx - ex) < 8 && Math.abs(m.cy - ey) < 8 && m.area > 0.08 && m.area < 0.14)) throw new Error('the matte is not on the square: ' + JSON.stringify({ m, ex, ey }));
+  }
+  // a magenta card over the whole frame: in front it covers the square, behind it shows only around it
+  await S(() => {
+    const { store, edit } = window.__moshpit;
+    const s = edit.addShape('rect');
+    store.edit((p) => Object.assign(p.layers.find((l) => l.id === s.id), { start: 0, duration: 3, x: 0.5, y: 0.5, w: 1.2, h: 1.2, color: '#ff00ff', fill: '#ff00ff', drawOn: 0, boil: 0, fade: 0, moshed: false }));
+    store.ui.selectedClips = [s.id];
+    window.__cardId = s.id;
+  });
+  const colourAt = async (t, pt) => {
+    await S((t) => window.__moshpit.store.seek(t), t);
+    await page.waitForTimeout(500);
+    const [q] = await onScreen([pt]);
+    return S(({ u, v }) => {
+      const cv = document.querySelector('.stage canvas.edit');
+      return [...cv.getContext('2d').getImageData(Math.round(u * cv.width), Math.round(v * cv.height), 1, 1).data];
+    }, q);
+  };
+  const magenta = (px) => px[0] > 190 && px[2] > 190 && px[1] < 70;
+  const white = (px) => px[0] > 170 && px[1] > 170 && px[2] > 170;
+  if (!magenta(await colourAt(1.0, centreAt(1.0)))) throw new Error('in front, the card should cover the square');
+  await page.locator('.field', { hasText: 'Depth' }).locator('select').selectOption('behind');
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.find((l) => l.id === window.__cardId)?.depth === 'behind', null, { timeout: 5000 });
+  for (const t of [1.0, 2.2]) {
+    const px = await colourAt(t, centreAt(t));
+    if (!white(px)) throw new Error(`at ${t} s the square should show through in front of the card, got ${px}`);
+    if (!magenta(await colourAt(t, [30, 220]))) throw new Error(`at ${t} s the card should show round the square`);
+  }
+  // where the square was at 1.0 s is covered by the card at 2.2 s (the matte moved with it)
+  if (!magenta(await colourAt(2.2, centreAt(1.0)))) throw new Error('the matte did not follow the square: the old place is not covered');
+  await shot('m8-behind-preview');
+  // melted into the mosh: the same, burned in before moshing, frame by frame
+  await S(() => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === window.__cardId).moshed = true)));
+  await S(() => (window.__moshpit.store.ui.view = 'auto'));
+  await settle();
+  const rend = await S(async ({ pts }) => {
+    const st = window.__moshpit.store;
+    const out = [];
+    for (const [t, [x, y]] of pts) {
+      const b = await createImageBitmap(new Blob([st.render.jpegs[Math.round(t * st.project.encoder.fps)]], { type: 'image/jpeg' }));
+      const c = new OffscreenCanvas(b.width, b.height).getContext('2d');
+      c.drawImage(b, 0, 0);
+      const d = c.getImageData(Math.round((x / 320) * b.width) - 1, Math.round((y / 240) * b.height) - 1, 3, 3).data;
+      let r = 0, gg = 0, bb = 0;
+      for (let i = 0; i < d.length; i += 4) (r += d[i]), (gg += d[i + 1]), (bb += d[i + 2]);
+      out.push([r / 9, gg / 9, bb / 9]);
+    }
+    return out;
+  }, { pts: [[1.0, centreAt(1.0)], [1.0, [30, 220]], [2.2, centreAt(2.2)], [2.2, centreAt(1.0)]] });
+  if (!(white(rend[0]) && magenta(rend[1]) && white(rend[2]) && magenta(rend[3]))) throw new Error('in the render the card is not behind the square: ' + JSON.stringify(rend.map((p) => p.map(Math.round))));
+  await renderShot('m8-behind-render', 2.2);
+  // a track matte: only on the subject
+  await S(() => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === window.__cardId).moshed = false)));
+  await S(() => (window.__moshpit.store.ui.view = 'edit'));
+  await page.locator('.field', { hasText: 'Depth' }).locator('select').selectOption('inside');
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.find((l) => l.id === window.__cardId)?.depth === 'inside', null, { timeout: 5000 });
+  if (!magenta(await colourAt(1.0, centreAt(1.0)))) throw new Error('only on the subject: the card should show on the square');
+  if (magenta(await colourAt(1.0, [30, 220]))) throw new Error('only on the subject: the card should not show round it');
+  // subject effects: recolour the square solid red, in the preview and (melted) the render
+  await S((cid) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== cid))), await S(() => window.__cardId));
+  await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  await page.locator('.pathrow', { hasText: 'Cut-out 1' }).locator('select[aria-label="Effect on the subject"]').selectOption('fill');
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.some((l) => l.shape === 'subject'), null, { timeout: 5000 });
+  const red = (px) => px[0] > 200 && px[1] < 90 && px[2] < 90;
+  if (!red(await colourAt(1.0, centreAt(1.0)))) throw new Error('recolour: the square is not red');
+  if (red(await colourAt(1.0, [30, 220]))) throw new Error('recolour: the background went red too');
+  if (!red(await colourAt(2.2, centreAt(2.2)))) throw new Error('recolour: the red did not follow the square');
+  await shot('m8-recolour-preview');
+  // outline: a ring round the square, the inside left alone
+  await S(() => window.__moshpit.store.edit((p) => { const l = p.layers.find((x) => x.shape === 'subject'); l.subject = { effect: 'outline', amount: 0.5 }; l.color = '#00ff00'; }));
+  await page.waitForTimeout(400);
+  const green = (px) => px[1] > 200 && px[0] < 90 && px[2] < 90;
+  const [edge] = await onScreen([[centreAt(1.0)[0] + 40 + 4, centreAt(1.0)[1]]]);
+  await S((t) => window.__moshpit.store.seek(t), 1.0);
+  await page.waitForTimeout(500);
+  const ring = await S(({ u, v, cu, cv }) => {
+    const c = document.querySelector('.stage canvas.edit');
+    const at = (a, b) => [...c.getContext('2d').getImageData(Math.round(a * c.width), Math.round(b * c.height), 1, 1).data];
+    return { ring: at(u, v), inside: at(cu, cv) };
+  }, { u: edge.u, v: edge.v, cu: (await onScreen([centreAt(1.0)]))[0].u, cv: (await onScreen([centreAt(1.0)]))[0].v });
+  if (!green(ring.ring)) throw new Error('outline: nothing drawn just outside the square: ' + ring.ring);
+  if (green(ring.inside)) throw new Error('outline: the inside of the square went green');
+  // blur the background: the dim noise goes smooth while the square stays sharp
+  await S(() => window.__moshpit.store.edit((p) => { const l = p.layers.find((x) => x.shape === 'subject'); l.subject = { effect: 'blur', amount: 0.8, part: 'background' }; }));
+  await page.waitForTimeout(500);
+  const noisy = await S(() => {
+    const c = document.querySelector('.stage canvas.edit');
+    const d = c.getContext('2d').getImageData(Math.round(c.width * 0.03), Math.round(c.height * 0.85), 24, 24).data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < d.length; i += 4) (lo = Math.min(lo, d[i])), (hi = Math.max(hi, d[i]));
+    return hi - lo;
+  });
+  if (noisy > 14) throw new Error('blur the background: the background is still noisy (' + noisy + ')');
+  await S((cid) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.shape !== 'subject'))), null);
+  await S(() => (window.__moshpit.store.ui.view = 'auto'));
+  // deleting the cut-out sends a layer that was behind it back to the front
+  await S(() => {
+    const { store, edit } = window.__moshpit;
+    const s2 = edit.addShape('rect');
+    store.edit((p) => Object.assign(p.layers.find((l) => l.id === s2.id), { start: 0, duration: 3, w: 1.2, h: 1.2, x: 0.5, y: 0.5, depth: 'behind', fill: '#ff00ff', color: '#ff00ff', drawOn: 0, boil: 0, fade: 0 }));
+    window.__cardId = s2.id;
+  });
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
+  await page.getByRole('button', { name: 'Delete cut-out' }).click();
+  if (await S(() => window.__moshpit.store.project.layers.find((l) => l.id === window.__cardId).depth)) throw new Error('the layer is still behind a subject that is gone');
+  // tidy up
+  await S(({ id }) => {
+    const { store, objectseg } = window.__moshpit;
+    objectseg.setObjectSegmenter(null);
+    store.edit((p) => ((p.layers = p.layers.filter((l) => l.id !== window.__cardId)), (p.clips = p.clips.filter((c) => c.id !== id))));
+    store.ui.selectedClips = [];
+    store.ui.view = 'auto';
+  }, { id });
+  await settle();
+});
+
+await isoStep('type: text bent into an arch follows the arc, and a title leaned back shrinks towards the top, in the preview and the render', async () => {
   // where the white pixels of a picture are, by columns (the ends against the middle) and by rows (top against bottom)
   await S(() => {
     window.__whiteStats = (cv) => {
@@ -2263,6 +2530,19 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   if (hb.x < stageBox.x || hb.x + hb.width > stageBox.x + stageBox.width || hb.y < stageBox.y || hb.y + hb.height > stageBox.y + stageBox.height) throw new Error('the corner handle is off the phone preview');
   await page.locator('.tools .tool', { hasText: 'Cancel' }).click();
   if (await S(() => window.__moshpit.store.ui.surfacePick)) throw new Error('Cancel did not stop picking the surface');
+  // cutting a subject out from the phone tools: arm it, tap the preview, the mask and a dot show, Cancel stops it
+  await S(() => window.__moshpit.objectseg.setObjectSegmenter(async () => ({ w: 8, h: 8, data: new Uint8Array(64).fill(255) })));
+  await page.locator('.tools .tool', { hasText: 'Cut out' }).click();
+  await page.locator('.cutmask').waitFor();
+  if ((await S(() => window.__moshpit.store.ui.cutout?.clipId)) !== tid) throw new Error('the Cut out tool did not arm');
+  await page.waitForFunction(() => document.querySelector('.stage-note')?.textContent?.includes('tap the thing'), null, { timeout: 30000 });
+  await page.mouse.click(st.x + st.width * 0.5, st.y + st.height * 0.5);
+  await page.waitForFunction(() => window.__moshpit.store.ui.cutout?.points.length === 1, null, { timeout: 5000 });
+  await page.locator('.cutdot').waitFor();
+  await page.waitForFunction(() => { const c = document.querySelector('.cutmask'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < d.length; i += 4) if (d[i] > 0) return true; return false; }, null, { timeout: 15000 });
+  await page.locator('.tools .tool', { hasText: 'Cancel' }).click();
+  if (await S(() => window.__moshpit.store.ui.cutout)) throw new Error('Cancel did not stop the cut-out');
+  await S(() => window.__moshpit.objectseg.setObjectSegmenter(null));
   await page.locator('.tools .back').click();
   await page.locator('.tools .tool', { hasText: 'Media' }).click();
   await page.locator('.sheet').waitFor();

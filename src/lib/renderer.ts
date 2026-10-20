@@ -24,7 +24,8 @@ import { bitrateFor } from '../engine/social';
 import { encodeRecipe, findRecipe, gifComments, gifWithComment } from '../engine/recipe';
 import type { Frame, MediaItem, Project } from '../engine/types';
 import { drawOrder, isEmpty, isStill, layerAlpha, layerEnd, type Layer } from '../engine/layers';
-import { drawLayer } from './layers';
+import { drawLayer, type MatteSource } from './layers';
+import { ensureMattes, matteSourceFor } from './mattes.svelte';
 import { ensureFonts } from './fonts.svelte';
 import { FrameEncoder, encodedSize, hardwareCodec, hardwareProxy } from './webcodecs';
 
@@ -127,6 +128,10 @@ const seqCache = new LRU<Blob>(32, 300e6);
 async function layerOverlays(project: Project, w: number, h: number, mounts: Record<string, Blob>, progress?: Progress, signal?: Signal): Promise<LayerOverlay[]> {
   const fps = project.encoder.fps;
   const out: LayerOverlay[] = [];
+  await ensureMattes(project);
+  const matte = matteSourceFor(project);
+  // what a layer behind the subject was cut by: a change to the matte draws it again
+  const mv = project.media.flatMap((m) => (m.mattes ?? []).map((x) => `${x.id}@${x.version}`)).join();
   for (const l of drawOrder(project.layers ?? [])) {
     if (!l.moshed || isEmpty(l)) continue;
     if (isStill(l)) {
@@ -145,10 +150,10 @@ async function layerOverlays(project: Project, w: number, h: number, mounts: Rec
     // the timeline frames it's on screen in
     const first = Math.ceil(l.start * fps - 1e-6);
     const count = Math.max(1, Math.ceil(layerEnd(l) * fps - 1e-6) - first);
-    const key = JSON.stringify({ l, w, h, fps });
+    const key = JSON.stringify({ l, w, h, fps, mv: l.depth && l.depth !== 'front' ? mv : '' });
     let seq = seqCache.get(key);
     if (!seq) {
-      seq = await layerFrames(l, w, h, first, count, fps, progress, signal);
+      seq = await layerFrames(l, w, h, first, count, fps, progress, signal, matte);
       seqCache.set(key, seq, seq.size);
     }
     const name = `layer_${l.id}.pngs`;
@@ -196,7 +201,7 @@ function layerPng(l: Layer, w: number, h: number): Promise<Blob> {
 }
 
 /** A layer at timeline frames first.. first + count - 1, fades and all: PNGs one after another. */
-async function layerFrames(l: Layer, w: number, h: number, first: number, count: number, fps: number, progress?: Progress, signal?: Signal): Promise<Blob> {
+async function layerFrames(l: Layer, w: number, h: number, first: number, count: number, fps: number, progress?: Progress, signal?: Signal, matte?: MatteSource): Promise<Blob> {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -209,7 +214,7 @@ async function layerFrames(l: Layer, w: number, h: number, first: number, count:
     }
     const t = (first + k) / fps;
     ctx.clearRect(0, 0, w, h);
-    drawLayer(ctx, l, w, h, layerAlpha(l, t), t);
+    drawLayer(ctx, l, w, h, layerAlpha(l, t), t, matte);
     pngs.push(await canvasPng(c));
   }
   return new Blob(pngs);

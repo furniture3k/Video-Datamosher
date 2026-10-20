@@ -3,6 +3,7 @@ import { askText } from './ask';
 import { store } from './store.svelte';
 import * as edit from './edit';
 import { startMark, startSurface } from './motion.svelte';
+import { startCutout } from './cutout.svelte';
 import { chaos, mutate } from '../engine/presets';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
@@ -148,6 +149,7 @@ const ACTIONS: Record<string, Action> = {
   pen: { run: () => void (store.ui.pen = true), when: hasClips },
   mark: { run: () => startMark(), when: hasClips },
   surface: { run: () => startSurface(), when: hasClips },
+  cutout: { run: () => startCutout(), when: hasClips },
   'split-side': { run: () => edit.arrangeGrid('side'), when: hasClips },
   'split-stack': { run: () => edit.arrangeGrid('stack'), when: hasClips },
   'split-grid': { run: () => edit.arrangeGrid('g2'), when: hasClips },

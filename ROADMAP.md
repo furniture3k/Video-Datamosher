@@ -66,7 +66,7 @@ unlocks, where it goes in the code, and when it counts as done.
 - [ ] **F4. Pins.** *(M10 added the planar pin, `Layer.surface`; the path pin is still `follow` and the face pin a path, so the three are not yet one model.)* A layer can be pinned to: a tracked point (exists: `Clip.paths`,
   `TextClip.follow`), a planar/perspective track (P3), a face (P4), or a subject's matte (P2).
   The pin feeds position, scale, rotation and (for planar pins) a 4-corner warp.
-- [ ] **F5. Mattes as a reusable asset.** A matte is a per-frame alpha attached to a clip, cached
+- [x] **F5. Mattes as a reusable asset.** *(M8: `MediaItem.mattes`, kept like fonts and LUTs; Depth and subject effects are its consumers. Subject Guard reading mattes comes with M9.)* A matte is a per-frame alpha attached to a clip, cached
   like preview proxies. Sources: subject segmentation (P2), painted (exists in `src/lib/maps.ts`),
   shape (P1), luma/threshold, depth (exists). Any layer can use a matte as **track matte**
   (inside/outside), and every layer gets a **Depth** setting: *Behind everything / Behind
@@ -97,7 +97,7 @@ unlocks, where it goes in the code, and when it counts as done.
 - [x] **Words → beats.** Paste a sentence or lyrics: each word (or line) becomes its own text
   layer on its own beat or cut, fitted to width (R2). With music that has vocals, use the Whisper
   word timings that auto captions already produce (`TextClip.words`).
-- [ ] Text behind subject (needs F5 + P2).
+- [x] Text behind subject (needs F5 + P2). *(M8: **Title behind** on a cut-out, and **Text behind** in the picture's menu.)*
 
 ### Shapes and annotations (new layer kinds)
 - [x] Shapes *(M5: `src/engine/shapes.ts`, a `shape` layer kind; polygons, the leader line with end squares and the callout are still to do)*: rectangle, rounded rect, circle, triangle, polygon, star, line, arrow (styles:
@@ -138,12 +138,12 @@ unlocks, where it goes in the code, and when it counts as done.
 
 ## Phase 2: Cut out any subject (R1, R2, R9's car, R3's stickers)
 
-- [ ] **Click-to-segment any object** and carry the selection through the clip (a small on-device
+- [x] **Click-to-segment any object** *(M8: tap the subject on the player (a long-press or Alt-click leaves something out) and a live mask shows; **Cut out through clip** follows it at 12 frames a second, each frame hinted by the last mask's middle and spread-out points, with the box tracker standing in when it is lost. The quick model is MediaPipe's interactive segmenter (28 frames a second through a clip on the laptop); SlimSAM (through transformers.js) is used when something is left out, or by choice, and is far slower (about 1 frame a second); the people model is the quickest for people. Mattes are kept as deflated grey frames, `matte:<id>`, with the footage: `src/engine/matte.ts`, `src/engine/cutout.ts`, `src/lib/objectseg.ts`, `src/lib/cutout.svelte.ts`.)* and carry the selection through the clip (a small on-device
   video segmentation model run in a worker; today `src/lib/segment.ts` only has the MediaPipe
   selfie/person model). Add points to include or exclude. Result: a cached matte (F5).
-- [ ] **Behind-subject layering** with a single Depth control per layer (F5). The fox-behind-
+- [x] **Behind-subject layering** *(M8: `Layer.depth` — In front, Behind the subject, Only on the subject (a track matte) — in the preview, the clean export and the burned-in plates)* with a single Depth control per layer (F5). The fox-behind-
   ornament shot (R1) should take: tap the fox, add a layer, set Depth to "Behind subject".
-- [ ] **Subject effects**: recolour solid (R9 red car), fill white or colour (R2), outline, glow,
+- [x] **Subject effects** *(M8: a subject effect is a shape layer made of the matte: Recolour, Outline, Glow, Echo, Blur and Darken (grade) the background or the subject; the last two change the picture under them, so they can't melt)*: recolour solid (R9 red car), fill white or colour (R2), outline, glow,
   duplicate offset (echo of the subject), subject-only grade, background-only grade or blur.
 - [ ] **Make sticker**: freeze the cut-out at a frame into a transparent PNG in the media library
   (R3's cat).

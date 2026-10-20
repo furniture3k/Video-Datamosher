@@ -11,6 +11,7 @@
   import TrailSettings from './TrailSettings.svelte';
   import SurfaceSettings from './SurfaceSettings.svelte';
   import TiltSettings from './TiltSettings.svelte';
+  import DepthSettings from './DepthSettings.svelte';
   import ParticleSettings from './ParticleSettings.svelte';
 
   let { shape }: { shape: ShapeLayer } = $props();
@@ -77,6 +78,7 @@
   <Field label="Glow" min={0} max={1} step={0.01} value={shape.glow ?? 0} help="A soft light around the line, in its colour." onchange={(v: number) => set('glow', v)} />
   <Field label="Hand-drawn" min={0} max={1} step={0.01} value={shape.boil ?? 0} help="Wobbles like it was drawn again on every few frames." onchange={(v: number) => set('boil', v)} />
   <TrailSettings layer={shape} />
+  <DepthSettings layer={shape} />
   <TiltSettings layer={shape} />
   <SurfaceSettings layer={shape} />
   <ParticleSettings layer={shape} />

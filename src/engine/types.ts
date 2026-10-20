@@ -122,6 +122,8 @@ export interface MediaItem {
   hasAudio: boolean;
   hasVideo: boolean;
   thumb?: string;
+  /** subjects cut out of this footage: a grey picture per frame, kept as the stored file `matte:<id>`, in source time */
+  mattes?: import('./matte').MatteRef[];
 }
 
 export type TransitionType =

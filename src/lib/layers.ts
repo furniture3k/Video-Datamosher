@@ -6,6 +6,7 @@ import { affineBetween, growTri, warpTriangles, type WarpTri } from '../engine/w
 import { boxQuad, type Quad } from '../engine/gizmo';
 import { drawText, textBox } from './text';
 import { drawShape } from './shapes';
+import { drawSubject } from './subject';
 import { particlesAt } from '../engine/particles';
 
 /** Which layers to draw: all of them, the ones on top of the mosh, or the ones that melt with it. */
@@ -86,8 +87,37 @@ function drawWarped(ctx: CanvasRenderingContext2D, l: Layer, H: Mat3, w: number,
   ctx.restore();
 }
 
-/** Draw one layer at timeline time t with opacity `alpha` (its fades are the caller's). */
-export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number) {
+/** The matte of the footage on screen at timeline time t, as a w×h picture whose opacity is the subject; null when there is none. */
+export type MatteSource = (t: number, w: number, h: number) => CanvasImageSource | null;
+
+let behind: { w: number; h: number; c?: CanvasImageSource; g?: Cx } = { w: 0, h: 0 };
+
+/**
+ * Draw one layer at timeline time t with opacity `alpha` (its fades are the caller's). A layer that
+ * is behind the subject is drawn on a picture of its own, the subject's matte cuts it out of that,
+ * and the rest goes on.
+ */
+export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number, matte?: MatteSource) {
+  // a subject effect is made of the matte itself
+  if (l.kind === 'shape' && l.shape === 'subject') return drawSubject(ctx, l, w, h, alpha, t, matte);
+  const cut = (l.depth === 'behind' || l.depth === 'inside') && matte ? matte(t, w, h) : null;
+  if (!cut) return drawBent(ctx, l, w, h, alpha, t);
+  if (behind.w !== w || behind.h !== h || !behind.g) {
+    const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+    behind = { w, h, c, g: c.getContext('2d') as Cx };
+  }
+  const g = behind.g!;
+  g.clearRect(0, 0, w, h);
+  drawBent(g as CanvasRenderingContext2D, l, w, h, alpha, t);
+  // behind: the subject is cut out of the layer; inside (a track matte): only the subject is left of it
+  g.globalCompositeOperation = l.depth === 'inside' ? 'destination-in' : 'destination-out';
+  g.drawImage(cut, 0, 0, w, h);
+  g.globalCompositeOperation = 'source-over';
+  ctx.drawImage(behind.c!, 0, 0);
+}
+
+/** A layer as it is drawn flat or, if it is tilted or pinned to a surface, warped. */
+function drawBent(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number) {
   const H = layerMatrix(l, t, w, h);
   if (H) return drawWarped(ctx, l, H, w, h, alpha, t);
   drawFlat(ctx, l, w, h, alpha, t);
@@ -127,8 +157,8 @@ function drawFlat(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number,
 }
 
 /** Draw every layer of `which` on screen at timeline time t, bottom row first. */
-export function drawLayers(ctx: CanvasRenderingContext2D, layers: Layer[], t: number, w: number, h: number, which: LayerSet = 'all') {
-  for (const l of drawOrder(layers)) if (inSet(l, which)) drawLayer(ctx, l, w, h, layerAlpha(l, t), t);
+export function drawLayers(ctx: CanvasRenderingContext2D, layers: Layer[], t: number, w: number, h: number, which: LayerSet = 'all', matte?: MatteSource) {
+  for (const l of drawOrder(layers)) if (inSet(l, which)) drawLayer(ctx, l, w, h, layerAlpha(l, t), t, matte);
 }
 
 /** Is any layer of `which` on screen at timeline time t? */

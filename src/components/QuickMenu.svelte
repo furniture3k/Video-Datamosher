@@ -2,7 +2,9 @@
   // Right-click (or long-press on a phone) on the picture: add things right where you pointed.
   import { store } from '../lib/store.svelte';
   import { addEmoji, addShape, addText, EMOJI } from '../lib/edit';
-  import { findFaces, pinHere, trackClip, trackableAt } from '../lib/motion.svelte';
+  import { findFaces, pictureMap, pinHere, trackClip, trackableAt } from '../lib/motion.svelte';
+  import { addSubjectEffect, titleBehind, toggleCutout } from '../lib/cutout.svelte';
+  import { mediaOf } from '../engine/timeline';
   import Icon from './Icon.svelte';
 
   /** x, y: where the menu opens (stage pixels); u, v: the point in the frame (shares of it) */
@@ -38,6 +40,22 @@
     trackClip(clip.id, [Math.max(0, u - r), Math.max(0, v - r * 1.4), Math.min(1, u + r), Math.min(1, v + r * 1.4)], 'mark').catch((err) => store.toast('Tracking failed: ' + (err as Error).message, 'error'));
   });
   const pin = run(() => pinHere(u, v));
+  // cut out what's here: the cut-out starts with a tap on the point
+  const cut = run(() => {
+    if (!clip) return;
+    toggleCutout(clip.id);
+    const map = pictureMap(clip.id);
+    const [pu, pv] = map ? map.toPicture(u, v) : [u, v];
+    if (store.ui.cutout && pu >= 0 && pu <= 1 && pv >= 0 && pv <= 1) store.ui.cutout.points = [[pu, pv, 1]];
+  });
+  const behind = run(() => clip && titleBehind(clip.id, [u, v]));
+  // recolour what's here: with a cut-out already, at once; without, the cut-out is made first (from a tap on this point)
+  const recolour = run(() => {
+    if (!clip) return;
+    if ((mediaOf(store.project, clip.mediaId)?.mattes ?? []).length) return void addSubjectEffect(clip.id, 'fill');
+    cut();
+    if (store.ui.cutout) store.ui.cutout.then = 'recolour';
+  });
   const faces = run(() => {
     if (clip) findFaces(clip.id).catch((err) => store.toast('Finding faces failed: ' + (err as Error).message, 'error'));
   });
@@ -50,6 +68,9 @@
   <button class="ghost mitem" role="menuitem" onclick={box}><Icon name="shape" />Box it</button>
   <button class="ghost mitem" role="menuitem" onclick={arrow}><Icon name="pointer" />Arrow to here</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={mark} title="Follows what's here: a box, an arrow and a label that move with it"><Icon name="target" />Mark what's here</button>
+  <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={cut} title="Cuts what's here out of the clip, following it, so titles can go behind it"><Icon name="target" />Cut out</button>
+  <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={recolour} title="The subject as a flat colour: a red car, a white cut-out"><Icon name="shape" />Recolour</button>
+  <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={behind} title="A big title behind the subject you cut out"><Icon name="text" />Text behind</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={pin} title="Pins a title to the flat surface here (a screen, a wall, a sign): it moves, turns and leans with it"><Icon name="screen" />Pin here</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={faces}><Icon name="target" />Find faces</button>
   <div class="emoji" role="group" aria-label="Sticker here">
