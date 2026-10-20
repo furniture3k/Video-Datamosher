@@ -63,7 +63,7 @@ unlocks, where it goes in the code, and when it counts as done.
   other layers); double-tap text to edit in place. Applies to layers *and* upper-track clips
   (`Clip.transform`). Lives in `src/components/Player.svelte` (which today only has split-compare,
   paint and track-box modes).
-- [ ] **F4. Pins.** *(M10 added the planar pin, `Layer.surface`; the path pin is still `follow` and the face pin a path, so the three are not yet one model.)* A layer can be pinned to: a tracked point (exists: `Clip.paths`,
+- [x] **F4. Pins.** *(One **Pin** control in a title's or shape's settings lists every tracked point, face and surface in the project; `Layer.pin` remembers which, so **Pin again here** re-pins from the playhead and **Unpin** lets go. A point or face drives position through `Layer.follow`, a surface adds the corner warp through `Layer.surface`.)* A layer can be pinned to: a tracked point (exists: `Clip.paths`,
   `TextClip.follow`), a planar/perspective track (P3), a face (P4), or a subject's matte (P2).
   The pin feeds position, scale, rotation and (for planar pins) a 4-corner warp.
 - [x] **F5. Mattes as a reusable asset.** *(M8: `MediaItem.mattes`, kept like fonts and LUTs; Depth and subject effects are its consumers. Subject Guard reading mattes comes with M9.)* A matte is a per-frame alpha attached to a clip, cached
@@ -71,7 +71,7 @@ unlocks, where it goes in the code, and when it counts as done.
   shape (P1), luma/threshold, depth (exists). Any layer can use a matte as **track matte**
   (inside/outside), and every layer gets a **Depth** setting: *Behind everything / Behind
   subject / In front*. Subject Guard becomes one consumer of mattes instead of owning segmentation.
-- [ ] **F6. Beat timing everywhere.** *(M3 did the ½ and ¼ grid, snapping and auto-edit cuts; beat units for durations and animations come with M4.)* Durations and offsets accept beat units; "appear on next
+- [x] **F6. Beat timing everywhere.** *(Start and Duration of titles, shapes and subject effects can be shown and typed in beats (the unit button beside the number), by the real beats so a tempo change is followed; **Start on the beat**, Reveal one per beat, Burst on the beats, Flash on every beat; auto-edit has ½ and ¼.)* Durations and offsets accept beat units; "appear on next
   beat", "one per beat" for groups. Auto-edit (`src/engine/beatedit.ts`) gets subdivisions:
   `every` currently counts whole beats, add ½ and ¼.
 - [x] **F7. Style Kits.** *(M3: title styles, `src/engine/styles.ts`: built-ins from the references, saved styles, apply to one or every title, new titles get the last. Kits widen to fonts, shapes and stickers as those arrive.)* A kit = fonts (display, body, accent), palette (3–5 colours),
@@ -120,9 +120,9 @@ unlocks, where it goes in the code, and when it counts as done.
 - [x] **Stamp trail.** *(M6b: on any title or shape, every beat or so many seconds; echo copies that follow motion are still to do)* On each beat, leave a copy of the card behind, offset in a chosen direction
   (R3); also "echo" copies that follow motion.
 - [x] **Pop-in on beat** *(G2: `Clip.pop`, snap, scale-pop or slide, with no easing as an option, on the next beat)* for cards and stickers: snap, scale-pop, slide, no easing option.
-- [x] **Animated shape masks** *(G2: `Clip.mask`, circle, rectangle, triangle, star, heart, growing over the clip; shape wipes between clips come with the transitions work)* on any clip or layer: circle, triangle, rectangle, star, text-as-mask;
+- [x] **Animated shape masks** *(G2: `Clip.mask`, circle, rectangle, triangle, star, heart, growing over the clip; shape wipes between clips are Circle crop, Box crop and Doors open in the transitions)* on any clip or layer: circle, triangle, rectangle, star, text-as-mask;
   shape wipe transitions using the kit colour (R4).
-- [x] **Split/grid layouts** *(M6b: `src/engine/grid.ts`, seven layouts with a gap, for the clips under the playhead or the selected ones; swapping cells on beats is still to do)*: 2-up, 3-up, 2×2, 3×3, filled by dropping clips; cells can swap on
+- [x] **Split/grid layouts** *(M6b: `src/engine/grid.ts`, seven layouts with a gap, for the clips under the playhead or the selected ones; swapping cells **Burst on the beats** repeats the burst on every beat)*: 2-up, 3-up, 2×2, 3×3, filled by dropping clips; cells can swap on
   beats.
 - [x] **Device and window mockups** *(M7: phone, browser window, app window and laptop drawn round the canvas card; the music player, chat bubble and zoom into the screen are still to do)*: phone, laptop, generic browser window, generic music player,
   desktop window with title bar, chat bubble. Drop a clip in and it plays on the "screen";
@@ -164,35 +164,35 @@ unlocks, where it goes in the code, and when it counts as done.
 ## Phase 4: Looks, motion and stickers (R1, R5, R6, R2)
 
 ### New picture effects (WebGL, alongside `src/lib/post.ts` effects)
-- [x] **Threshold / 1-bit** *(M11: 1-bit with six inks, Halftone in black or colour; line and two-colour halftone screens are still to do)* with dither choice; **halftone** (dots, lines, size, angle, two-colour
+- [x] **Threshold / 1-bit** *(M11: 1-bit with six inks, Halftone in black or colour; Halftone has a Lines screen and a Two colours option (ink and paper) too)* with dither choice; **halftone** (dots, lines, size, angle, two-colour
   print) (R1, R2).
 - [x] **Line art / edges** *(M11)* (ink outline of the picture), which pairs with luma key (R2).
 - [x] **Light trails / long exposure** *(M11)* (frame blending with decay) (R6).
 - [x] **Halation, bloom glow, vignette, light leaks, gate weave** *(M11: Glow with halation, Vignette, Light Leak, Gate Weave with flicker and dust)* (R5, R6).
 - [x] **DV / camcorder crush** *(M11: DV Tape)*: crushed blacks, clipped highlights, oversaturated reds, low-res
   softness, interlace (R6). The existing VHS effect is a different texture.
-- [x] **Frame-rate look (step print)** *(M11: per clip in FFmpeg and the preview, and a Step Print effect on the finished mosh; per track is still to do)*: hold frames to 8 / 12 / 15 / 18 fps per clip, track or
+- [x] **Frame-rate look (step print)** *(M11: per clip in FFmpeg and the preview, and a Step Print effect on the finished mosh; **Same for the whole track** gives a track's clips the same rate)*: hold frames to 8 / 12 / 15 / 18 fps per clip, track or
   adjustment layer, optionally on twos with jitter (R6 ~12 fps, R4 ~16 fps).
 
 ### Transitions
-- [x] **Whip pan** *(M12: Whip left / right, a blended slide with blur in the preview; picking the direction from the motion is still to do)* (directional motion blur and slide, auto-direction from the clips' motion) (R5).
-- [x] **Flash frame** *(M12: zoom through, blur dissolve, clock and diagonal wipes, squeeze, circle close; Dip to white is the flash; colour flashes and a dip with hold are still to do)* (white/colour frame on the beat), **dip with hold**, **shape wipe** (from P1),
+- [x] **Whip pan** *(M12: Whip left / right, a blended slide with blur in the preview; **Whip with the motion** picks the direction from a tracked object or a keyframed move)* (directional motion blur and slide, auto-direction from the clips' motion) (R5).
+- [x] **Flash frame** *(M12: zoom through, blur dissolve, clock and diagonal wipes, squeeze, circle close; Dip to white is the flash; **Flash a colour on every beat** (palette) puts a few frames of colour on each beat; Dip to grey, Circle crop, Box crop, Doors open and Grainy dissolve are new. A dip that holds on black is not built: FFmpeg's xfade has no hold, and ffmpeg.wasm 5.1 lacks the `custom` transition that could do it, so a dip is as long as its overlap)* (white/colour frame on the beat), **dip with hold**, **shape wipe** (from P1),
   **zoom-through** (into a mockup screen or a subject).
 
 ### Flipbook clip (R1 ornaments, R2 b-roll)
-- [x] *(M12: the Flipbook dialog lays the pictures on a new track, on the beat or every few frames, in order, shuffled or back and forth; behind the subject waits for cut-outs)* Drop a folder or selection of images/clips into one slot; it cycles every N frames or every
+- [x] *(M12: the Flipbook dialog lays the pictures on a new track, on the beat or every few frames, in order, shuffled or back and forth; **Behind the subject** once something is cut out)* Drop a folder or selection of images/clips into one slot; it cycles every N frames or every
   beat / ½ / ¼ beat, in order, random or ping-pong. Works as a layer (behind subject too) or on
   the main track.
 
 ### Stickers
-- [x] *(M13: 18 emoji as titles, and drawn hearts, sparkles and starbursts next to the shapes; ornaments, tape and paper scraps are still to do)* Built-in sticker library: emoji, reactions (generic hearts, thumbs, faces), stars, sparkles,
+- [x] *(M13: 18 emoji as titles, and drawn hearts, sparkles and starbursts next to the shapes; tape, torn paper scraps, a flower, an asterisk and a squiggle are drawn in-house as shapes with style kits)* Built-in sticker library: emoji, reactions (generic hearts, thumbs, faces), stars, sparkles,
   ornaments/mandalas, line-art drawings, scribbles, arrows, tape, paper scraps.
 - [x] **Face pin** *(M13: Find faces (MediaPipe on the device) makes a track per face; a sticker, label or mark follows it. M9: **Blur faces** and **Pixelate faces** follow every face found, as ovals over the picture.)*: detect faces on device and pin a sticker or blur to each face automatically
   (R3's censor star).
 - [x] **Floating particles** *(M13: on any title or shape: rise, fall or burst; on beats is still to do)*: emojis/stickers that rise, fall or burst on beats (R6 reactions).
 
 ### Built-in looks
-- [ ] One-click film looks built from R5 and R6 (grade + halation + grain + vignette + frame rate),
+- [x] *(the presets Cinematic Film (R5) and Degraded 8 mm (R6): glow with halation, vignette, grain, gate weave, step print and light leaks, each an effect you can tweak; not adjustment layers)* One-click film looks built from R5 and R6 (grade + halation + grain + vignette + frame rate),
   each as an adjustment layer you can tweak. Looks combine with LUTs (exist).
 
 ## Phase 5: Make it effortless

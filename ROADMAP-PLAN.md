@@ -510,3 +510,8 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - **v3 migration**: projects keep reading v1/v2. Saving writes v3, and older app versions refuse it
   with the existing "Unknown project version" message, which is noted in What's new.
 - **Licensing**: Google Fonts (OFL) only, and every mockup and sticker drawn in-house.
+
+---
+
+## The rest of the gaps (PR for `feat/gaps-rest`)
+> **Done.** New transitions (circle crop, box crop, doors, dip to grey, grainy dissolve) are ffmpeg `xfade` names that ffmpeg.wasm 5.1 has; whip with the motion chooses left or right from a tracked path or a keyframed move at the cut. Not built, with reasons: a dip that holds on a colour (xfade has no hold; the `custom` expression transition is missing from ffmpeg.wasm 5.1) and 3D camera solve (a stretch goal). Halftone gained lines and two-colour inks; step print can be set for a whole track; tape, paper scrap, flower, asterisk and squiggle are shapes; particles burst on beats and a colour flash lands on beats; flipbooks can sit behind the subject; one Pin control (`Layer.pin`) covers points, faces and surfaces; times can be shown in beats (`src/engine/beattime.ts`).
