@@ -13,11 +13,13 @@
   import Icon from '../components/Icon.svelte';
   import StarterCard from './StarterCard.svelte';
   import TemplateDialog from './TemplateDialog.svelte';
+  import StealDialog from '../dialogs/StealDialog.svelte';
 
   let importInput: HTMLInputElement;
   let projectInput: HTMLInputElement;
   let menuFor = $state<string | null>(null);
   let template = $state<Template | null>(null);
+  let stealing = $state(false);
   let working = $state<string | null>(null);
 
   onMount(() => {
@@ -129,6 +131,12 @@
     {/if}
 
     <section>
+      <h2>{t('Steal this edit')}</h2>
+      <p class="faint small sub">{t('Pick a video whose edit you like (a screen recording of a Reel). moshpit measures its cuts, frame rate and colours, and cuts your footage the same way.')}</p>
+      <button class="steal" onclick={() => (stealing = true)}>{t('Pick a reference video')}</button>
+    </section>
+
+    <section>
       <h2>{t('Start from a template')}</h2>
       <p class="faint small sub">{t('Pick your clips and the mosh is set up for you. Or try one with sample footage first.')}</p>
       <div class="grid starters">
@@ -166,6 +174,7 @@
 </div>
 
 {#if template}<TemplateDialog t={template} onclose={() => (template = null)} />{/if}
+{#if stealing}<StealDialog fromHome onclose={() => (stealing = false)} />{/if}
 
 <style>
   .home {
@@ -385,5 +394,16 @@
     .drop {
       display: none;
     }
+  }
+  .steal {
+    padding: 8px 16px;
+    border-radius: var(--r-lg, 8px);
+    border: 1px dashed var(--line-2);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .steal:hover {
+    border-color: var(--accent);
   }
 </style>
