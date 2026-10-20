@@ -83,7 +83,7 @@ import { formatSeconds } from '../engine/eta';
   // the beat grid (and the BPM shown for beat-triggered effects) follows the music as it's edited
   let beatTimer = 0;
   $effect(() => {
-    if (!beatInfo.grid && !store.project.effects.some(usesBeats)) return;
+    if (!beatInfo.grid && untrack(() => beatInfo.status) === 'idle' && !store.project.effects.some(usesBeats)) return;
     void beatInputs(store.project);
     clearTimeout(beatTimer);
     beatTimer = window.setTimeout(refreshBeats, 400);
