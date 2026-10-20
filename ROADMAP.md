@@ -108,19 +108,19 @@ unlocks, where it goes in the code, and when it counts as done.
 - [x] **Annotate tool.** *(M5: "Mark something moving": drag a box round it, and a box, an arrow and a typing label follow it, as three layers on their own rows; they aren't a group yet.)* Tap an object → a box snaps around it and tracks it (existing tracker) →
   drag out from the box to make an arrow → type a label. One gesture makes a box, an arrow and a label as a
   group.
-- [ ] **Callout** = image/box + leader line + title + small print (product name and price in R4,
+- [x] **Callout** *(G1: `calloutLayers`, a box, a leader line with an end square and a label as one group)* = image/box + leader line + title + small print (product name and price in R4,
   annotation labels in R9). Same primitive, different kit.
-- [ ] Glow, drop shadow and outer stroke as layer styles.
+- [x] Glow, drop shadow and outer stroke as layer styles. *(G1: `Layer.fx`, on any title or shape, in the preview and the mosh.)*
 
 ### Canvas, frames and collage (R3, R4, R8)
 - [x] **Canvas background** *(M6a: `src/engine/canvas.ts`; colour, gradient, an image or a blurred copy (M6b), round corners, border, shadow, moved up or down)*: colour, gradient, image or blurred copy of the video; the picture
   inset with padding, border and corner radius (R4 off-white, R8 blue border).
-- [ ] **Card style** for clips and images: border, shadow, rounded corners, caption under it
+- [x] **Card style** *(G2: `Clip.card`: border, paper, shadow, round corners and a caption; polaroid, white card and tape-on looks)* for clips and images: border, shadow, rounded corners, caption under it
   (polaroid).
 - [x] **Stamp trail.** *(M6b: on any title or shape, every beat or so many seconds; echo copies that follow motion are still to do)* On each beat, leave a copy of the card behind, offset in a chosen direction
   (R3); also "echo" copies that follow motion.
-- [ ] **Pop-in on beat** for cards and stickers: snap, scale-pop, slide, no easing option.
-- [ ] **Animated shape masks** on any clip or layer: circle, triangle, rectangle, star, text-as-mask;
+- [x] **Pop-in on beat** *(G2: `Clip.pop`, snap, scale-pop or slide, with no easing as an option, on the next beat)* for cards and stickers: snap, scale-pop, slide, no easing option.
+- [x] **Animated shape masks** *(G2: `Clip.mask`, circle, rectangle, triangle, star, heart, growing over the clip; shape wipes between clips come with the transitions work)* on any clip or layer: circle, triangle, rectangle, star, text-as-mask;
   shape wipe transitions using the kit colour (R4).
 - [x] **Split/grid layouts** *(M6b: `src/engine/grid.ts`, seven layouts with a gap, for the clips under the playhead or the selected ones; swapping cells on beats is still to do)*: 2-up, 3-up, 2×2, 3×3, filled by dropping clips; cells can swap on
   beats.
@@ -202,7 +202,7 @@ unlocks, where it goes in the code, and when it counts as done.
 - [x] **Starter templates for each reference style** *(M14: Kinetic lyrics, Scrapbook, Product demo, Red notes, Cinematic, Degraded film, Split screen)*, using the existing template system
   (`src/home/TemplateDialog.svelte`): Red Annotations, Word-per-Beat, Y2K Collage, Behind the
   Subject, Degraded Film, Cinematic Nature, Tour Visuals. Pick clips (and a song), get the edit.
-- [ ] **Steal this edit.** Import a reference video (like a screen recording of a Reel): moshpit
+- [x] **Steal this edit** *(M15: `src/engine/steal.ts`, Home → Steal this edit)*. Import a reference video (like a screen recording of a Reel): moshpit
   measures cut rhythm (against its beat), shot length, effective frame rate, palette and grade
   (built as a LUT by colour transfer), canvas/inset, text density and position. It turns these into a
   template + kit to apply to your clips. Uses existing beat detection, scene cuts and LUTs.
