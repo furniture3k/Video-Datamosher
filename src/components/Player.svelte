@@ -509,6 +509,15 @@
     const shown = mosh ? canvas : editCanvas;
     const sr = wrap.getBoundingClientRect();
     const rc = shown.getBoundingClientRect();
+    // a canvas not drawn yet at the frame's shape (the view has just switched to the mosh, say):
+    // the frame letterboxed into the canvases' area (10 px in from the stage's edges), as it will show
+    const drawn = shown.width > 0 && shown.height > 0 && rc.width > 0 && rc.height > 0;
+    if (!drawn || (store.ui.compare !== 'side' && Math.abs(shown.width / shown.height / (guideSize.w / guideSize.h) - 1) > 0.02)) {
+      const cw = wrap.clientWidth - 20;
+      const ch = wrap.clientHeight - 20;
+      const g = Math.min(cw / guideSize.w, ch / guideSize.h);
+      return { left: 10 + (cw - guideSize.w * g) / 2, top: 10 + (ch - guideSize.h * g) / 2, width: guideSize.w * g, height: guideSize.h * g };
+    }
     const k = Math.min(rc.width / shown.width, rc.height / shown.height);
     const w = shown.width * k;
     const h = shown.height * k;
