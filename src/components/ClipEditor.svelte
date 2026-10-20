@@ -13,7 +13,8 @@ import { store } from '../lib/store.svelte';
   import Icon from './Icon.svelte';
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
-  import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, groupSelected, ungroupSelected, EMOJI } from '../lib/edit';
+  import { layersOnBeat } from '../lib/graphicsops.svelte';
+  import { setTransition, stepPrintTrack, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, groupSelected, ungroupSelected, EMOJI } from '../lib/edit';
   import { revealOnBeats } from '../lib/graphicsops.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
@@ -210,8 +211,9 @@ import { store } from '../lib/store.svelte';
     <div class="row"><b class="grow">Text</b><span class="small faint mono">{fmt(text.start)}</span></div>
     <textarea rows="3" value={text.text} oninput={(e) => setT('text')((e.target as HTMLTextAreaElement).value)} aria-label="Text"></textarea>
     <StylePicker title={text} />
-    <Field label="Start" unit="s" min={0} max={Math.max(1, store.duration)} step={0.05} value={text.start} help="When the text appears." onchange={setT('start')} />
-    <Field label="Duration" unit="s" min={0.05} max={60} step={0.05} value={text.duration} help="How long it stays." onchange={setT('duration')}>
+    <Field label="Start" unit="s" time="at" min={0} max={Math.max(1, store.duration)} step={0.05} value={text.start} help="When the text appears." onchange={setT('start')} />
+    <button class="small" onclick={() => layersOnBeat([text.id])} title="Move it to start on the nearest beat of the music">Start on the beat</button>
+    <Field label="Duration" unit="s" time="span" from={text.start} min={0.05} max={60} step={0.05} value={text.duration} help="How long it stays." onchange={setT('duration')}>
       <BeatChips counts={[0.25, 0.5, 1, 2, 4]} onpick={setT('duration')} />
     </Field>
     <Field label="Size" min={0.02} max={0.5} step={0.005} value={text.size} help="Letter height as a share of the frame height." onchange={setT('size')} />
@@ -329,6 +331,7 @@ import { store } from '../lib/store.svelte';
           help="Choppy, held motion like step-printed film or anime: the picture only changes a few times a second."
           onchange={(v: string) => setC('stepFps')(Number(v) || undefined)}
         />
+        <button class="small" onclick={() => stepPrintTrack(c.id)} title="Give every clip on this track the same step print as this one, so the whole row looks hand-animated">Same for the whole track</button>
       {/if}
       {#if isVideo && !isStill}
         <Field

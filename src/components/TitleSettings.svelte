@@ -6,7 +6,7 @@
   import Field from './Field.svelte';
   import BeatChips from './BeatChips.svelte';
   import TrailSettings from './TrailSettings.svelte';
-  import SurfaceSettings from './SurfaceSettings.svelte';
+  import PinSettings from './PinSettings.svelte';
   import TiltSettings from './TiltSettings.svelte';
   import DepthSettings from './DepthSettings.svelte';
   import EffectsSettings from './EffectsSettings.svelte';
@@ -156,7 +156,7 @@
 <EffectsSettings layer={title} />
 <DepthSettings layer={title} />
 <TiltSettings layer={title} />
-<SurfaceSettings layer={title} />
+<PinSettings layer={title} />
 <ParticleSettings layer={title} />
 
 <style>

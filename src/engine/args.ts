@@ -8,7 +8,7 @@ import { lutFile } from './lut';
 import { reframeFilter, type ReframePath } from './reframe';
 import { linearExpr } from './track';
 import { screenFilters } from './screen';
-import { BLEND_TRANSITIONS, audioSources, clipLen, sourceTime, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
+import { audioSources, clipLen, sourceTime, cutFrames, segments, transitionKeyTimes, xfadeOf, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
   { id: 'mandelbrot', name: 'Mandelbrot zoom', spec: (w, h, r) => `mandelbrot=s=${w}x${h}:r=${r}` },
@@ -381,7 +381,7 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
       const k = i + 1;
       const o = `${tag}x${k}`;
       if (pl.overlap > 0) {
-        const tr = BLEND_TRANSITIONS[pl.clip.transition!.type]?.xfade ?? 'fade';
+        const tr = xfadeOf(pl.clip.transition!.type, vis[k - 1].clip, pl.clip);
         filter.push(`[${cur}][${tag}c${k}]xfade=transition=${tr}:duration=${r3(pl.overlap)}:offset=${r3(pl.start - seg.start)}[${o}]`);
       } else filter.push(`[${cur}][${tag}c${k}]concat=n=2:v=1:a=0[${o}]`);
       cur = o;

@@ -1550,7 +1550,8 @@ await isoStep('surface: four corners on a leaning screen are tracked; a shape, a
     store.ui.selectedClips = [s.id];
     return s.id;
   }, { id, pose });
-  await page.locator('.field', { hasText: 'Pin to a surface' }).locator('select').selectOption({ index: 1 });
+  const pinSel = page.locator('.field', { hasText: 'Pin to…' }).locator('select');
+  await pinSel.selectOption(await pinSel.locator('option', { hasText: 'Surface:' }).first().getAttribute('value'));
   await page.waitForFunction((lid) => window.__moshpit.store.project.layers.find((l) => l.id === lid)?.surface, sq, { timeout: 5000 });
   // the live edit picture (the mosh view would show the last render)
   await S(() => (window.__moshpit.store.ui.view = 'edit'));
@@ -2424,6 +2425,141 @@ await isoStep('collage: a card and a mask on a clip, pop in, swapping cells, moc
   await settle2();
   const rings = await S(() => { const cv = document.querySelector('.stage canvas.edit'); const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 1] > 200 && d[i] < 90 && d[i + 2] < 90) n++; return n; });
   if (!(rings > 150)) throw new Error('the ripple drew nothing: ' + rings);
+});
+
+await isoStep('looks and cuts: a two-colour line screen in the mosh, the new transitions listed, step print for a whole track', async () => {
+  await S(async () => {
+    const { ffmpeg, media, store, timeline } = window.__moshpit;
+    for (const [name, col] of [['red2.mp4', 'red'], ['blue2.mp4', 'blue']]) {
+      const r = await ffmpeg.run(['-f', 'lavfi', '-i', `color=c=${col}:s=320x240:r=24:d=3`, '-pix_fmt', 'yuv420p', name], { outputs: [name] });
+      await media.addFiles([new File([r.out[name]], name, { type: 'video/mp4' })], 'none');
+    }
+    for (const [i, name] of ['red2.mp4', 'blue2.mp4'].entries()) {
+      const m = store.project.media.find((x) => x.source.name === name);
+      store.edit((p) => p.clips.push(timeline.makeClip(m, 'v1', { start: i * 3 })));
+    }
+    store.ui.view = 'edit';
+    store.seek(1);
+  });
+  // ---- the transitions are listed with the cuts
+  await S(() => { const st = window.__moshpit.store; st.selectTransition(st.project.clips.find((c) => c.track === 'v1' && c.start > 0).id); });
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  for (const name of ['Whip with the motion', 'Circle crop', 'Box crop', 'Doors open', 'Dip to grey', 'Grainy dissolve']) await page.getByRole('button', { name, exact: true }).waitFor({ timeout: 5000 });
+  await page.getByRole('button', { name: 'Doors open', exact: true }).click();
+  await S(() => window.__moshpit.store.edit((p) => p.clips.forEach((c) => delete c.transition)));
+  // ---- step print for the whole track
+  await S(() => { const st = window.__moshpit.store; st.ui.selectedClips = [st.project.clips[0].id]; st.edit((p) => (p.clips[0].stepFps = 8)); });
+  await page.getByRole('button', { name: 'Same for the whole track' }).click();
+  const steps = await S(() => window.__moshpit.store.project.clips.map((c) => c.stepFps));
+  if (steps.some((v) => v !== 8)) throw new Error('step print for the track: ' + JSON.stringify(steps));
+  await S(() => window.__moshpit.store.edit((p) => p.clips.forEach((c) => delete c.stepFps)));
+  // ---- a two-colour line screen: after it the mosh is only white and black, where the red clip was a flat red
+  await S(() => { const st = window.__moshpit.store; st.addEffect('halftone'); st.edit((p) => { const e = p.effects.at(-1); e.params.screen = 'lines'; e.params.ink = 'night'; e.params.cell = 6; }); st.ui.view = 'auto'; });
+  await settle();
+  const colour = await S(async () => {
+    const st = window.__moshpit.store;
+    const j = st.render.jpegs[Math.round(1 * st.project.encoder.fps)];
+    const b = await createImageBitmap(new Blob([j], { type: 'image/jpeg' }));
+    const c = new OffscreenCanvas(b.width, b.height).getContext('2d');
+    c.drawImage(b, 0, 0);
+    const d = c.getImageData(0, 0, b.width, b.height).data;
+    let bright = 0, dark = 0, tinted = 0;
+    for (let i = 0; i < d.length; i += 4) { const hi = Math.max(d[i], d[i + 1], d[i + 2]); const lo = Math.min(d[i], d[i + 1], d[i + 2]); if (hi - lo > 60) tinted++; else if (hi > 200) bright++; else if (hi < 60) dark++; }
+    return { bright, dark, tinted, total: d.length / 4 };
+  });
+  if (!(colour.tinted < colour.total * 0.02 && colour.bright > colour.total * 0.05 && colour.dark > colour.total * 0.05)) throw new Error('two-colour line screen: ' + JSON.stringify(colour));
+  await renderShot('m-looks-lines', 1);
+  await S(() => { const st = window.__moshpit.store; st.edit((p) => (p.effects = [])); st.ui.view = 'edit'; });
+});
+
+await isoStep('pins: one control for a tracked point, a face and a surface; pin again, then unpin', async () => {
+  await S(async () => {
+    const { ffmpeg, media, store, timeline } = window.__moshpit;
+    const r = await ffmpeg.run(['-f', 'lavfi', '-i', 'color=c=gray:s=320x240:r=24:d=3', '-pix_fmt', 'yuv420p', 'pinbase.mp4'], { outputs: ['pinbase.mp4'] });
+    await media.addFiles([new File([r.out['pinbase.mp4']], 'pinbase.mp4', { type: 'video/mp4' })], 'none');
+    const m = store.project.media.find((x) => x.source.name === 'pinbase.mp4');
+    store.edit((p) => {
+      const c = timeline.makeClip(m, 'v1', { start: 0 });
+      c.paths = [{ id: 'pt1', name: 'Object 1', pts: [[0, 0.2, 0.5], [3, 0.8, 0.5]] }, { id: 'pt2', name: 'Face 1', pts: [[0, 0.5, 0.3], [3, 0.5, 0.7]] }];
+      p.clips.push(c);
+    });
+    store.ui.view = 'edit';
+    store.seek(0);
+    const l = window.__moshpit.edit.addShape('rect');
+    store.edit((p) => Object.assign(p.layers.find((x) => x.id === l.id), { start: 0, duration: 3, x: 0.2, y: 0.5 }));
+    store.ui.selectedClips = [l.id];
+    window.__pinId = l.id;
+  });
+  const sel = page.locator('.field', { hasText: 'Pin to…' }).locator('select');
+  const labels = await sel.locator('option').allTextContents();
+  if (!labels.some((t) => t.startsWith('Point:')) || !labels.some((t) => t.startsWith('Face:'))) throw new Error('the pin list: ' + JSON.stringify(labels));
+  await sel.selectOption(await sel.locator('option', { hasText: 'Point:' }).first().getAttribute('value'));
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.find((l) => l.id === window.__pinId)?.pin?.kind === 'point', null, { timeout: 5000 });
+  // it keeps the place it had, and ends up where the object ends up
+  const at = await S(() => { const l = window.__moshpit.store.project.layers.find((x) => x.id === window.__pinId); return [l.follow[0], l.follow.at(-1)]; });
+  if (Math.abs(at[0][1] - 0.2) > 0.03 || at[1][1] < 0.6) throw new Error('pinned to a point: ' + JSON.stringify(at));
+  // move the playhead, pin again there
+  await S(() => window.__moshpit.store.seek(1.5));
+  await page.getByRole('button', { name: 'Pin again here' }).click();
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.find((l) => l.id === window.__pinId)?.pin?.kind === 'point', null, { timeout: 5000 });
+  await page.getByRole('button', { name: 'Unpin' }).click();
+  const after = await S(() => { const l = window.__moshpit.store.project.layers.find((x) => x.id === window.__pinId); return { follow: l.follow, pin: l.pin, x: l.x }; });
+  if (after.follow || after.pin || Math.abs(after.x - 0.5) > 0.1) throw new Error('unpinned: ' + JSON.stringify(after));
+  // a face goes in the same list
+  await sel.selectOption(await sel.locator('option', { hasText: 'Face:' }).first().getAttribute('value'));
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.find((l) => l.id === window.__pinId)?.pin?.kind === 'face', null, { timeout: 5000 });
+  await page.getByRole('button', { name: 'Unpin' }).click();
+});
+
+await isoStep('beat timing: times in beats that follow a tempo change, start on the beat, a burst on every beat, a flash on every beat', async () => {
+  await S(async () => {
+    const { ffmpeg, media, store, edit, beatinfo, timeline } = window.__moshpit;
+    const r = await ffmpeg.run(['-f', 'lavfi', '-i', 'color=c=gray:s=320x240:r=24:d=10', '-pix_fmt', 'yuv420p', 'beatbase.mp4'], { outputs: ['beatbase.mp4'] });
+    await media.addFiles([new File([r.out['beatbase.mp4']], 'beatbase.mp4', { type: 'video/mp4' })], 'none');
+    const m = store.project.media.find((x) => x.source.name === 'beatbase.mp4');
+    store.edit((p) => p.clips.push(timeline.makeClip(m, 'v1', { start: 0 })));
+    // a made-up tempo: a beat every half second, then every second from 2 s
+    Object.assign(beatinfo.beatInfo, { status: 'ready', bpm: 120, beats: [0, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8], downbeats: [0, 2, 4, 6, 8] });
+    const l = edit.addShape('heart');
+    store.edit((p) => Object.assign(p.layers.find((x) => x.id === l.id), { start: 1.2, duration: 1.5 }));
+    store.ui.selectedClips = [l.id];
+    window.__beatId = l.id;
+    store.ui.view = 'edit';
+  });
+  await page.locator('.tabs button', { hasText: 'Clip' }).click();
+  const start = page.locator('input[aria-label="Start"]');
+  await start.waitFor();
+  // seconds first: 1.2 s is 2.4 beats in; then beats
+  await page.getByRole('button', { name: 'Start in seconds: switch' }).click();
+  const shown = Number(await start.inputValue());
+  if (Math.abs(shown - 2.4) > 0.01) throw new Error('start in beats: ' + shown);
+  // typing 4 beats puts it on 2 s (the tempo changes there: the next beat is a second later)
+  await start.fill('4');
+  await start.press('Enter');
+  await page.waitForFunction((id) => Math.abs(window.__moshpit.store.project.layers.find((l) => l.id === id).start - 2) < 0.01, window.__beatId, { timeout: 5000 });
+  // a length: 1.5 s from 2 s is 1.5 beats at the slow tempo
+  const dur = Number(await page.locator('input[aria-label="Duration"]').inputValue());
+  if (Math.abs(dur - 1.5) > 0.01) throw new Error('duration in beats: ' + dur);
+  await page.getByRole('button', { name: 'Start in beats: switch' }).click();
+  // start on the beat
+  await S((id) => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === id).start = 1.3)), window.__beatId);
+  await page.getByRole('button', { name: 'Start on the beat' }).click();
+  await page.waitForFunction((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).start === 1.5, window.__beatId, { timeout: 5000 });
+  // a burst of particles on every beat it is on screen for
+  await S((id) => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === id).particles = { kind: 'burst', count: 8, speed: 0.4, spread: 0.5 })), window.__beatId);
+  await page.locator('[aria-label="Burst on the beats"]').check();
+  const at = await S((id) => window.__moshpit.store.project.layers.find((l) => l.id === id).particles.at, window.__beatId);
+  if (!at || at.length < 2 || at[0] !== 0) throw new Error('burst times: ' + JSON.stringify(at));
+  // a flash on the beats, from the palette
+  await S(() => { const st = window.__moshpit.store; st.edit((p) => (p.layers = [])); st.seek(0); });
+  await page.keyboard.press('Control+p');
+  await page.locator('.pal input').waitFor();
+  await page.keyboard.type('flash a colour');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.length >= 4, null, { timeout: 5000 });
+  const flashes = await S(() => window.__moshpit.store.project.layers.map((l) => [l.start, l.duration, !!l.group]));
+  if (flashes.some((f) => !f[2] || f[1] > 0.2)) throw new Error('flashes: ' + JSON.stringify(flashes));
+  await S(() => { const st = window.__moshpit.store; st.edit((p) => (p.layers = [])); window.__moshpit.beatinfo.beatInfo.status = 'idle'; });
 });
 
 await isoStep('type and shapes: gradient, line and word looks, polygon, leader line, callout, shadow and outline, shape styles', async () => {

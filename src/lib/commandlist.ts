@@ -104,6 +104,7 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'script', title: 'Script: lines that become timed titles', group: 'Edit', keys: [], words: 'write lines titles words lyrics captions text timed beats' },
   { id: 'swap-cells', title: 'Swap the split screen’s clips between cells on the beat', group: 'Edit', keys: [], words: 'collage grid split screen swap shuffle rotate cells beat' },
   { id: 'reveal-beats', title: 'Reveal the selected layers one per beat', group: 'Edit', keys: [], words: 'stagger build up arrive beat titles shapes' },
+  { id: 'flash-beats', title: 'Flash a colour on every beat', group: 'Edit', keys: [], words: 'white flash strobe hit drop beat frames colour' },
   { id: 'group', title: 'Group the selected titles and shapes', group: 'Edit', keys: [], words: 'link together move copy delete mark' },
   { id: 'ungroup', title: 'Ungroup the selected titles and shapes', group: 'Edit', keys: [], words: 'unlink separate' },
   { id: 'mark', title: 'Mark something moving', group: 'Mosh', keys: [], words: 'annotate box arrow label track follow' },

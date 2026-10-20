@@ -140,3 +140,34 @@ describe('the depth stack', async () => {
     expect(l2.map((l) => l.id)).toEqual(['y', 'x']);
   });
 });
+
+describe('particles on the beats', () => {
+  it('bursts again at each beat, with its own scatter', async () => {
+    const { burstTimes, particlesAt, LIFE } = await import('../src/engine/particles');
+    const beats = [0.5, 1, 1.5, 2, 2.5, 3];
+    expect(burstTimes(beats, 1, 1.6)).toEqual([0, 0.5, 1, 1.5]);
+    expect(burstTimes(beats, 1, 1.6, 2)).toEqual([0, 1]);
+    const p = { kind: 'burst' as const, count: 10, speed: 0.4, spread: 0.5, at: [0, 1] };
+    expect(particlesAt(p, 0.3).length).toBe(10);
+    // between them everything is still flying; after both are over nothing is
+    expect(particlesAt(p, 1.2).length).toBe(20);
+    expect(particlesAt(p, 1 + LIFE + 0.1).length).toBe(0);
+    const a = particlesAt(p, 0.5)[0];
+    const b = particlesAt(p, 1.5)[0];
+    expect(a.dx === b.dx && a.dy === b.dy).toBe(false);
+    // without triggers it is the old single burst
+    expect(particlesAt({ ...p, at: undefined }, 0.3).length).toBe(10);
+  });
+});
+
+describe('colour flashes on the beat', () => {
+  it('makes a full-frame flash of a few frames at each beat, in one group', async () => {
+    const { flashLayers } = await import('../src/engine/flash');
+    let n = 0;
+    const out = flashLayers([0.5, 1, 1.5, 2, 2.5], 1, 2.5, { colour: '#ff0000', frames: 3, fps: 30 }, 'g3', () => 'f' + n++, 'grp');
+    expect(out.map((l) => l.start)).toEqual([1, 1.5, 2]);
+    expect(out.every((l) => l.group === 'grp' && l.fill === '#ff0000' && Math.abs(l.duration - 0.1) < 1e-9 && l.w > 1 && l.drawOn === undefined)).toBe(true);
+    expect(flashLayers([0.5, 1, 1.5, 2, 2.5], 0, 3, { colour: '#fff', frames: 1, fps: 25, every: 2 }, 'g3', () => 'x', 'g').map((l) => l.start)).toEqual([0.5, 1.5, 2.5]);
+    expect(flashLayers(Array.from({ length: 200 }, (_, i) => i * 0.1), 0, 100, { colour: '#fff', frames: 1, fps: 25, max: 10 }, 'g3', () => 'x', 'g').length).toBe(10);
+  });
+});

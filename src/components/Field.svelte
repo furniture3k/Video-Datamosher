@@ -2,6 +2,8 @@
   // Labelled control used by the clip / encoder / audio panels.
   import type { Snippet } from 'svelte';
   import { store } from '../lib/store.svelte';
+  import { beatInfo, timeUnit } from '../lib/beatinfo.svelte';
+  import { fromBeats, lengthFromBeats, lengthToBeats, toBeats } from '../engine/beattime';
   let {
     label,
     help = '',
@@ -12,6 +14,8 @@
     step = 1,
     options = [],
     unit = '',
+    time,
+    from = 0,
     onchange,
     children,
   }: {
@@ -24,16 +28,26 @@
     step?: number;
     options?: { value: string | number; label: string; hint?: string }[];
     unit?: string;
+    /** a time in seconds that can be shown in beats: a moment on the timeline ('at'), or a length starting at `from` ('span') */
+    time?: 'at' | 'span';
+    from?: number;
     onchange: (v: never) => void;
     children?: Snippet;
   } = $props();
   const set = (v: unknown) => onchange(v as never);
+  /** shown in beats: it is a time, the music has a tempo and beats are chosen as the unit */
+  const beatsOn = $derived(!!time && timeUnit.beats && beatInfo.status === 'ready' && beatInfo.beats.length > 1 && typeof value === 'number');
+  const toShown = (sec: number) => (time === 'at' ? toBeats(beatInfo.beats, sec) : lengthToBeats(beatInfo.beats, from, sec)) ?? sec;
+  const fromShown = (n: number) => (time === 'at' ? fromBeats(beatInfo.beats, n) : lengthFromBeats(beatInfo.beats, from, n)) ?? n;
+  const round = (x: number) => Math.round(x * 1000) / 1000;
+  const shown = $derived(beatsOn ? round(toShown(value as number)) : value);
   /** A typed number, kept in the field's range (a cleared box goes back to the value, not 0). */
   function setTyped(el: HTMLInputElement) {
     const v = el.valueAsNumber;
-    if (!Number.isFinite(v)) return void (el.value = String(value));
-    const c = Math.max(min, Math.min(max, v));
-    el.value = String(c);
+    if (!Number.isFinite(v)) return void (el.value = String(shown));
+    const sec = beatsOn ? fromShown(v) : v;
+    const c = Math.max(min, Math.min(max, sec));
+    el.value = String(beatsOn ? round(toShown(c)) : c);
     set(c);
   }
 </script>
@@ -42,8 +56,10 @@
   <div class="top">
     <span class="lab" class:has-help={!!help} title={help}>{label}</span>
     {#if type === 'range' || type === 'number'}
-      <input class="val" type="number" {min} {max} {step} {value} aria-label={label} onchange={(e) => setTyped(e.target as HTMLInputElement)} />
-      {#if unit}<span class="unit">{unit}</span>{/if}
+      <input class="val" type="number" min={beatsOn ? undefined : min} max={beatsOn ? undefined : max} step={beatsOn ? 0.25 : step} value={shown} aria-label={label} onchange={(e) => setTyped(e.target as HTMLInputElement)} />
+      {#if time && beatInfo.status === 'ready' && beatInfo.beats.length > 1}
+        <button class="unit swap" title={beatsOn ? 'Shown in beats of the music: press for seconds' : 'Shown in seconds: press for beats of the music'} aria-label={`${label} in ${beatsOn ? 'beats' : 'seconds'}: switch`} onclick={() => (timeUnit.beats = !timeUnit.beats)}>{beatsOn ? 'beats' : 's'}</button>
+      {:else if unit}<span class="unit">{unit}</span>{/if}
     {:else if type === 'bool'}
       <input type="checkbox" class="switch" checked={!!value} aria-label={label} onchange={(e) => set((e.target as HTMLInputElement).checked)} />
     {/if}
@@ -67,6 +83,16 @@
 </div>
 
 <style>
+  .swap {
+    border: 0;
+    background: transparent;
+    color: var(--accent, inherit);
+    cursor: pointer;
+    padding: 0 2px;
+    font: inherit;
+    font-size: 11.5px;
+    text-decoration: underline dotted;
+  }
   .hint {
     margin: 0;
     font-size: 11.5px;

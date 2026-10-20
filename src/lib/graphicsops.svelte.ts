@@ -8,6 +8,10 @@ import { transformOf, VIDEO_TRACK, type Clip } from '../engine/types';
 import { swapKeys } from '../engine/keys';
 import { layoutVideo, layers as upperLayers, clipLen } from '../engine/timeline';
 import { mediaOf } from '../engine/timeline';
+import { flashLayers } from '../engine/flash';
+import { nextRow } from '../engine/layers';
+import { uid } from '../engine/timeline';
+import { timelineDuration } from '../engine/timeline';
 
 /**
  * Make the selected titles and shapes come in one after another on the beat grid (`every` beats
@@ -102,4 +106,25 @@ export function swapCellsOnBeat(every = 1) {
     });
   });
   store.toast(`${clips.length} clips swap places ${beatInfo.status === 'ready' ? 'on the beat' : 'every ' + 0.5 * every + ' s (no beat found)'}.`, 'ok', 5000);
+}
+
+/** Flash a flat colour for a couple of frames on every beat from the playhead on (a few seconds of it, or `seconds`). */
+export function flashOnBeats(colour = '#ffffff', frames = 2, seconds = 8) {
+  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+  const from = store.ui.time;
+  const to = Math.min(from + seconds, Math.max(from + 0.5, timelineDuration(store.project) || from + seconds));
+  const row = nextRow(store.project.layers);
+  const made = flashLayers(beatInfo.beats, from, to, { colour, frames, fps: store.project.encoder.fps }, row, uid, uid());
+  if (!made.length) return store.toast('No beats between the playhead and the end.', 'info');
+  store.edit((p) => p.layers.push(...made));
+  store.toast(`${made.length} flashes on the beat. They are one group.`, 'ok');
+}
+
+/** Make titles and shapes appear on the nearest beat (their length stays what it is). */
+export function layersOnBeat(ids: string[]) {
+  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+  const near = (t: number) => beatInfo.beats.reduce((b, p) => (Math.abs(p - t) < Math.abs(b - t) ? p : b), beatInfo.beats[0]);
+  store.edit((p) => {
+    for (const l of p.layers) if (ids.includes(l.id)) l.start = Math.round(near(l.start) * 1000) / 1000;
+  });
 }
