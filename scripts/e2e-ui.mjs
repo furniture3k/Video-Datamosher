@@ -904,6 +904,36 @@ await step('faces get stickers that follow them; emoji with particles; a heart',
   }
 });
 
+await step('right-click the picture: a box and a sticker right there', async () => {
+  if (!(await S(() => window.__moshpit.store.project.clips.length))) {
+    await S(async () => {
+      const m = window.__moshpit;
+      await m.media.addFiles([new File([await m.renderer.renderGenerator('testsrc2', 2, 320, 180, 24)], 'testsrc2.mp4', { type: 'video/mp4' })]);
+    });
+    await idle();
+  }
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.setPref('view', 'edit');
+    st.ui.playing = false;
+    st.seek(0.5);
+    st.selectClip(null);
+  });
+  const before = await S(() => window.__moshpit.store.project.layers.map((l) => l.id));
+  const cv = await page.locator('.stage canvas.edit').boundingBox();
+  // a quarter of the way across, a third down
+  await page.mouse.click(cv.x + cv.width * 0.25, cv.y + cv.height / 3, { button: 'right' });
+  await page.getByRole('menuitem', { name: 'Box it' }).click();
+  await page.mouse.click(cv.x + cv.width * 0.75, cv.y + cv.height * 0.6, { button: 'right' });
+  await page.getByRole('menuitem', { name: 'Sticker 🔥 here' }).click();
+  const added = await S((before) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.filter((l) => !before.includes(l.id)))), before);
+  await S((ids) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => !ids.includes(l.id)))), added.map((l) => l.id));
+  await S(() => window.__moshpit.store.setPref('view', 'auto'));
+  if (added.length !== 2 || added[0].shape !== 'rect' || added[1].text !== '🔥') throw new Error('added: ' + JSON.stringify(added.map((l) => l.shape ?? l.text)));
+  const near = (l, x, y) => Math.abs(l.x - x) < 0.03 && Math.abs(l.y - y) < 0.03;
+  if (!near(added[0], 0.25, 1 / 3) || !near(added[1], 0.75, 0.6)) throw new Error('not where clicked: ' + JSON.stringify(added.map((l) => [l.x, l.y])));
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
@@ -1921,6 +1951,30 @@ await step('template: melt transitions with sample footage', async () => {
   const melts = await S(() => window.__moshpit.store.project.clips.filter((c) => c.transition?.type === 'melt').length);
   if (melts !== 2) throw new Error('expected a melt on both cuts, got ' + melts);
   await settle();
+});
+
+await step('templates for each reference style build with sample footage and render', async () => {
+  const checks = {
+    'Kinetic lyrics': (p) => p.layers.filter((l) => l.kind === 'text' && l.fit === 'width').length >= 2,
+    Scrapbook: (p) => !!p.canvas && p.layers.some((l) => l.trail) && p.effects.some((e) => e.type === 'hold'),
+    'Product demo': (p) => p.canvas?.device === 'browser' && p.layers.some((l) => l.shape === 'cursor'),
+    'Red notes': (p) => p.layers.some((l) => l.shape === 'rect') && p.layers.some((l) => l.shape === 'arrow'),
+    Cinematic: (p) => p.clips.some((c) => c.transition?.type === 'whipleft') && p.effects.some((e) => e.type === 'glow'),
+    'Degraded film': (p) => p.effects.some((e) => e.type === 'hold') && p.layers.some((l) => l.strobe),
+    'Split screen': (p) => p.clips.filter((c) => c.transform?.zoom).length === 2,
+  };
+  for (const [name, ok] of Object.entries(checks)) {
+    await S(() => window.__moshpit.projects.goHome());
+    await page.locator('[data-testid=home]').waitFor();
+    await page.locator('.starter', { hasText: name }).first().click();
+    await page.getByRole('button', { name: 'Try with sample footage' }).click();
+    await page.waitForFunction(() => !window.__moshpit.store.ui.home && window.__moshpit.store.project.clips.length > 0, null, { timeout: 120000 });
+    await page.waitForTimeout(500);
+    await settle();
+    const p = await S(() => JSON.parse(JSON.stringify(window.__moshpit.store.project)));
+    if (!ok(p)) throw new Error(name + ' was not built: ' + JSON.stringify({ layers: p.layers.map((l) => l.shape ?? l.text), canvas: p.canvas, effects: p.effects.map((e) => e.type) }));
+    if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error(name + ' did not render');
+  }
 });
 
 await step('home: rename, duplicate and delete a project', async () => {

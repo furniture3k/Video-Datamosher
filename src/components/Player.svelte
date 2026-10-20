@@ -17,6 +17,7 @@
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawLayers } from '../lib/layers';
   import Gizmo from './Gizmo.svelte';
+  import QuickMenu from './QuickMenu.svelte';
   import { addPen } from '../lib/edit';
   import { fontState } from '../lib/fonts.svelte';
   import { audioCtx } from '../lib/audioctx';
@@ -688,6 +689,16 @@
   let importInput = $state<HTMLInputElement>();
   let draggingSplit = false;
   let tapAt: { x: number; y: number; t: number } | null = null;
+  let holdTimer = 0;
+  /** the add-here menu: where it opens (stage pixels) and the point in the frame */
+  let quick = $state<{ x: number; y: number; u: number; v: number } | null>(null);
+  function openQuick(e: { clientX: number; clientY: number }) {
+    const r = wrap.getBoundingClientRect();
+    const [u, v] = pictureUV(e);
+    if (u < 0 || u > 1 || v < 0 || v > 1) return;
+    store.ui.playing = false;
+    quick = { x: Math.min(e.clientX - r.left, r.width - 200), y: Math.min(e.clientY - r.top, r.height - 260), u, v };
+  }
   function splitMove(e: PointerEvent) {
     if (!draggingSplit) return;
     // the canvas is letterboxed (object-fit: contain): measure against the picture itself
@@ -746,6 +757,15 @@
       if (paintFx) return paintStroke(e);
       if (compact && hasTimeline && store.ui.compare === 'off') {
         tapAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+        // a long press: what to add here
+        clearTimeout(holdTimer);
+        const at = { clientX: e.clientX, clientY: e.clientY };
+        holdTimer = window.setTimeout(() => {
+          if (tapAt && !store.ui.playing) {
+            tapAt = null;
+            openQuick(at);
+          }
+        }, 550);
         return;
       }
       if (store.ui.compare === 'split') {
@@ -754,9 +774,18 @@
         splitMove(e);
       }
     }}
-    onpointermove={splitMove}
-    onpointercancel={() => ((draggingSplit = false), (tapAt = null))}
+    onpointermove={(e) => {
+      if (tapAt && Math.hypot(e.clientX - tapAt.x, e.clientY - tapAt.y) > 10) clearTimeout(holdTimer);
+      splitMove(e);
+    }}
+    onpointercancel={() => ((draggingSplit = false), (tapAt = null), clearTimeout(holdTimer))}
+    oncontextmenu={(e) => {
+      if (!hasTimeline || store.ui.trackPick || store.ui.pen || paintFx) return;
+      e.preventDefault();
+      openQuick(e);
+    }}
     onpointerup={(e) => {
+      clearTimeout(holdTimer);
       draggingSplit = false;
       if (tapAt && Math.hypot(e.clientX - tapAt.x, e.clientY - tapAt.y) < 10 && performance.now() - tapAt.t < 400) store.ui.playing = !store.ui.playing;
       tapAt = null;
@@ -797,6 +826,9 @@
           <div class="tbox" style="left:{(b.x - b.w / 2) * 100}%;top:{(b.y - b.h / 2) * 100}%;width:{b.w * 100}%;height:{b.h * 100}%"><span class="mono">{b.name}</span></div>
         {/each}
       </div>
+    {/if}
+    {#if quick}
+      <QuickMenu {...quick} onclose={() => (quick = null)} />
     {/if}
     {#if gizmoBox}
       <Gizmo W={guideSize.w} H={guideSize.h} box={gizmoBox} {compact} />

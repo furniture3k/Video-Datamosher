@@ -197,9 +197,9 @@ unlocks, where it goes in the code, and when it counts as done.
 
 ## Phase 5: Make it effortless
 
-- [ ] **Tap menu on the player.** Tap anything → Cut out · Track · Pin here · Box it · Recolour ·
+- [x] **Tap menu on the player.** *(M14: right-click or long-press: Title here, Box it, Arrow to here, Mark what's here, Find faces, stickers; Cut out, Recolour, Text behind and Make sticker wait for cut-outs)* Tap anything → Cut out · Track · Pin here · Box it · Recolour ·
   Text behind · Sticker on it · Make sticker. This is the main way into Phases 2–4.
-- [ ] **Starter templates for each reference style**, using the existing template system
+- [x] **Starter templates for each reference style** *(M14: Kinetic lyrics, Scrapbook, Product demo, Red notes, Cinematic, Degraded film, Split screen)*, using the existing template system
   (`src/home/TemplateDialog.svelte`): Red Annotations, Word-per-Beat, Y2K Collage, Behind the
   Subject, Degraded Film, Cinematic Nature, Tour Visuals. Pick clips (and a song), get the edit.
 - [ ] **Steal this edit.** Import a reference video (like a screen recording of a Reel): moshpit

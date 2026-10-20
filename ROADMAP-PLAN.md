@@ -387,6 +387,14 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - **Particle layer**: stickers that rise, fall or burst on beats.
 
 ### M14: Effortless layer
+
+> **Partly done (PR for `feat/m14-effortless`).** Right-click (long-press on a phone) on the
+> picture: Title here, Box it, Arrow to here, Mark what's here (tracks a box round the point,
+> then box, arrow and label), Find faces, and emoji stickers, all placed where you pointed.
+> Seven templates from the references (Kinetic lyrics, Scrapbook, Product demo, Red notes,
+> Cinematic, Degraded film, Split screen), built from the new pieces. Still to do: the depth
+> stack view, graphics in Randomize and Variations, reveal one per beat for groups, the script
+> panel, and the cut-out items of the menu (after M8).
 - **Tap menu** on the player: Cut out · Track · Pin here · Box it · Recolour · Text behind ·
   Sticker on it · Make sticker.
 - **Starter templates** for each reference style through `src/home/TemplateDialog.svelte` and
