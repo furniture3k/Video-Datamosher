@@ -5,11 +5,14 @@ import { localGet, localSet } from './storage';
 import { audioFeatures } from './renderer';
 import { audioKey } from '../engine/audiofx';
 import type { AudioFeatures } from '../engine/beats';
+import { subdivide } from '../engine/beattime';
 import type { Project } from '../engine/types';
 
 export const beatInfo = $state({
   /** show the beat grid on the ruler (and snap to it) */
   grid: localGet('beatGrid', false),
+  /** grid points per beat: 1, 2 (halves) or 4 (quarters) */
+  div: localGet('beatDiv', 1),
   status: 'idle' as 'idle' | 'working' | 'ready' | 'none' | 'error',
   key: '',
   bpm: 0,
@@ -59,6 +62,14 @@ export function setBeatGrid(on: boolean) {
   localSet('beatGrid', on);
   if (on) refreshBeats();
 }
+
+export function setBeatDiv(div: number) {
+  beatInfo.div = div;
+  localSet('beatDiv', div);
+}
+
+/** The grid's points in seconds: the beats, and their halves or quarters when chosen. */
+export const gridTimes = () => subdivide(beatInfo.beats, beatInfo.div);
 
 /** What the beat analysis depends on: re-run the grid when it changes. */
 export function beatInputs(p: Project): string {

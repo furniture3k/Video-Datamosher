@@ -71,10 +71,10 @@ unlocks, where it goes in the code, and when it counts as done.
   shape (P1), luma/threshold, depth (exists). Any layer can use a matte as **track matte**
   (inside/outside), and every layer gets a **Depth** setting: *Behind everything / Behind
   subject / In front*. Subject Guard becomes one consumer of mattes instead of owning segmentation.
-- [ ] **F6. Beat timing everywhere.** Durations and offsets accept beat units; "appear on next
+- [ ] **F6. Beat timing everywhere.** *(M3 did the ½ and ¼ grid, snapping and auto-edit cuts; beat units for durations and animations come with M4.)* Durations and offsets accept beat units; "appear on next
   beat", "one per beat" for groups. Auto-edit (`src/engine/beatedit.ts`) gets subdivisions:
   `every` currently counts whole beats, add ½ and ¼.
-- [ ] **F7. Style Kits.** A kit = fonts (display, body, accent), palette (3–5 colours),
+- [x] **F7. Style Kits.** *(M3: title styles, `src/engine/styles.ts`: built-ins from the references, saved styles, apply to one or every title, new titles get the last. Kits widen to fonts, shapes and stickers as those arrive.)* A kit = fonts (display, body, accent), palette (3–5 colours),
   stroke/line weight, corner style, shadow, boil amount, default enter/exit animations and timing.
   Every new layer references the kit; a per-layer override is allowed. Built-in kits that match
   R1–R9; "Make kit from this layer".
