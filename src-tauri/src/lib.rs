@@ -65,7 +65,16 @@ pub fn run() {
                     s.set_enable_mediasource(true);
                 }
             })?;
-            let _ = window;
+            // on a screen smaller than the window (1440×900 on a 1366×768 laptop) it would be cut
+            // off past the screen's edges: fill the screen instead
+            if let Ok(Some(monitor)) = window.current_monitor() {
+                let area = monitor.work_area().size;
+                if let Ok(size) = window.outer_size() {
+                    if size.width > area.width || size.height > area.height {
+                        let _ = window.maximize();
+                    }
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

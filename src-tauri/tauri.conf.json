@@ -17,6 +17,7 @@
         "height": 900,
         "minWidth": 900,
         "minHeight": 560,
+        "center": true,
         "backgroundColor": "#0b0b0d",
         "dragDropEnabled": false,
         "create": false,
