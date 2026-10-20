@@ -15,7 +15,7 @@ import { store } from '../lib/store.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, toggleSurfacePick, titleOnSurface, putClipOnSurface, takeClipOffSurface, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
@@ -132,6 +132,8 @@ import { store } from '../lib/store.svelte';
   // ---- motion: stabilization and tracking
   let stabStrength = $state(20);
   const canAnalyse = $derived(!!c && media?.source.kind === 'file' && !media.source.isImage && !!media.hasVideo && !c.freeze);
+  /** every tracked surface in the project, with the clip it was tracked in */
+  const allPlanes = $derived(store.project.clips.flatMap((x) => (x.planes ?? []).map((p) => ({ clipId: x.id, id: p.id, name: p.name, from: mediaOf(store.project, x.mediaId)?.source.name ?? 'clip' }))));
   /** clips on the tracks above that could follow a tracked object */
   const followers = $derived(c ? store.project.clips.filter((x) => isOverlayTrack(x.track) && x.id !== c.id && mediaOf(store.project, x.mediaId)?.source.kind !== 'adjust') : []);
 
@@ -412,7 +414,24 @@ import { store } from '../lib/store.svelte';
           <button class="small" disabled={motionJob.running} onclick={() => findFaces(c.id).catch((e) => store.toast('Finding faces failed: ' + (e as Error).message, 'error'))} title="Find every face in the clip, to put stickers or labels on">Find faces</button>
           <button class="small" class:on={store.ui.trackPick === c.id && store.ui.trackThen === 'mark'} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id, store.ui.trackThen === 'mark' ? null : 'mark')} title="Then drag a box on the player around it: it's followed, boxed, arrowed and labelled">{store.ui.trackPick === c.id && store.ui.trackThen === 'mark' ? 'Cancel' : 'Mark something'}</button>
         </div>
+        <div class="row btns">
+          <button class="small" class:on={store.ui.surfacePick === c.id} disabled={motionJob.running} onclick={() => toggleSurfacePick(c.id)} title="Then drag four corners on the player onto a flat surface (a screen, a wall, a sign) so titles and shapes can be pinned to it">{store.ui.surfacePick === c.id ? 'Cancel' : 'Track a surface'}</button>
+        </div>
         {#if store.ui.trackPick === c.id}<p class="small faint">Drag a box on the player around something with clear detail. It is followed forwards and backwards from this frame.</p>{/if}
+        {#if store.ui.surfacePick === c.id}<p class="small faint">Drag the four corners onto the surface, then press Track it. Pick a flat surface with detail on it (a screen with content, a poster, a wall with marks).</p>{/if}
+        {#each c.planes ?? [] as plane (plane.id)}
+          <div class="pathrow">
+            <span class="small grow">{plane.name} · {(plane.quads.at(-1)![0] - plane.quads[0][0]).toFixed(1)} s</span>
+            <button class="small" onclick={() => titleOnSurface(c.id, plane.id)} title="Add a title on the surface, pinned to it">Title on it</button>
+            {#if followers.length}
+              <select class="small" aria-label="Clip on the surface" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) putClipOnSurface(v, c.id, plane.id); (e.target as HTMLSelectElement).value = ''; }}>
+                <option value="">Clip on it…</option>
+                {#each followers as f}<option value={f.id}>{mediaOf(store.project, f.mediaId)?.source.name}</option>{/each}
+              </select>
+            {/if}
+            <button class="icon ghost" aria-label="Delete surface" title="Delete surface" onclick={() => editKeys((x) => (x.planes = x.planes?.filter((y) => y.id !== plane.id)))}><Icon name="x" size={12} /></button>
+          </div>
+        {/each}
         {#each c.paths ?? [] as path (path.id)}
           <div class="pathrow">
             <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>
@@ -434,6 +453,20 @@ import { store } from '../lib/store.svelte';
       {/if}
 
       {#if isUpper && !isAdjust}
+        <div class="row sect"><span class="label grow">Surface</span></div>
+        {#if c.screen}
+          <div class="row small faint">Plays on a tracked surface: it follows the surface's corners (its own position, zoom and turn don't apply). <button class="small ghost" onclick={() => takeClipOffSurface(c.id)}>Take it off</button></div>
+        {:else if allPlanes.length}
+          <label class="row small">Put on a surface
+            <select aria-label="Put on a surface" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; const s = allPlanes.find((x) => x.id === v); if (s) putClipOnSurface(c.id, s.clipId, s.id); (e.target as HTMLSelectElement).value = ''; }}>
+              <option value="">Choose a surface…</option>
+              {#each allPlanes as s}<option value={s.id}>{s.name} ({s.from})</option>{/each}
+            </select>
+          </label>
+          <p class="small faint">Plays this clip on a screen, sign or wall you tracked, following it. Put the playhead where the clip should fill the surface first.</p>
+        {:else}
+          <p class="small faint">Track a surface in a clip below (Motion) and this clip can play on it.</p>
+        {/if}
         <div class="row sect"><span class="label grow">Key</span></div>
         <Field type="bool" label="Key it out" value={!!c.key} help="Part of the picture becomes see-through and the tracks below show through: a green or blue screen, or everything dark (or light)." onchange={(v: boolean) => editKeys((x) => (x.key = v ? (x.key ?? KEY_DEFAULT) : undefined))} />
         {#if c.key}

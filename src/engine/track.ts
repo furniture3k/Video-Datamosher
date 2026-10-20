@@ -10,7 +10,7 @@ export interface Gray {
 export type TrackPoint = [number, number, number, number];
 
 /** 3×3 box blur (separable): gives fine texture some spatial spread so the coarse search can find it. */
-function blur3(f: Uint8Array, w: number, h: number): Uint8Array {
+export function blur3(f: Uint8Array, w: number, h: number): Uint8Array {
   const tmp = new Uint16Array(f.length);
   for (let y = 0; y < h; y++) {
     const r = y * w;
@@ -33,7 +33,7 @@ function blur3(f: Uint8Array, w: number, h: number): Uint8Array {
 }
 
 /** Half size (2×2 average). */
-function half(f: Uint8Array, w: number, h: number): Uint8Array {
+export function half(f: Uint8Array, w: number, h: number): Uint8Array {
   const hw = w >> 1;
   const hh = h >> 1;
   const out = new Uint8Array(hw * hh);
@@ -46,7 +46,7 @@ function half(f: Uint8Array, w: number, h: number): Uint8Array {
 }
 
 /** A frame ready for matching: its pixels plus integral images of the values and their squares. */
-interface Level {
+export interface Level {
   f: Uint8Array;
   w: number;
   h: number;
@@ -54,7 +54,7 @@ interface Level {
   q: Float64Array;
 }
 
-function level(f: Uint8Array, w: number, h: number): Level {
+export function level(f: Uint8Array, w: number, h: number): Level {
   const W = w + 1;
   const s = new Float64Array(W * (h + 1));
   const q = new Float64Array(W * (h + 1));

@@ -7,6 +7,7 @@ import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
 import { reframeFilter, type ReframePath } from './reframe';
 import { linearExpr } from './track';
+import { screenFilters } from './screen';
 import { BLEND_TRANSITIONS, audioSources, clipLen, sourceTime, cutFrames, segments, transitionKeyTimes, type Segment } from './timeline';
 
 export const GENERATORS: { id: string; name: string; spec: (w: number, h: number, fps: number) => string }[] = [
@@ -207,12 +208,14 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   const T = transformOf(c);
   const G = gradeOf(c);
   const op = Math.max(0, Math.min(1, c.opacity ?? 1));
+  // a picture put on a tracked surface is placed by the surface, not by its own position, zoom and turn
+  const screen = layer && c.screen ? c.screen : null;
   // zoom / rotation keys need the full perspective transform; position alone moves with overlay
-  const moving = hasKeys(c.keys, ['zoom', 'rotate']);
-  const sliding = !moving && hasKeys(c.keys, ['x', 'y']);
+  const moving = !screen && hasKeys(c.keys, ['zoom', 'rotate']);
+  const sliding = !screen && !moving && hasKeys(c.keys, ['x', 'y']);
   const fading = hasKeys(c.keys, ['opacity']);
   const ramp = !c.freeze && c.ramp?.length ? c.ramp : null;
-  const rgba = layer || !isIdentityTransform(T) || !isIdentityGrade(G) || moving || sliding || fading;
+  const rgba = layer || (!screen && !isIdentityTransform(T)) || !isIdentityGrade(G) || moving || sliding || fading;
   const bg = layer ? 'black@0' : 'black';
   const f: string[] = [];
   if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(Math.max(c.in + 0.04, c.out))}`);
@@ -229,23 +232,27 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   if (layer && c.key) f.push(...keyFilters(c.key));
   // grade the picture itself (not the letterbox bars added next)
   f.push(...gradeFilters(G));
-  f.push(scaleChain(c, w, h, layer), 'setsar=1');
+  // (a picture for a surface fills the frame, whatever its shape: the surface's corners place it)
+  f.push(scaleChain(screen ? { ...c, fit: 'stretch' } : c, w, h, layer), 'setsar=1');
   if (!rgba) f.push('format=yuv420p');
   // reverse buffers the whole clip in memory, so do it after scaling down
   if (c.reverse && !c.freeze) f.push('reverse', 'setpts=PTS-STARTPTS');
   f.push(`tpad=stop_mode=clone:stop_duration=${len}`, `trim=duration=${len}`);
-  if (T.cropL || T.cropR || T.cropT || T.cropB) {
+  if (!screen && (T.cropL || T.cropR || T.cropT || T.cropB)) {
     const cx = Math.round(w * Math.min(0.99, T.cropL));
     const cy = Math.round(h * Math.min(0.99, T.cropT));
     const cw = Math.max(2, w - cx - Math.round(w * T.cropR));
     const ch = Math.max(2, h - cy - Math.round(h * T.cropB));
     f.push(`crop=${cw}:${ch}:${cx}:${cy}`, `pad=${w}:${h}:${cx}:${cy}:color=${bg}`);
   }
-  if (T.flipH) f.push('hflip');
-  if (T.flipV) f.push('vflip');
+  if (T.flipH && !screen) f.push('hflip');
+  if (T.flipV && !screen) f.push('vflip');
   const stmts: string[] = [];
   let cur = `${tag}p`;
-  if (moving) {
+  if (screen) {
+    f.push(...screenFilters(screen, w, h, fps, offset, bg));
+    stmts.push(`[${src}]${f.join(',')}[${cur}]`);
+  } else if (moving) {
     f.push(...keyedTransform(c.keys!, T, w, h, fps, offset, bg));
     stmts.push(`[${src}]${f.join(',')}[${cur}]`);
   } else if (T.zoom !== 1 || T.x || T.y || T.rotate || sliding) {
@@ -549,7 +556,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
 /** Everything about a clip's picture besides its timing. */
 function clipLook(c: Clip) {
   // everything clipGraph draws from, so a change re-prepares the segment
-  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab, sp: c.stepFps };
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab, sp: c.stepFps, sc: c.screen };
 }
 
 /**

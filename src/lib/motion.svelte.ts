@@ -2,6 +2,8 @@
 import { store } from './store.svelte';
 import { clipFrames } from './analysis';
 import { trackBox, stabilize, simplify, type Gray, type Stabilized, type TrackPoint } from '../engine/track';
+import { trackPlane, simplifyKeys, quadAt, type PlaneFrame } from '../engine/planar';
+import { screenFromPlane } from '../engine/screen';
 import { clipLen, layers, layoutVideo, localTime, sourceTime, mediaOf } from '../engine/timeline';
 import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
@@ -13,7 +15,7 @@ import { markLayers } from '../engine/annotate';
 import { linkFaces } from '../engine/faces';
 import { detectFaces } from './faces';
 import { cardScale, offCard, onCard } from '../engine/canvas';
-import { shapeLook } from './edit';
+import { addText, shapeLook } from './edit';
 
 export const motionJob = $state({ running: false, stage: '' });
 
@@ -189,6 +191,240 @@ export async function trackClip(id: string, box: [number, number, number, number
   const got = pts[pts.length - 1][0] - pts[0][0];
   if (res.whole) store.toast(`${name}: followed it through the whole clip.`, 'ok');
   else store.toast(`${name}: followed it for ${got.toFixed(1)} s of ${res.len.toFixed(1)} s, then lost it (hidden, blurred or out of frame).`, 'info', 5000);
+}
+
+/** The corners picked for a surface start as a rectangle in the middle of the picture. */
+const DEFAULT_SURFACE: [number, number][] = [[0.3, 0.28], [0.7, 0.28], [0.7, 0.72], [0.3, 0.72]];
+
+/** Start (or stop) picking a surface to track: four corners to drag onto it on the player, with the playhead on the clip. */
+export function toggleSurfacePick(id: string, then: null | 'title' = null) {
+  if (store.ui.surfacePick === id) return void ((store.ui.surfacePick = null), (store.ui.surfaceThen = null));
+  const c = store.project.clips.find((x) => x.id === id);
+  if (!c) return;
+  store.ui.playing = false;
+  store.ui.trackPick = null;
+  store.ui.trackThen = null;
+  const start = clipStart(store.project, c);
+  const len = clipLen(c);
+  if (store.ui.time < start || store.ui.time >= start + len - 1e-3) store.seek(start + Math.min(len / 2, 0.5));
+  store.ui.surfaceQuad = DEFAULT_SURFACE.map(([x, y]) => [x, y]);
+  store.ui.surfaceThen = then;
+  store.ui.surfacePick = id;
+}
+
+/** Track the surface whose corners were dragged onto the player. */
+export async function confirmSurface() {
+  const id = store.ui.surfacePick;
+  if (!id) return;
+  const corners = store.ui.surfaceQuad.map(([x, y]) => [x, y] as [number, number]);
+  const then = store.ui.surfaceThen;
+  store.ui.surfacePick = null;
+  store.ui.surfaceThen = null;
+  try {
+    const planeId = await trackSurface(id, corners);
+    if (planeId && then === 'title') titleOnSurface(id, planeId);
+    return planeId;
+  } catch (err) {
+    store.toast('Tracking failed: ' + (err as Error).message, 'error');
+  }
+}
+
+/**
+ * Pin a new title where the picture was pointed at: on a tracked surface that is there at the
+ * playhead, or, when none is, by picking one (four corners round the point) and tracking it first.
+ */
+export function pinHere(u: number, v: number) {
+  const p = $state.snapshot(store.project) as Project;
+  const t = store.ui.time;
+  const inside = (q: number[]) => {
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      const cr = (q[j * 2] - q[i * 2]) * (v - q[i * 2 + 1]) - (q[j * 2 + 1] - q[i * 2 + 1]) * (u - q[i * 2]);
+      if (Math.abs(cr) < 1e-12) continue;
+      if (sign && Math.sign(cr) !== sign) return false;
+      sign = Math.sign(cr);
+    }
+    return true;
+  };
+  for (const c of p.clips)
+    for (const pl of c.planes ?? []) {
+      const keys = planeOnTimeline(p, c, pl.id);
+      if (keys.length < 2 || t < keys[0][0] - 1e-6 || t > keys[keys.length - 1][0] + 1e-6) continue;
+      const q = quadAt(keys, t);
+      if (!q || !inside(q)) continue;
+      addText();
+      // (the new title is the selection)
+      const id = store.ui.selectedClips[0];
+      store.edit((x) => {
+        const l = x.layers.find((y) => y.id === id);
+        if (l) Object.assign(l, { x: Math.round(u * 1e4) / 1e4, y: Math.round(v * 1e4) / 1e4 });
+      });
+      return pinToSurface([id], c.id, pl.id);
+    }
+  const c = trackableAt(t);
+  if (!c) return store.toast('Put the playhead on a video clip first: the surface is followed in it.', 'error');
+  toggleSurfacePick(c.id, 'title');
+  // the corners start as a rectangle round the point
+  const rx = 0.16;
+  const ry = 0.14;
+  const cl = (n: number) => Math.max(0, Math.min(1, n));
+  store.ui.surfaceQuad = [[cl(u - rx), cl(v - ry)], [cl(u + rx), cl(v - ry)], [cl(u + rx), cl(v + ry)], [cl(u - rx), cl(v + ry)]];
+  store.toast('Drag the corners onto the surface and press Track it: a title is pinned to it.', 'info', 5000);
+}
+
+/** Pick a surface to track in the video clip under the playhead (for the palette and menus). */
+export function startSurface() {
+  if (store.ui.surfacePick) return void (store.ui.surfacePick = null);
+  const c = trackableAt(store.ui.time);
+  if (!c) return store.toast('Put the playhead on a video clip first: the surface is followed in it.', 'error');
+  toggleSurfacePick(c.id);
+}
+
+/**
+ * Track a surface (a screen, a wall, a sign) through the selected clip, from the playhead forwards
+ * and backwards. `corners` are its four corners on the player, clockwise from the top left, as
+ * shares of the output frame. The result is kept on the clip as a plane.
+ */
+export async function trackSurface(id: string, corners: [number, number][]): Promise<string | void> {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === id);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !m || corners.length !== 4) return;
+  const fps = p.encoder.fps;
+  const local = Math.max(0, Math.min(clipLen(c) - 1e-3, store.ui.time - clipStart(p, c)));
+  const srcT = sourceTime(c, local);
+  // the corners from the output frame into the clip's own picture (undoing the canvas, and its zoom, move, turn and stabilization)
+  const inv = invert(placement(p, c, local));
+  const [W, H] = frameSize(p);
+  const pic = corners.map(([x, y]) => apply(inv, ...offCard(p.canvas, W, H, x, y)));
+  if (pic.some(([u, v]) => u < -0.02 || u > 1.02 || v < -0.02 || v > 1.02)) return store.toast('Put all four corners on the clip’s picture.', 'error');
+  store.ui.playing = false;
+  const res = await busy('Tracking the surface', async () => {
+    const g = await clipFrames(c, m, fps, ANALYSIS_W);
+    const n = g.frames.length;
+    const k = Math.max(0, Math.min(n - 1, Math.round((srcT - c.in) * fps)));
+    const quad = pic.flatMap(([u, v]) => [Math.max(0, Math.min(1, u)) * g.w, Math.max(0, Math.min(1, v)) * g.h]);
+    // forwards and backwards at the same time, each on its own share of the frames
+    const [fwd, back] = await Promise.all([
+      inWorker<PlaneFrame[]>({ kind: 'plane', w: g.w, h: g.h, buf: framesBuffer(g, k, n), start: 0, quad, dir: 1 }, () => trackPlane({ ...g, frames: g.frames.slice(k) }, 0, quad, 1)).then((t) => t.map((x) => ({ ...x, f: x.f + k }))),
+      inWorker<PlaneFrame[]>({ kind: 'plane', w: g.w, h: g.h, buf: framesBuffer(g, 0, k + 1), start: k, quad, dir: -1 }, () => trackPlane({ ...g, frames: g.frames.slice(0, k + 1) }, k, quad, -1)),
+    ]);
+    const all = [...back.slice(1).reverse(), ...fwd];
+    const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+    const keys = all.map((x) => [r4(c.in + x.f / fps), ...x.q.map((v, i) => r4(v / (i % 2 ? g.h : g.w)))]);
+    return { keys: simplifyKeys(keys, 0.0004), whole: all.length > 0 && all[0].f === 0 && all[all.length - 1].f === n - 1, len: n / fps, got: all.length / fps };
+  });
+  if (res.keys.length < 2) return store.toast('Could not follow that surface: put the corners on something flat with detail (a screen with content, a poster, a wall with marks).', 'error');
+  const name = `Surface ${(c.planes?.length ?? 0) + 1}`;
+  const planeId = uid();
+  store.edit((q) => {
+    const x = q.clips.find((y) => y.id === id);
+    if (x) x.planes = [...(x.planes ?? []), { id: planeId, name, quads: res.keys }];
+  });
+  if (res.whole) store.toast(`${name}: followed it through the whole clip.`, 'ok');
+  else store.toast(`${name}: followed it for ${res.got.toFixed(1)} s of ${res.len.toFixed(1)} s, then lost it (hidden, blurred or out of frame).`, 'info', 5000);
+  return planeId;
+}
+
+/** A tracked surface as timeline positions [timeline seconds, the four corners as shares of the output frame]. */
+export function planeOnTimeline(p: Project, c: Clip, planeId: string): number[][] {
+  const plane = c.planes?.find((x) => x.id === planeId);
+  if (!plane) return [];
+  const start = clipStart(p, c);
+  const len = clipLen(c);
+  const out: number[][] = [];
+  for (const [s, ...q] of plane.quads) {
+    const local = localTime(c, s);
+    // parts trimmed off the clip aren't on the timeline
+    if (local < -1e-6 || local > len + 1e-6) continue;
+    const m = placement(p, c, local);
+    const key: number[] = [start + local];
+    for (let i = 0; i < 4; i++) key.push(...framed(p, ...apply(m, q[i * 2], q[i * 2 + 1])));
+    out.push(key);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+
+/**
+ * Pin layers to a tracked surface: each stays as it is now (at the playhead) and from then on
+ * moves, turns and leans with the surface. Several layers can share one surface.
+ */
+export function pinToSurface(layerIds: string[], clipId: string, planeId: string) {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  if (!c) return;
+  const quads = planeOnTimeline(p, c, planeId);
+  if (quads.length < 2) return store.toast('That surface is in a part of the clip that has been trimmed off.', 'error');
+  const refT = store.ui.time;
+  store.edit((q) => {
+    for (const l of q.layers) {
+      if (!layerIds.includes(l.id)) continue;
+      l.surface = { quads, refT };
+      // a layer is carried by a path or by a surface, not both
+      delete l.follow;
+    }
+  });
+  store.toast(layerIds.length > 1 ? `Pinned ${layerIds.length} layers to the surface.` : 'Pinned to the surface: it moves, turns and leans with it.', 'ok');
+}
+
+/**
+ * Put a clip on an upper track onto a tracked surface: its whole picture is carried to the
+ * surface's corners (cropped, not squashed, to the surface's shape at the playhead), frame by frame.
+ */
+export function putClipOnSurface(clipId: string, planeClipId: string, planeId: string) {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  const pc = p.clips.find((x) => x.id === planeClipId);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !pc || !m) return;
+  if (c.track === VIDEO_TRACK) return store.toast('Put the clip on a track above the main one first: it is laid over the surface.', 'error');
+  const quads = planeOnTimeline(p, pc, planeId);
+  const { w, h } = outputSize(p, p.encoder.previewWidth);
+  const refT = Math.max(c.start, Math.min(c.start + clipLen(c), store.ui.time));
+  const screen = screenFromPlane(quads, c.start, w, h, (m.width || 16) / (m.height || 9), refT);
+  if (!screen) return store.toast('That surface is in a part of the clip that has been trimmed off.', 'error');
+  store.edit((q) => {
+    const x = q.clips.find((y) => y.id === clipId);
+    if (x) x.screen = screen;
+  });
+  store.toast('The clip now plays on the surface and follows it.', 'ok');
+}
+
+/** Take a clip off its surface (it goes back to being placed by its own position, zoom and turn). */
+export function takeClipOffSurface(clipId: string) {
+  store.edit((q) => {
+    const x = q.clips.find((y) => y.id === clipId);
+    if (x) delete x.screen;
+  });
+}
+
+/** A title on a tracked surface: laid across the surface as it is at the playhead, and pinned to it. */
+export function titleOnSurface(clipId: string, planeId: string, text = 'Your words') {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  if (!c) return;
+  const quads = planeOnTimeline(p, c, planeId);
+  const q = quadAt(quads, store.ui.time);
+  if (!q) return store.toast('That surface is in a part of the clip that has been trimmed off.', 'error');
+  const { w, h } = outputSize(p, p.encoder.previewWidth);
+  const cx = (q[0] + q[2] + q[4] + q[6]) / 4;
+  const cy = (q[1] + q[3] + q[5] + q[7]) / 4;
+  // how tall the surface is on screen, in pixels
+  const tall = (Math.hypot((q[6] - q[0]) * w, (q[7] - q[1]) * h) + Math.hypot((q[4] - q[2]) * w, (q[5] - q[3]) * h)) / 2;
+  const t0 = quads[0][0];
+  const t1 = quads[quads.length - 1][0];
+  const tx: TextLayer = { id: uid(), kind: 'text', row: freeRow(p.layers, t0, t1), text, start: t0, duration: Math.max(0.5, t1 - t0), size: Math.max(0.03, Math.min(0.5, (tall / h) * 0.3)), color: '#ffffff', font: 'sans', bold: true, x: cx, y: cy, align: 'center', shadow: true, box: false, fade: 0, moshed: false, surface: { quads, refT: store.ui.time } };
+  store.edit((x) => x.layers.push(tx));
+  store.ui.selectedClips = [tx.id];
+  store.toast('Added a title on the surface: change its words in the inspector.', 'ok');
+}
+
+/** Let layers go from their surface (they go back to where they were when pinned). */
+export function unpinSurface(layerIds: string[]) {
+  store.edit((q) => {
+    for (const l of q.layers) if (layerIds.includes(l.id)) delete l.surface;
+  });
 }
 
 /**

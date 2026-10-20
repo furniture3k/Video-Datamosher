@@ -91,6 +91,7 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'add-circle', title: 'Add a circle', group: 'Mosh', keys: [], words: 'shape ring annotate mark' },
   { id: 'add-arrow', title: 'Add an arrow', group: 'Mosh', keys: [], words: 'shape pointer annotate mark' },
   { id: 'pen', title: 'Draw with the pen', group: 'Mosh', keys: [], words: 'freehand scribble shape annotate' },
+  { id: 'surface', title: 'Track a surface (pin titles to a screen, wall or sign)', group: 'Mosh', keys: [], words: 'pin plane corner perspective screen wall sign planar track homography' },
   { id: 'mark', title: 'Mark something moving', group: 'Mosh', keys: [], words: 'annotate box arrow label track follow' },
   { id: 'split-side', title: 'Split screen: side by side', group: 'Mosh', keys: [], words: 'grid layout collage two up' },
   { id: 'split-stack', title: 'Split screen: stacked', group: 'Mosh', keys: [], words: 'grid layout collage top bottom' },

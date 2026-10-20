@@ -26,6 +26,35 @@ export interface TextLayout {
   box: { x: number; y: number; w: number; h: number };
 }
 
+/** Where a letter goes on a bent baseline: its centre (relative to the line's middle) and the turn the baseline has there (degrees). */
+export interface OnCurve {
+  x: number;
+  y: number;
+  a: number;
+}
+
+/**
+ * A point of a line of text `width` pixels long bent into a circular arc, `d` pixels along it from
+ * its left end. `curve` runs from −1 (a smile) to 1 (an arch); 1 is half a circle. The length
+ * along the arc is kept, so bent text is as long as straight text.
+ */
+export function onCurve(width: number, d: number, curve: number): OnCurve {
+  const theta = Math.min(1, Math.abs(curve)) * Math.PI;
+  if (theta < 1e-4 || width <= 0) return { x: d - width / 2, y: 0, a: 0 };
+  const R = width / theta;
+  const phi = (d - width / 2) / R;
+  const s = curve > 0 ? 1 : -1;
+  return { x: R * Math.sin(phi), y: s * R * (1 - Math.cos(phi)), a: (s * phi * 180) / Math.PI };
+}
+
+/** How far the ends of a bent line of text sit below (arch) or above (smile) its middle. */
+export function sagOf(width: number, curve: number): number {
+  const theta = Math.min(1, Math.abs(curve)) * Math.PI;
+  if (theta < 1e-4 || width <= 0) return 0;
+  const R = width / theta;
+  return (curve > 0 ? 1 : -1) * R * (1 - Math.cos(theta / 2));
+}
+
 /** How much of the frame width a title fitted to it fills. */
 export const FIT_WIDTH = 0.94;
 
@@ -52,7 +81,9 @@ export function layoutText(tx: TextLayer, W: number, H: number, measure: Measure
   const x0 = Math.min(...out.map((l) => l.x)) - pad;
   const x1 = Math.max(...out.map((l) => l.x + l.width)) + pad;
   const h = n * lineHeight + (tx.box ? size * 0.4 : 0);
-  return { size, lineHeight, spacing, lines: out, box: { x: x0, y: -h / 2, w: x1 - x0, h } };
+  // a bent line's ends drop (an arch) or rise (a smile): the box grows that way to hold them
+  const sag = tx.curve ? sagOf(Math.max(...out.map((l) => l.width)), tx.curve) : 0;
+  return { size, lineHeight, spacing, lines: out, box: { x: x0, y: -h / 2 - Math.max(0, -sag), w: x1 - x0, h: h + Math.abs(sag) } };
 }
 
 // ---------- how it looks at a moment ----------

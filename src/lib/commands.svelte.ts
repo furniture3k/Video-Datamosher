@@ -2,7 +2,7 @@
 import { askText } from './ask';
 import { store } from './store.svelte';
 import * as edit from './edit';
-import { startMark } from './motion.svelte';
+import { startMark, startSurface } from './motion.svelte';
 import { chaos, mutate } from '../engine/presets';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
@@ -147,6 +147,7 @@ const ACTIONS: Record<string, Action> = {
   'add-arrow': { run: () => void edit.addShape('arrow') },
   pen: { run: () => void (store.ui.pen = true), when: hasClips },
   mark: { run: () => startMark(), when: hasClips },
+  surface: { run: () => startSurface(), when: hasClips },
   'split-side': { run: () => edit.arrangeGrid('side'), when: hasClips },
   'split-stack': { run: () => edit.arrangeGrid('stack'), when: hasClips },
   'split-grid': { run: () => edit.arrangeGrid('g2'), when: hasClips },

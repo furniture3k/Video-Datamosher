@@ -2,7 +2,7 @@
   // Right-click (or long-press on a phone) on the picture: add things right where you pointed.
   import { store } from '../lib/store.svelte';
   import { addEmoji, addShape, addText, EMOJI } from '../lib/edit';
-  import { findFaces, trackClip, trackableAt } from '../lib/motion.svelte';
+  import { findFaces, pinHere, trackClip, trackableAt } from '../lib/motion.svelte';
   import Icon from './Icon.svelte';
 
   /** x, y: where the menu opens (stage pixels); u, v: the point in the frame (shares of it) */
@@ -37,6 +37,7 @@
     const r = 0.08;
     trackClip(clip.id, [Math.max(0, u - r), Math.max(0, v - r * 1.4), Math.min(1, u + r), Math.min(1, v + r * 1.4)], 'mark').catch((err) => store.toast('Tracking failed: ' + (err as Error).message, 'error'));
   });
+  const pin = run(() => pinHere(u, v));
   const faces = run(() => {
     if (clip) findFaces(clip.id).catch((err) => store.toast('Finding faces failed: ' + (err as Error).message, 'error'));
   });
@@ -49,6 +50,7 @@
   <button class="ghost mitem" role="menuitem" onclick={box}><Icon name="shape" />Box it</button>
   <button class="ghost mitem" role="menuitem" onclick={arrow}><Icon name="pointer" />Arrow to here</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={mark} title="Follows what's here: a box, an arrow and a label that move with it"><Icon name="target" />Mark what's here</button>
+  <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={pin} title="Pins a title to the flat surface here (a screen, a wall, a sign): it moves, turns and leans with it"><Icon name="screen" />Pin here</button>
   <button class="ghost mitem" role="menuitem" disabled={!clip} onclick={faces}><Icon name="target" />Find faces</button>
   <div class="emoji" role="group" aria-label="Sticker here">
     {#each EMOJI.slice(0, 9) as e (e)}<button class="em" role="menuitem" aria-label={`Sticker ${e} here`} onclick={() => sticker(e)}>{e}</button>{/each}

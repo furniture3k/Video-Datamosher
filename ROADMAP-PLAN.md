@@ -317,6 +317,25 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - Subject Guard gets a "Cut-out" source (`post.ts` `guard`) that reads mattes.
 
 ### M10: Pin to the scene (P3). Unlocks R7–R9 in full
+
+> **Done (PR for `feat/m10-pin`).** Changes from this plan:
+> - `src/engine/planar.ts` (pure, run in the track worker): Shi-Tomasi corners inside the quad,
+>   pyramidal Lucas-Kanade (with robust weights, so a half-covered window still follows the half
+>   that shows), RANSAC over four-point samples then a least-squares fit, and every frame the
+>   surface is looked at again in the first frame's view of it, which stops drift and brings back
+>   corners that were hidden. Synthetic noise textures warped by known homographies stay under
+>   1 px for 60 frames, forwards and backwards, with 30% covered and after it clears; a surface
+>   hidden for good ends the track cleanly.
+> - The warp is Canvas 2D (a triangle grid, each triangle an affine transform), not WebGL: one
+>   code path works in the preview, the clean export and the burned-in plates, so they agree.
+>   Pinned layers are drawn flat first, then warped, at full strength, and faded as one.
+> - A layer is pinned from where it is at the playhead (`Layer.surface`: the surface over the
+>   timeline plus the moment it was pinned), so it looks the same at the moment of pinning.
+> - Screen replacement (`Clip.screen`, `src/engine/screen.ts`) uses FFmpeg's `perspective`
+>   filter in the graph (checked in the browser's FFmpeg) rather than decoding frames into a
+>   plate sequence: the picture is carried to the surface's corners by expressions over time.
+> - Text on a path is a circular arc (`curve`, −1 to 1); a hand-drawn baseline isn't built.
+> - Still to do: the 3D camera solve (stretch goal).
 - `src/engine/planar.ts`, pure TS run in `track.worker.ts`:
   1. Shi-Tomasi corners inside the chosen quad.
   2. Pyramidal Lucas-Kanade (reusing `blur3`/`level`/`half` from `track.ts`, now exported).

@@ -2,7 +2,7 @@
 // animation come from ../engine/textlayout, this turns them into fills, outlines and copies.
 import { layerPos, type BuiltinFont, type TextAnim, type TextLayer } from '../engine/layers';
 import { fontCss } from './fonts.svelte';
-import { layoutText, lettersShown, noise, textLookAt, type TextLayout } from '../engine/textlayout';
+import { layoutText, lettersShown, noise, onCurve, textLookAt, type TextLayout } from '../engine/textlayout';
 
 export const TEXT_ANIMS: { value: TextAnim; label: string; hint: string }[] = [
   { value: 'none', label: 'None', hint: 'Just appears (or fades, with Fade).' },
@@ -38,11 +38,11 @@ export function textLayout(tx: TextLayer, w: number, h: number): TextLayout {
 
 /**
  * The box the title takes up in a w×h frame (pixels, before turning), and how far its centre is
- * across from the title's position (aligned left or right, the position is an edge).
+ * across (and, for bent text, down) from the title's position (aligned left or right, the position is an edge).
  */
-export function textBox(tx: TextLayer, w: number, h: number): { w: number; h: number; dx: number } {
+export function textBox(tx: TextLayer, w: number, h: number): { w: number; h: number; dx: number; dy: number } {
   const b = textLayout(tx, w, h).box;
-  return { w: b.w, h: b.h, dx: b.x + b.w / 2 };
+  return { w: b.w, h: b.h, dx: b.x + b.w / 2, dy: b.y + b.h / 2 };
 }
 
 export function drawText(ctx: CanvasRenderingContext2D, tx: TextLayer, w: number, h: number, alpha: number, t = tx.start) {
@@ -124,7 +124,7 @@ function drawOne(ctx: CanvasRenderingContext2D, tx: TextLayer, L: TextLayout, lo
   const total = L.lines.reduce((n, l) => n + [...l.text].length, 0);
   const frame = Math.floor(t * 24);
   // letter by letter when anything needs single letters; whole lines keep the font's kerning
-  const byLetter = karaoke || look.letters < 1 || look.glitch > 0 || L.spacing !== 0;
+  const byLetter = karaoke || look.letters < 1 || look.glitch > 0 || L.spacing !== 0 || !!tx.curve;
   let before = 0;
   let k = 0;
   for (const line of L.lines) {
@@ -165,7 +165,16 @@ function drawOne(ctx: CanvasRenderingContext2D, tx: TextLayer, L: TextLayout, lo
           ctx.restore();
         }
       }
-      paint(glyph, line.x + line.letters[i] + dx, line.y + dy, colour);
+      if (tx.curve) {
+        // on a bent baseline: each letter set on the arc by its middle and turned to the slope there
+        const adv = (i + 1 < chars.length ? line.letters[i + 1] - L.spacing : line.width) - line.letters[i];
+        const at = onCurve(line.width, line.letters[i] + adv / 2, tx.curve);
+        ctx.save();
+        ctx.translate(line.x + line.width / 2 + at.x + dx, line.y + at.y + dy);
+        ctx.rotate((at.a * Math.PI) / 180);
+        paint(glyph, -adv / 2, 0, colour);
+        ctx.restore();
+      } else paint(glyph, line.x + line.letters[i] + dx, line.y + dy, colour);
     }
     before += chars.length;
   }

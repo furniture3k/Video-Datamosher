@@ -28,6 +28,10 @@ interface LayerBase {
   fade: number;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
+  /** leaned back or to the side in perspective: degrees about the horizontal and the vertical axis through its position */
+  tilt?: [number, number];
+  /** pinned to a tracked surface: it is drawn where it is on `refT`, then carried along with the surface */
+  surface?: Surface;
   /** stamp trail: every `every` seconds it steps on by (dx, dy) (shares of the frame), leaving a copy behind, `count` times */
   trail?: Trail;
   /** many copies rising, falling or bursting out from it */
@@ -35,6 +39,28 @@ interface LayerBase {
 }
 
 import type { Particles } from './particles';
+import { mul3, quadAt, quadHomography, type Mat3 } from './planar';
+import { tiltMatrix } from './warp';
+
+/** A tracked surface a layer is pinned to: [timeline seconds, the four corners as shares of the frame] and the moment the layer's own position is for. */
+export interface Surface {
+  quads: number[][];
+  refT: number;
+}
+
+/**
+ * How a pinned layer is carried at timeline time t: the homography (in pixels of a w×h frame)
+ * taking the surface as it was on `refT` to the surface now. Null for a layer that isn't pinned.
+ */
+export function surfaceMatrix(l: Pick<LayerBase, 'surface'>, t: number, w: number, h: number): Mat3 | null {
+  const s = l.surface;
+  if (!s?.quads.length) return null;
+  const a = quadAt(s.quads, s.refT);
+  const b = quadAt(s.quads, t);
+  if (!a || !b) return null;
+  const px = (q: number[]) => q.map((v, i) => v * (i % 2 ? h : w));
+  return quadHomography(px(a), px(b));
+}
 
 export interface Trail {
   every: number;
@@ -96,6 +122,8 @@ export interface TextLayer extends LayerBase {
   strobe?: number;
   /** a hand-drawn wobble, 0..1 */
   boil?: number;
+  /** the baseline bent into an arc, −1 (a smile) to 1 (an arch): the letters follow it, turned to suit */
+  curve?: number;
 }
 
 export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst';
@@ -161,6 +189,20 @@ export function layerAlpha(l: Layer, t: number): number {
   return Math.max(0, Math.min(1, (t - l.start) / f, (layerEnd(l) - t) / f));
 }
 
+/**
+ * Everything that bends a layer's flat picture at timeline time t, as one homography in pixels of
+ * a w×h frame: its tilt (about its position, seen from about a frame-width away), then the
+ * surface it's pinned to. Null for a layer drawn flat.
+ */
+export function layerMatrix(l: Layer, t: number, w: number, h: number): Mat3 | null {
+  const surface = surfaceMatrix(l, t, w, h);
+  const [ax, ay] = l.tilt ?? [0, 0];
+  if (!ax && !ay) return surface;
+  const [px, py] = layerPos(l, t);
+  const tilt = tiltMatrix(ax, ay, px * w, py * h, Math.max(w, h) * 1.2);
+  return surface ? mul3(surface, tilt) : tilt;
+}
+
 /** Where a layer sits at timeline time t (following a tracked object if it has one). */
 export function layerPos(l: Layer, t: number): [number, number] {
   if (!l.follow?.length) return [l.x, l.y];
@@ -186,7 +228,7 @@ export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.sha
  * single picture of it can stand in for every frame (fades are applied on top of that picture).
  */
 export function isStill(l: Layer): boolean {
-  if (l.follow?.length || l.trail || l.particles) return false;
+  if (l.follow?.length || l.surface || l.trail || l.particles) return false;
   if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress';
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }
