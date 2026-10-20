@@ -168,7 +168,8 @@
   }
   .actions {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* as many to a row as fit whole (the panel is resizable) */
+    grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
     gap: 4px;
     padding: 8px;
     border-bottom: 1px solid var(--line);

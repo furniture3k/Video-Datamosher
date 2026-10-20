@@ -92,6 +92,10 @@
     gap: 2px;
     padding: 6px;
     min-width: 190px;
+    /* a short player (a small window): the menu scrolls rather than running off the stage */
+    max-height: calc(100% - 8px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     background: var(--surface-2);
     border: 1px solid var(--line-2);
     border-radius: var(--r-lg);

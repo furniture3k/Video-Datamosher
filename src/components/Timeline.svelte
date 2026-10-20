@@ -153,6 +153,28 @@ import { formatSeconds } from '../engine/eta';
   });
   let menuAt = 0;
   let shapesOpen = $state(false);
+  /** the shapes menu opens upwards when there isn't room for it below, and scrolls if it still doesn't fit */
+  let shapesUp = $state(false);
+  let shapesMax = $state(0);
+  function toggleShapes(e: MouseEvent) {
+    e.stopPropagation();
+    if (!shapesOpen) {
+      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const below = window.innerHeight - r.bottom - 12;
+      const above = r.top - 12;
+      shapesUp = below < 360 && above > below;
+      shapesMax = Math.max(140, shapesUp ? above : below);
+    }
+    shapesOpen = !shapesOpen;
+  }
+  /** Escape closes the shapes menu or the clip menu (before it does anything else) */
+  function escMenus(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || (!shapesOpen && !menu)) return;
+    shapesOpen = false;
+    menu = null;
+    e.stopPropagation();
+    e.preventDefault();
+  }
   function closeMenu() {
     shapesOpen = false;
     // the click that ends a touch hold would close the menu it just opened
@@ -740,7 +762,7 @@ import { formatSeconds } from '../engine/eta';
   const fmtDur = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}` : `${s.toFixed(1)}s`);
 </script>
 
-<svelte:window onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp} onclick={closeMenu} />
+<svelte:window onpointermove={onMove} onpointerup={onUp} onpointercancel={onUp} onclick={closeMenu} onkeydowncapture={escMenus} />
 
 {#if drag?.k === 'marquee' && drag.moved}
   <div class="marquee" style="left:{Math.min(drag.x0, drag.x1)}px;top:{Math.min(drag.y0, drag.y1)}px;width:{Math.abs(drag.x1 - drag.x0)}px;height:{Math.abs(drag.y1 - drag.y0)}px"></div>
@@ -754,10 +776,10 @@ import { formatSeconds } from '../engine/eta';
     <button class="ghost" title="Add a melt at the cut nearest the playhead  Ctrl T" onclick={() => edit.transitionAtPlayhead('melt')} disabled={placed.length < 2}><Icon name="split" /><span class="tlbl">Transition</span></button>
     <button class="ghost" title="Add a text title at the playhead" onclick={() => edit.addText()}><Icon name="text" /><span class="tlbl">Text</span></button>
     <span class="shapes-wrap">
-      <button class="ghost" class:on={shapesOpen} title="Add a shape, draw with the pen, or mark something moving" aria-expanded={shapesOpen} onclick={(e) => (e.stopPropagation(), (shapesOpen = !shapesOpen))}><Icon name="shape" /><span class="tlbl">Shape</span></button>
+      <button class="ghost" class:on={shapesOpen} title="Add a shape, draw with the pen, or mark something moving" aria-expanded={shapesOpen} onclick={toggleShapes}><Icon name="shape" /><span class="tlbl">Shape</span></button>
       {#if shapesOpen}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-        <div class="shapes-pop" onclick={(e) => e.stopPropagation()}><ShapePicker onpick={() => (shapesOpen = false)} /></div>
+        <div class="shapes-pop" class:up={shapesUp} style="max-height:{shapesMax}px" onclick={(e) => e.stopPropagation()}><ShapePicker onpick={() => (shapesOpen = false)} /></div>
       {/if}
     </span>
     <span class="tsep"></span>
@@ -1214,6 +1236,14 @@ import { formatSeconds } from '../engine/eta';
     border: 1px solid var(--line-2);
     border-radius: var(--r-lg);
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  }
+  .shapes-pop {
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+  .shapes-pop.up {
+    top: auto;
+    bottom: calc(100% + 4px);
   }
   .toolbar {
     display: flex;
