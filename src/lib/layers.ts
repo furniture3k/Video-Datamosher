@@ -112,6 +112,8 @@ function stages(w: number, h: number) {
  * matte; one with an outer stroke or a drop shadow gets those round it. Then the rest goes on.
  */
 export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number, matte?: MatteSource) {
+  // off screen: nothing to draw (and no matte, warp or outline to work out)
+  if (alpha <= 0) return;
   // a subject effect is made of the matte itself
   if (l.kind === 'shape' && l.shape === 'subject') return drawSubject(ctx, l, w, h, alpha, t, matte);
   const cut = (l.depth === 'behind' || l.depth === 'inside') && matte ? matte(t, w, h) : null;

@@ -6,7 +6,7 @@
   import { loadExample, addFiles } from '../lib/media';
   import Logo from './Logo.svelte';
   import Icon from './Icon.svelte';
-  import { originalFrames, renderPreview, moshedAudio, type RenderResult } from '../lib/renderer';
+  import { originalFrames, originalsKey, renderPreview, moshedAudio, type RenderResult } from '../lib/renderer';
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
@@ -241,7 +241,7 @@
     if (mode === 'off' || !r) return;
     const p = $state.snapshot(store.project) as Project;
     const snap = store.ui.compareSnap ? snapshots.list.find((s) => s.id === store.ui.compareSnap) : null;
-    const key = snap ? 'snap:' + snap.id + ':' + r.w : JSON.stringify([p.clips.map(({ label: _l, paths: _p, ...c }) => c), p.encoder, r.w]);
+    const key = snap ? 'snap:' + snap.id + ':' + r.w : originalsKey(p, r.w);
     if (key === origKey) return;
     origKey = key;
     loadingOrig = true;

@@ -27,6 +27,9 @@ const browser = await chromium.launch({ executablePath: exe, args: ['--use-angle
 // [name, width, height, device pixel ratio, touch]
 const DESKTOP = [
   ['desktop-min', 900, 560, 1],
+  // a 1366×768 laptop at 150% and 125% scaling (the desktop window fits itself to these)
+  ['laptop-150%', 910, 512, 1.5],
+  ['laptop-125%', 1092, 582, 1.25],
   ['netbook', 1024, 600, 1],
   ['laptop-720', 1280, 720, 1],
   ['laptop-retina', 1280, 800, 2],

@@ -1,7 +1,7 @@
 // Draws text layers onto a 2D canvas (for the graphics renderer in ./layers): the layout and the
 // animation come from ../engine/textlayout, this turns them into fills, outlines and copies.
 import { layerPos, type BuiltinFont, type TextAnim, type TextLayer } from '../engine/layers';
-import { fontCss } from './fonts.svelte';
+import { fontCss, fontState } from './fonts.svelte';
 import { gradientLine, layoutText, lettersShown, noise, onCurve, textLookAt, type TextLayout } from '../engine/textlayout';
 
 export const TEXT_ANIMS: { value: TextAnim; label: string; hint: string }[] = [
@@ -28,15 +28,27 @@ export const FONTS: Record<BuiltinFont, string> = {
 const fontOf = (tx: TextLayer, size: number) => `${tx.bold ? 700 : 400} ${size}px ${fontCss(tx.font, FONTS)}`;
 
 let measurer: CanvasRenderingContext2D | null = null;
+/** the font last set on the measurer (setting one is slow; the canvas gives it back reworded) */
+let measuring = '';
+/** recent layouts, by everything that sizes and places the letters (laying out measures every letter) */
+const layouts = new Map<string, TextLayout>();
 /** The title laid out in a w×h frame, measured in its font. */
 export function textLayout(tx: TextLayer, w: number, h: number): TextLayout {
+  // (a font that finishes loading measures differently)
+  const key = JSON.stringify([tx.text, tx.lines, tx.size, tx.fit, tx.spacing, tx.lineHeight, tx.align, tx.box, tx.curve, tx.font, tx.bold, w, h, fontState.loaded]);
+  const hit = layouts.get(key);
+  if (hit) return hit;
   measurer ??= document.createElement('canvas').getContext('2d')!;
   const m = measurer;
   // a line may have a typeface or weight of its own
-  return layoutText(tx, w, h, (s, line) => {
-    m.font = fontOf(line?.font || line?.bold !== undefined ? { ...tx, font: line.font ?? tx.font, bold: line.bold ?? tx.bold } : tx, 100);
+  const L = layoutText(tx, w, h, (s, line) => {
+    const font = fontOf(line?.font || line?.bold !== undefined ? { ...tx, font: line.font ?? tx.font, bold: line.bold ?? tx.bold } : tx, 100);
+    if (font !== measuring) m.font = measuring = font;
     return m.measureText(s).width;
   });
+  if (layouts.size > 256) layouts.delete(layouts.keys().next().value!);
+  layouts.set(key, L);
+  return L;
 }
 
 /**

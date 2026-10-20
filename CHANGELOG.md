@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.14.1
+
+- **Smoother playback with lots of titles**: titles and shapes that aren't on screen no longer cost
+  anything while the video plays, and each title is laid out once instead of on every frame, so
+  caption-heavy edits and tilted or pinned titles play and export faster.
+- **Faster exports with titles**: frames without a title on them are passed straight through instead
+  of being decoded and encoded again.
+- **The canvas updates the mosh**: changing only the backdrop, card or border now renders the mosh
+  again (before, the mosh view kept showing the old canvas), and Compare shows the new canvas too.
+- **Long sessions stay smooth**: the live preview lets go of videos it hasn't shown for a while, so
+  cutting and copying many clips on the upper tracks no longer runs into the browser's limit on
+  playing videos.
+- **Small laptop screens**: on a screen smaller than the desktop app's smallest window (a 1366×768
+  laptop at 150% scaling, say), the window now shrinks to fit, so nothing hides behind the taskbar.
+
 ## 1.14.0
 
 - **Titles and type**: titles live on their own rows above the video. Pick a whole style in one

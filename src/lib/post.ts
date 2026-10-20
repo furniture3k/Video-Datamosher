@@ -446,12 +446,18 @@ export class PostRunner {
     const out: Uint8Array[] = [];
     for (let i = 0; i < jpegs.length; i++) {
       if (signal?.cancelled) throw new Cancelled();
+      const k = offset + i;
+      const fr = frames[Math.min(k, frames.length - 1)] ?? { src: k };
+      // only titles, and none on this frame: it stays as it is (no decoding it)
+      if (!this.effects.length && !anyLayerAt(this.layers, (fr.at ?? fr.src) / this.fps, 'clean')) {
+        out.push(jpegs[i]);
+        if (i % 4 === 0) onProgress?.(i / jpegs.length);
+        continue;
+      }
       const bmp = await createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
       let extras: FrameExtras = {};
       // bitmaps hold decoded pixels (often GPU memory) until closed: also when a frame fails
       try {
-        const k = offset + i;
-        const fr = frames[Math.min(k, frames.length - 1)] ?? { src: k };
         let src: CanvasImageSource = bmp;
         if (this.effects.length) {
           this.pp ??= new PostProcessor(bmp.width, bmp.height, this.fps);
@@ -463,10 +469,11 @@ export class PostRunner {
           const t = (fr.at ?? fr.src) / this.fps;
           if (anyLayerAt(this.layers, t, 'clean')) {
             this.c2d ??= document.createElement('canvas');
-            this.c2d.width = bmp.width;
-            this.c2d.height = bmp.height;
+            if (this.c2d.width !== bmp.width || this.c2d.height !== bmp.height) ((this.c2d.width = bmp.width), (this.c2d.height = bmp.height));
             const ctx = this.c2d.getContext('2d')!;
+            ctx.globalCompositeOperation = 'copy';
             ctx.drawImage(src, 0, 0);
+            ctx.globalCompositeOperation = 'source-over';
             drawLayers(ctx, this.layers, t, bmp.width, bmp.height, 'clean', matte);
             src = this.c2d;
           }
