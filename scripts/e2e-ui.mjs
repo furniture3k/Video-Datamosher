@@ -2222,7 +2222,7 @@ await isoStep('steal this edit: a reference is measured, and my clips are cut li
   // the reference: four different shots (1 s, 1.5 s, 0.5 s, 1.5 s), step-printed at 12 fps, a warm cast, black bars top and bottom
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-steal-'));
   const ref = path.join(dir, 'reference.mp4');
-  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'rgbtestsrc=s=320x180:r=24:d=1.5', '-f', 'lavfi', '-i', 'smptebars=s=320x180:r=24:d=0.5', '-f', 'lavfi', '-i', 'life=s=320x180:r=24:d=1.5:mold=10:ratio=0.2:death_color=#102040:life_color=#ffd060', '-filter_complex', '[0]format=yuv420p[a];[1]format=yuv420p[b];[2]format=yuv420p[c];[3]format=yuv420p[d];[a][b][c][d]concat=n=4:v=1:a=0,fps=12,fps=24,colorbalance=rs=.25:gs=.05:bs=-.25,pad=320:226:0:23:black', '-pix_fmt', 'yuv420p', '-r', '24', ref]);
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'rgbtestsrc=s=320x180:r=24:d=1.5', '-f', 'lavfi', '-i', 'smptebars=s=320x180:r=24:d=0.5', '-t', '1.5', '-f', 'lavfi', '-i', 'life=s=320x180:r=24:mold=10:ratio=0.2:death_color=#102040:life_color=#ffd060', '-filter_complex', '[0]format=yuv420p[a];[1]format=yuv420p[b];[2]format=yuv420p[c];[3]format=yuv420p[d];[a][b][c][d]concat=n=4:v=1:a=0,fps=12,fps=24,colorbalance=rs=.25:gs=.05:bs=-.25,pad=320:226:0:23:black', '-pix_fmt', 'yuv420p', '-r', '24', ref]);
   // two clips of my own to cut
   await S(async () => {
     const { ffmpeg, media } = window.__moshpit;
