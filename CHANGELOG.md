@@ -19,9 +19,9 @@
 - **Steal this edit**: give it a video you like and your clips are cut with the same rhythm, frame
   rate and colour.
 - **Fixes and polish**: the live preview draws only as many pixels as the player shows, so tall and
-  square projects play more smoothly; the desktop app fills the screen when it is smaller than the
-  window; menus and notes on the player and timeline stay inside small windows; a font or cut-out that
-  can't load no longer slows playback by being asked for on every frame.
+  square projects play more smoothly. The desktop app fills the screen when it is smaller than the
+  window, the player keeps a usable size in a small window, and menus and notes on the player and
+  timeline stay inside it. A font or cut-out that can't load no longer slows playback.
 
 ## 1.13.0
 
