@@ -69,6 +69,15 @@ pub fn run() {
             // off past the screen's edges: fill the screen instead
             if let Ok(Some(monitor)) = window.current_monitor() {
                 let area = monitor.work_area().size;
+                // a screen smaller than the smallest window (a 1366×768 laptop at 150% is 910×512 in
+                // the app's pixels): let the window be as small as the screen, so it all shows
+                let scale = monitor.scale_factor();
+                let (aw, ah) = (area.width as f64 / scale, area.height as f64 / scale);
+                if let (Some(mw), Some(mh)) = (config.min_width, config.min_height) {
+                    if mw > aw || mh > ah {
+                        let _ = window.set_min_size(Some(tauri::LogicalSize::new(mw.min(aw), mh.min(ah))));
+                    }
+                }
                 if let Ok(size) = window.outer_size() {
                     if size.width > area.width || size.height > area.height {
                         let _ = window.maximize();

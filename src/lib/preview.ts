@@ -338,6 +338,7 @@ export class EditPreview {
       }
     }
     for (const v of this.videos.values()) if (!used.has(v) && !v.paused) v.pause();
+    this.release(used, now);
 
     // the picture as a card on its backdrop; graphics go over the whole frame
     if (hasCanvas(p.canvas)) {
@@ -739,6 +740,25 @@ export class EditPreview {
     }
   }
 
+  /** when each video element last drew (or was got ready) */
+  private usedAt = new Map<HTMLVideoElement, number>();
+  /**
+   * Let go of video elements that haven't drawn for a while once there are many: every clip on an
+   * upper track has its own, and browsers stop playing video past a few dozen at once.
+   */
+  private release(used: Set<HTMLVideoElement>, now: number) {
+    for (const v of used) this.usedAt.set(v, now);
+    if (this.videos.size <= 12) return;
+    for (const [key, v] of this.videos) {
+      if (used.has(v) || now - (this.usedAt.get(v) ?? 0) < 5000) continue;
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+      this.videos.delete(key);
+      this.usedAt.delete(v);
+    }
+  }
+
   pauseAll() {
     for (const v of this.videos.values()) if (!v.paused) v.pause();
   }
@@ -750,6 +770,7 @@ export class EditPreview {
       v.load();
     }
     this.videos.clear();
+    this.usedAt.clear();
     for (const p of this.urls.values()) p.then((s) => s && URL.revokeObjectURL(s.url));
     this.urls.clear();
     this.resolved.clear();

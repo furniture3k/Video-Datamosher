@@ -398,7 +398,7 @@ export function cutsOf(project: Project): number[] {
 /** Identity of everything that changes the moshed picture. */
 export const renderKey = (p: Project) => JSON.stringify({
   // effects that follow the music change when the sound does
-  au: audioKeysNeeded(p).length ? { tr: p.tracks.filter((t) => t.kind === 'audio').map((t) => [t.id, t.muted, t.solo, t.volume]), bs: p.beatSource } : 0, c: p.clips.map(({ label: _l, paths: _p, ...c }) => c), tp: p.effects.some((e) => e.type === 'mask' && e.params.source === 'track') ? p.clips.map((c) => c.paths ?? 0) : 0, v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.layers ?? []).filter((t) => t.moshed), e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
+  au: audioKeysNeeded(p).length ? { tr: p.tracks.filter((t) => t.kind === 'audio').map((t) => [t.id, t.muted, t.solo, t.volume]), bs: p.beatSource } : 0, c: p.clips.map(({ label: _l, paths: _p, ...c }) => c), tp: p.effects.some((e) => e.type === 'mask' && e.params.source === 'track') ? p.clips.map((c) => c.paths ?? 0) : 0, v: p.tracks.filter((t) => t.kind === 'video').map((t) => [t.id, t.muted]), m: p.media.map((m) => [m.id, m.width, m.height]), t: (p.layers ?? []).filter((t) => t.moshed), cv: p.canvas ?? 0, e: p.effects, enc: p.encoder, d: p.decoder, s: p.globalSeed, ch: p.chaos ?? 1 });
 
 let lastDecode: { key: string; frames: Frame[]; jpegs: Uint8Array[] } | null = null;
 
@@ -589,9 +589,13 @@ let sharedClean: { key: string; pics: Map<Uint8Array, Uint8Array> } = { key: '',
 /** Does any active effect need clean frames? */
 const needsClean = (p: Project) => p.effects.some((e) => e.enabled && e.type === 'mask');
 
-export async function originalFrames(project: Project, width: number): Promise<Uint8Array[]> {
+/** Identity of the clean picture (everything the prep draws: clips, moshed titles, the canvas). */
+export const originalsKey = (p: Project, width: number) =>
   // (tracked paths and labels don't change the picture)
-  const key = JSON.stringify({ c: project.clips.map(({ label: _l, paths: _p, ...c }) => c), e: project.encoder, width });
+  JSON.stringify({ c: p.clips.map(({ label: _l, paths: _p, ...c }) => c), t: (p.layers ?? []).filter((t) => t.moshed), cv: p.canvas ?? 0, e: p.encoder, width });
+
+export async function originalFrames(project: Project, width: number): Promise<Uint8Array[]> {
+  const key = originalsKey(project, width);
   const hit = origCache.get(key);
   if (hit) return hit;
   const prep = await prepare(project, width);
