@@ -201,15 +201,25 @@
     const ro = new ResizeObserver(() => {
       if (!wrap) return;
       stageSize = wrap.clientWidth * 1e5 + wrap.clientHeight;
-      const tw = Math.round(wrap.clientWidth * (window.devicePixelRatio || 1));
+    });
+    ro.observe(wrap);
+    return () => ro.disconnect();
+  });
+  $effect(() => {
+    // the picture's width on screen, letterboxed into the stage: a tall or square frame in a wide
+    // stage is narrower than the stage, so it needs fewer pixels drawn
+    void stageSize;
+    if (!wrap) return;
+    const { w: fw, h: fh } = guideSize;
+    const shown = Math.min(wrap.clientWidth - 20, ((wrap.clientHeight - 20) * fw) / fh);
+    const tw = Math.round(Math.max(1, shown) * (window.devicePixelRatio || 1));
+    untrack(() => {
       preview ??= new EditPreview(editCanvas);
       if (Math.abs(preview.targetWidth - tw) > 32) {
         preview.targetWidth = tw;
         if (!mosh && !store.ui.playing) drawEdit();
       }
     });
-    ro.observe(wrap);
-    return () => ro.disconnect();
   });
   onMount(() => {
     setFrameGrabber(() => {
@@ -499,6 +509,15 @@
     const shown = mosh ? canvas : editCanvas;
     const sr = wrap.getBoundingClientRect();
     const rc = shown.getBoundingClientRect();
+    // a canvas not drawn yet at the frame's shape (the view has just switched to the mosh, say):
+    // the frame letterboxed into the canvases' area (10 px in from the stage's edges), as it will show
+    const drawn = shown.width > 0 && shown.height > 0 && rc.width > 0 && rc.height > 0;
+    if (!drawn || (store.ui.compare !== 'side' && Math.abs(shown.width / shown.height / (guideSize.w / guideSize.h) - 1) > 0.02)) {
+      const cw = wrap.clientWidth - 20;
+      const ch = wrap.clientHeight - 20;
+      const g = Math.min(cw / guideSize.w, ch / guideSize.h);
+      return { left: 10 + (cw - guideSize.w * g) / 2, top: 10 + (ch - guideSize.h * g) / 2, width: guideSize.w * g, height: guideSize.h * g };
+    }
     const k = Math.min(rc.width / shown.width, rc.height / shown.height);
     const w = shown.width * k;
     const h = shown.height * k;
@@ -617,12 +636,12 @@
   function penStroke(e: PointerEvent) {
     store.ui.playing = false;
     penLine = [pictureUV(e)];
-    const move = (ev: PointerEvent) => (penLine = [...penLine, pictureUV(ev)]);
+    const move = (ev: PointerEvent) => penLine.push(pictureUV(ev));
     const up = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
-      const pts = penLine;
+      const pts = $state.snapshot(penLine) as [number, number][];
       penLine = [];
       if (ev.type === 'pointercancel') return;
       store.ui.pen = false;
@@ -759,19 +778,30 @@
     g.clearRect(0, 0, cv.width, cv.height);
     const map = pictureMap(cut.clipId);
     if (!m || !map) return;
-    const tint = document.createElement('canvas');
-    tint.width = m.w;
-    tint.height = m.h;
-    const tg = tint.getContext('2d')!;
-    const id = tg.createImageData(m.w, m.h);
-    for (let i = 0; i < m.data.length; i++) id.data.set([34, 211, 238, m.data[i] >= 128 ? 120 : 0], i * 4);
-    tg.putImageData(id, 0, 0);
+    const tint = tintOf(m);
     const [x0, y0] = map.toFrame(0, 0);
     const [x1, y1] = map.toFrame(1, 0);
     const [x2, y2] = map.toFrame(0, 1);
     g.setTransform((cv.width * (x1 - x0)) / m.w, (cv.height * (y1 - y0)) / m.w, (cv.width * (x2 - x0)) / m.h, (cv.height * (y2 - y0)) / m.h, cv.width * x0, cv.height * y0);
     g.drawImage(tint, 0, 0);
   });
+  /** the mask as a see-through cyan picture (made once per mask, not on every redraw) */
+  let tinted: { m: ObjectMask; cv: HTMLCanvasElement } | null = null;
+  function tintOf(m: ObjectMask): HTMLCanvasElement {
+    if (tinted?.m === m) return tinted.cv;
+    const cv = document.createElement('canvas');
+    cv.width = m.w;
+    cv.height = m.h;
+    const tg = cv.getContext('2d')!;
+    const id = tg.createImageData(m.w, m.h);
+    const px = new Uint32Array(id.data.buffer);
+    // RGBA bytes in memory order (little-endian): 34, 211, 238 at alpha 120
+    const on = (120 << 24) | (238 << 16) | (211 << 8) | 34;
+    for (let i = 0; i < m.data.length; i++) if (m.data[i] >= 128) px[i] = on;
+    tg.putImageData(id, 0, 0);
+    tinted = { m, cv };
+    return cv;
+  }
   /** the taps as dots on the player (shares of the frame) */
   const cutDots = $derived.by(() => {
     const cut = store.ui.cutout;
@@ -896,7 +926,7 @@
     const [u, v] = pictureUV(e);
     if (u < 0 || u > 1 || v < 0 || v > 1) return;
     store.ui.playing = false;
-    quick = { x: Math.min(e.clientX - r.left, r.width - 200), y: Math.min(e.clientY - r.top, r.height - 260), u, v };
+    quick = { x: Math.max(4, Math.min(e.clientX - r.left, r.width - 200)), y: Math.max(4, Math.min(e.clientY - r.top, r.height - 260)), u, v };
   }
   function splitMove(e: PointerEvent) {
     if (!draggingSplit) return;
@@ -1091,7 +1121,7 @@
     {/if}
     {#if hasTimeline}
       <div class="badge-view mono" class:live={!mosh} title={mosh ? 'Showing the rendered mosh' : 'Live edit preview: your cut as it is, before moshing'}>
-        {#if mosh}mosh{:else}edit{#if store.status.busy || store.status.pending}<span class="faint"> · mosh rendering</span>{:else if store.render && !store.renderFresh && !store.ui.autoRender}<span class="faint"> · mosh out of date</span>{/if}{/if}
+        {#if mosh}mosh{:else}edit{#if store.status.pending && !store.status.busy}<span class="faint"> · mosh rendering</span>{:else if store.render && !store.renderFresh && !store.ui.autoRender}<span class="faint"> · mosh out of date</span>{/if}{/if}
       </div>
     {/if}
     {#if !hasTimeline && !store.status.busy}
@@ -1402,6 +1432,13 @@
   .picknote {
     top: auto;
     bottom: 8px;
+    /* instructions at the bottom: nothing beside them, so they wrap rather than cut off */
+    max-width: calc(100% - 20px);
+    white-space: normal;
+  }
+  .stage-note.surfacebar {
+    max-width: none;
+    overflow: visible;
   }
   /* phones: a pinch on the picture would zoom the whole page (and stay zoomed) */
   .stage.compact {
@@ -1449,6 +1486,11 @@
     font-size: 11px;
     color: var(--text-2);
     text-transform: lowercase;
+    /* clear of the edit / mosh badge on the right, however narrow the stage */
+    max-width: calc(100% - 84px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .empty {
     display: flex;

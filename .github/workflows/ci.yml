@@ -23,6 +23,8 @@ jobs:
       # no serious accessibility problems on the website, the home screen, the editor and its dialogs
       - run: npx playwright-core install --with-deps chromium
       - run: npm run test:a11y
+      # every window size from the desktop app's smallest to 4K, phones and tablets, every picture shape
+      - run: npm run test:screens
 
   desktop:
     # the desktop app (Tauri + native FFmpeg), driven through WebDriver on Linux

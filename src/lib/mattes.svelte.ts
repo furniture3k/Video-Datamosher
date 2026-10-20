@@ -11,6 +11,8 @@ export const matteState = $state({ version: 0 });
 
 const frames = new Map<string, Uint8Array[]>();
 const loading = new Map<string, Promise<void>>();
+/** mattes whose file isn't in storage (not asked for again on every frame) */
+const missing = new Set<string>();
 const keyOf = (m: Pick<MatteRef, 'id' | 'version'>) => `${m.id}@${m.version}`;
 
 /** Load a matte's frames (once) into memory. */
@@ -21,7 +23,7 @@ export function loadMatte(m: MatteRef): Promise<void> {
   if (!p) {
     p = (async () => {
       const blob = await getFile(m.fileId || matteKey(m.id));
-      if (!blob) return;
+      if (!blob) return void missing.add(k);
       const f = await unpackMatte(new Uint8Array(await blob.arrayBuffer()), m.w, m.h);
       frames.set(k, f);
       // frames of older versions of it are no use now
@@ -36,6 +38,7 @@ export function loadMatte(m: MatteRef): Promise<void> {
 /** Put frames straight into memory (what a cut-out has just made, so it shows before it is read back). */
 export function cacheMatte(m: MatteRef, f: Uint8Array[]) {
   for (const key of frames.keys()) if (key.startsWith(m.id + '@')) frames.delete(key);
+  missing.delete(keyOf(m));
   frames.set(keyOf(m), f);
   matteState.version++;
 }
@@ -43,7 +46,7 @@ export function cacheMatte(m: MatteRef, f: Uint8Array[]) {
 /** The frames of a matte if they are in memory; otherwise they are loaded in the background. */
 export function matteFramesNow(m: MatteRef): Uint8Array[] | null {
   const f = frames.get(keyOf(m));
-  if (!f) void loadMatte(m).catch(() => {});
+  if (!f && !missing.has(keyOf(m))) void loadMatte(m).catch(() => {});
   return f ?? null;
 }
 
@@ -55,13 +58,17 @@ export async function ensureMattes(p: Pick<Project, 'media'>) {
 /** Forget what is in memory (a matte was deleted, or the project changed). */
 export function forgetMattes() {
   frames.clear();
+  missing.clear();
+  alpha = null;
 }
 
-let alpha: { c: HTMLCanvasElement; w: number; h: number } | null = null;
+/** the last matte picture made, and the matte frame it was made from (the same frame isn't made again) */
+let alpha: { c: HTMLCanvasElement; w: number; h: number; from: Uint8Array | null } | null = null;
 let small: HTMLCanvasElement | null = null;
 
 /** A matte frame as a picture the size of the output frame whose opacity is the matte (so it can cut a layer out). */
 export function matteAlpha(f: Uint8Array, mw: number, mh: number, W: number, H: number): HTMLCanvasElement {
+  if (alpha && alpha.from === f && alpha.w === W && alpha.h === H) return alpha.c;
   small ??= document.createElement('canvas');
   if (small.width !== mw || small.height !== mh) {
     small.width = mw;
@@ -75,8 +82,9 @@ export function matteAlpha(f: Uint8Array, mw: number, mh: number, W: number, H: 
     const c = document.createElement('canvas');
     c.width = W;
     c.height = H;
-    alpha = { c, w: W, h: H };
+    alpha = { c, w: W, h: H, from: null };
   }
+  alpha.from = f;
   const g = alpha.c.getContext('2d')!;
   g.clearRect(0, 0, W, H);
   g.imageSmoothingEnabled = true;

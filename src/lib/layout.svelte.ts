@@ -24,6 +24,13 @@ const saved = localGet<Partial<Layout>>('layout', {});
 export const layout = $state<Layout>({ left: 260, right: 330, leftOpen: true, rightOpen: true, timeline: store.ui.timelineHeight, ...saved });
 export const custom = $state<{ list: { name: string; layout: Layout }[] }>({ list: localGet('layouts', []) });
 
+/**
+ * The tallest the timeline can be in this window: the player keeps 220px at the very least, and on a
+ * short window (a laptop, the desktop app's smallest) about half the window, so the picture stays big
+ * enough to work with. (App.svelte's footer height says the same in CSS.)
+ */
+export const timelineMax = (h = window.innerHeight) => Math.min(h - 220, Math.max(h * 0.45, h - 400));
+
 const clampPanel = (w: number) => Math.round(Math.max(PANEL.min, Math.min(PANEL.max, w)));
 
 /** Keep the current layout (call after a change). */
@@ -36,7 +43,7 @@ export function keep() {
 }
 
 export function useLayout(l: Layout) {
-  Object.assign(layout, l, { timeline: Math.max(150, Math.min(window.innerHeight - 220, l.timeline)) });
+  Object.assign(layout, l, { timeline: Math.max(150, Math.min(timelineMax(), l.timeline)) });
   keep();
 }
 
