@@ -21,7 +21,8 @@
 - **Fixes and polish**: the live preview draws only as many pixels as the player shows, so tall and
   square projects play more smoothly. The desktop app fills the screen when it is smaller than the
   window, the player keeps a usable size in a small window, and menus and notes on the player and
-  timeline stay inside it. A font or cut-out that can't load no longer slows playback.
+  timeline stay inside it. Handles on the player stay on the picture when a render finishes, and a
+  font or cut-out that can't load no longer slows playback.
 
 ## 1.13.0
 
