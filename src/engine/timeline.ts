@@ -4,7 +4,7 @@ import type { Layer as GfxLayer } from './layers';
 import { CLIP_AUDIO, VIDEO_TRACK, clipOn, type Clip, type EffectInstance, type MediaItem, type Project, type Track, type Transition, type TransitionType } from './types';
 import { EFFECTS, defaultParams } from './effects';
 import { hashSeed } from './rng';
-import { rampIntegral, rampInverse, rampLength, rampSpeedAt, splitRamp, type Ramp } from './keys';
+import { evalKeys, rampIntegral, rampInverse, rampLength, rampSpeedAt, splitRamp, type Ramp } from './keys';
 
 export const uid = () => Math.random().toString(36).slice(2, 10);
 
@@ -23,6 +23,12 @@ export const BLEND_TRANSITIONS: Record<string, { name: string; xfade: string; de
   pixelize: { name: 'Pixelize', xfade: 'pixelize', description: 'The picture breaks into big pixels and re-forms as the next shot.' },
   whipleft: { name: 'Whip left', xfade: 'smoothleft', description: 'A fast pan: both shots blur past to the left. Keep it short (0.2–0.4 s).' },
   whipright: { name: 'Whip right', xfade: 'smoothright', description: 'A fast pan to the right.' },
+  whip: { name: 'Whip with the motion', xfade: 'smoothleft', description: 'A fast pan that goes the way the picture is already moving (from a tracked object or a keyframed move), so the cut feels thrown. Keep it short.' },
+  circlecrop: { name: 'Circle crop', xfade: 'circlecrop', description: 'The first shot shrinks to a circle and goes, then the next grows out of a circle.' },
+  rectcrop: { name: 'Box crop', xfade: 'rectcrop', description: 'The first shot shrinks to a box and goes, then the next grows out of a box.' },
+  doors: { name: 'Doors open', xfade: 'vertopen', description: 'The first shot splits down the middle and opens like doors on the next.' },
+  dipgrey: { name: 'Dip to grey', xfade: 'fadegrays', description: 'Fades through flat grey, like an old film leader.' },
+  grainy: { name: 'Grainy dissolve', xfade: 'dissolve', description: 'The next shot comes through as scattered grains instead of a smooth fade.' },
   zoomin: { name: 'Zoom through', xfade: 'zoomin', description: 'Rushes into the first shot and out into the next.' },
   blurdissolve: { name: 'Blur dissolve', xfade: 'hblur', description: 'Both shots blur as they cross, then the next one sharpens.' },
   clock: { name: 'Clock wipe', xfade: 'radial', description: 'The next shot sweeps round like a clock hand.' },
@@ -41,6 +47,39 @@ export const MOSH_TRANSITIONS: Record<string, { name: string; description: strin
   ghost: { name: 'Ghost melt', description: 'Melt with echoed motion, so the movement doubles up like a ghost trail.' },
   rewind: { name: 'Rewind melt', description: 'Melt with the next shot\'s motion played backwards, so the old picture folds and un-melts.' },
 };
+
+/** Which way a clip's picture is moving at its start (`end` false) or end: -1 left, 1 right, 0 not at all or unknown. From a tracked object first, then a keyframed move. */
+export function motionSide(c: Clip, end: boolean): -1 | 0 | 1 {
+  const span = 0.4;
+  const sign = (d: number, min: number) => (Math.abs(d) < min ? 0 : d > 0 ? 1 : -1);
+  const path = c.paths?.[0];
+  if (path && path.pts.length > 3) {
+    const pts = path.pts;
+    const k = Math.max(2, Math.ceil(pts.length * 0.2));
+    const near = end ? pts.slice(-k) : pts.slice(0, k);
+    if (near.length > 1) {
+      const d = near[near.length - 1][1] - near[0][1];
+      const s = sign(d, 0.01);
+      if (s) return s;
+    }
+  }
+  const x = c.keys?.x;
+  if (x && x.length > 1) {
+    const len = clipLen(c);
+    const t0 = end ? Math.max(0, len - span) : 0;
+    const t1 = end ? len : Math.min(len, span);
+    const s = sign(evalKeys(x, t1) - evalKeys(x, t0), 0.005);
+    if (s) return s;
+  }
+  return 0;
+}
+
+/** The xfade transition for the cut into `next` (after `prev`); a whip goes the way the shots move. */
+export function xfadeOf(type: string, prev?: Clip, next?: Clip): string {
+  if (type !== 'whip') return BLEND_TRANSITIONS[type]?.xfade ?? 'fade';
+  const s = (prev ? motionSide(prev, true) : 0) || (next ? motionSide(next, false) : 0);
+  return s > 0 ? 'smoothright' : 'smoothleft';
+}
 
 export const transitionName = (t: TransitionType) => BLEND_TRANSITIONS[t]?.name ?? MOSH_TRANSITIONS[t]?.name ?? t;
 export const isBlend = (t?: Transition) => !!t && t.type in BLEND_TRANSITIONS && t.duration > 0;

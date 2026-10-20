@@ -36,6 +36,8 @@ interface LayerBase {
   depth?: 'front' | 'behind' | 'inside';
   /** leaned back or to the side in perspective: degrees about the horizontal and the vertical axis through its position */
   tilt?: [number, number];
+  /** what it is pinned to (a tracked point, a face or a surface), kept so it can be pinned again: the clip it was tracked in and the track */
+  pin?: { clipId: string; id: string; kind: 'point' | 'face' | 'surface' };
   /** pinned to a tracked surface: it is drawn where it is on `refT`, then carried along with the surface */
   surface?: Surface;
   /** stamp trail: every `every` seconds it steps on by (dx, dy) (shares of the frame), leaving a copy behind, `count` times */
@@ -152,7 +154,7 @@ export interface LineStyle {
   bold?: boolean;
 }
 
-export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst' | 'subject' | 'polygon' | 'leader' | 'ripple' | 'handle';
+export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel' | 'cursor' | 'progress' | 'heart' | 'sparkle' | 'burst' | 'subject' | 'polygon' | 'leader' | 'ripple' | 'handle' | 'tape' | 'scrap' | 'flower' | 'asterisk' | 'squiggle';
 
 /** What a subject effect does to the subject cut out of the footage (or, for blur and grade, to everything but it). */
 export interface SubjectFx {

@@ -44,8 +44,8 @@
       <button class="small" class:on={fx.effect === s.value} title={s.hint} onclick={() => setFx({ effect: s.value, ...s.fx })}>{s.label}</button>
     {/each}
   </div>
-  <Field label="Start" unit="s" min={0} max={Math.max(1, store.duration)} step={0.05} value={shape.start} help="When it starts." onchange={(v: number) => set('start', v)} />
-  <Field label="Duration" unit="s" min={0.05} max={120} step={0.05} value={shape.duration} help="How long it lasts." onchange={(v: number) => set('duration', Math.max(0.05, v))}>
+  <Field label="Start" unit="s" time="at" min={0} max={Math.max(1, store.duration)} step={0.05} value={shape.start} help="When it starts." onchange={(v: number) => set('start', v)} />
+  <Field label="Duration" unit="s" time="span" from={shape.start} min={0.05} max={120} step={0.05} value={shape.duration} help="How long it lasts." onchange={(v: number) => set('duration', Math.max(0.05, v))}>
     <BeatChips counts={[1, 2, 4]} onpick={(v) => set('duration', v)} />
   </Field>
   {#if colourFx}

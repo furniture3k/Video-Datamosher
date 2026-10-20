@@ -9,7 +9,7 @@ import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
 import { uid } from '../engine/presets';
 import { VIDEO_TRACK, type Clip, type Project } from '../engine/types';
-import { FIRST_ROW, freeRow, type TextLayer } from '../engine/layers';
+import { FIRST_ROW, freeRow, layerPos, type TextLayer } from '../engine/layers';
 import type { TrackJob } from './track.worker';
 import { markLayers } from '../engine/annotate';
 import { linkFaces } from '../engine/faces';
@@ -379,6 +379,7 @@ export function pinToSurface(layerIds: string[], clipId: string, planeId: string
     for (const l of q.layers) {
       if (!layerIds.includes(l.id)) continue;
       l.surface = { quads, refT };
+      l.pin = { clipId, id: planeId, kind: 'surface' };
       // a layer is carried by a path or by a surface, not both
       delete l.follow;
     }
@@ -440,8 +441,56 @@ export function titleOnSurface(clipId: string, planeId: string, text = 'Your wor
 
 /** Let layers go from their surface (they go back to where they were when pinned). */
 export function unpinSurface(layerIds: string[]) {
+  unpin(layerIds);
+}
+
+/** A tracked point is a face if Find faces made it. */
+const pathKind = (c: Clip, pathId: string): 'point' | 'face' => (/^face/i.test(c.paths?.find((x) => x.id === pathId)?.name ?? '') ? 'face' : 'point');
+
+/**
+ * Pin layers to a tracked point or face: from where each is now, it moves with the thing. (A
+ * face is a tracked point too, found by Find faces; the pin remembers which, to pin again.)
+ */
+export function pinToPath(layerIds: string[], clipId: string, pathId: string) {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  if (!c) return;
+  const path = pathOnTimeline(p, c, pathId);
+  if (!path.length) return store.toast('That track is in a part of the clip that has been trimmed off.', 'error');
+  const kind = pathKind(c, pathId);
+  const [px, py] = pathAt(path, store.ui.time);
   store.edit((q) => {
-    for (const l of q.layers) if (layerIds.includes(l.id)) delete l.surface;
+    for (const l of q.layers) {
+      if (!layerIds.includes(l.id)) continue;
+      // it keeps the place it has now, relative to the thing, at the playhead
+      const dx = l.follow?.length ? layerPos(l, store.ui.time)[0] - px : l.x - px;
+      const dy = l.follow?.length ? layerPos(l, store.ui.time)[1] - py : l.y - py;
+      l.follow = path.map(([t, x, y]) => [t, x + dx, y + dy]);
+      l.pin = { clipId, id: pathId, kind };
+      delete l.surface;
+    }
+  });
+  store.toast(layerIds.length > 1 ? `Pinned ${layerIds.length} layers to it.` : 'Pinned: it moves with it from where it is now.', 'ok');
+}
+
+/** Pin the layers again to what they were pinned to, from where they are at the playhead now (after moving them, or after the tracking changed). */
+export function repin(layerIds: string[]) {
+  const groups = new Map<string, { clipId: string; id: string; kind: 'point' | 'face' | 'surface' }>();
+  for (const l of store.project.layers) if (layerIds.includes(l.id) && l.pin) groups.set(l.id, l.pin);
+  if (!groups.size) return store.toast('Nothing to pin again: pin it to something first.', 'info');
+  for (const [id, pin] of groups) (pin.kind === 'surface' ? pinToSurface : pinToPath)([id], pin.clipId, pin.id);
+}
+
+/** Take layers off whatever they are pinned to; they stay where they are at the playhead. */
+export function unpin(layerIds: string[]) {
+  store.edit((q) => {
+    for (const l of q.layers) {
+      if (!layerIds.includes(l.id)) continue;
+      if (l.follow?.length) [l.x, l.y] = layerPos(l, store.ui.time);
+      delete l.follow;
+      delete l.surface;
+      delete l.pin;
+    }
   });
 }
 
@@ -518,7 +567,7 @@ export function titleFollows(clipId: string, pathId: string) {
   if (!c) return;
   const follow = pathOnTimeline(p, c, pathId);
   if (!follow.length) return store.toast('That track is in a part of the clip that has been trimmed off.', 'error');
-  const tx: TextLayer = { id: uid(), kind: 'text', row: FIRST_ROW, text: 'Label', start: follow[0][0], duration: Math.max(0.5, follow.at(-1)![0] - follow[0][0]), size: 0.06, color: '#ffffff', font: 'sans', bold: true, x: follow[0][1], y: follow[0][2], align: 'center', shadow: true, box: true, fade: 0.1, moshed: false, follow };
+  const tx: TextLayer = { id: uid(), kind: 'text', row: FIRST_ROW, text: 'Label', start: follow[0][0], duration: Math.max(0.5, follow.at(-1)![0] - follow[0][0]), size: 0.06, color: '#ffffff', font: 'sans', bold: true, x: follow[0][1], y: follow[0][2], align: 'center', shadow: true, box: true, fade: 0.1, moshed: false, follow, pin: { clipId, id: pathId, kind: pathKind(c, pathId) } };
   store.edit((q) => q.layers.push(tx));
   store.ui.selectedClips = [tx.id];
   store.toast('Added a title that follows it: change its words in the inspector.', 'ok');

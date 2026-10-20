@@ -20,6 +20,9 @@
   let frames = $state(localGet('flipFrames', 3));
   let order = $state<FlipOrder>(localGet('flipOrder', 'order'));
   let length = $state(localGet('flipLength', 4));
+  let behind = $state(false);
+  // a subject has to be cut out of the footage for the pictures to go behind it
+  const cut = $derived(store.project.media.some((m) => m.mattes?.length));
   const from = store.ui.time;
   if (beatInfo.status !== 'ready' && beatInfo.status !== 'working') refreshBeats();
   const fps = $derived(store.project.encoder.fps);
@@ -28,7 +31,7 @@
 
   const toggle = (id: string) => (picked = picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
   function add() {
-    const n = addFlipbook(picked, times, to, order);
+    const n = addFlipbook(picked, times, to, order, 'fill', behind && cut);
     if (!n) return;
     for (const [k, v] of Object.entries({ flipOn: on, flipEvery: every, flipFrames: frames, flipOrder: order, flipLength: length })) localSet(k, v);
     store.ui.dialog = null;
@@ -80,6 +83,7 @@
         </select>
       </label>
     </div>
+    <label class="row small"><input type="checkbox" bind:checked={behind} disabled={!cut} aria-label="Behind the subject" />Behind the subject{#if !cut}<span class="small faint"> (cut a subject out first, in the Clip tab)</span>{/if}</label>
     <div class="small faint" aria-live="polite">
       {#if picked.length < 1}Pick at least one picture.
       {:else if on === 'beats' && beatInfo.status === 'working'}Listening for the beat…

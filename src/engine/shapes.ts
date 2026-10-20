@@ -33,6 +33,11 @@ export const SHAPES: { value: ShapeKind; label: string; hint: string }[] = [
   { value: 'heart', label: 'Heart', hint: 'A filled heart (try Particles: Rise).' },
   { value: 'sparkle', label: 'Sparkle', hint: 'A four-pointed twinkle.' },
   { value: 'burst', label: 'Starburst', hint: 'A comic-book burst to put words on.' },
+  { value: 'tape', label: 'Tape', hint: 'A strip of see-through sticky tape with torn ends, to hold a picture or a note.' },
+  { value: 'scrap', label: 'Paper scrap', hint: 'A torn piece of paper to put words or a picture on.' },
+  { value: 'flower', label: 'Flower', hint: 'A simple flower, for scrapbook pages.' },
+  { value: 'asterisk', label: 'Asterisk', hint: 'An eight-armed star, like the ones in zines and Y2K graphics.' },
+  { value: 'squiggle', label: 'Squiggle', hint: 'A wavy hand-drawn line.' },
   { value: 'pen', label: 'Pen', hint: 'Drawn by hand on the player.' },
 ];
 
@@ -182,6 +187,37 @@ function strokesOf(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' | 'head' | 
       return [{ pts: ring(64, (a) => { const k = Math.pow(Math.abs(Math.cos(2 * a)), 6) * 0.82 + 0.18; return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; }), closed: true }];
     case 'burst':
       return [{ pts: ring(28, (a) => { const i = Math.round((a / (Math.PI * 2)) * 28); const k = i % 2 ? 0.66 + noiseless(i) * 0.12 : 1; return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; }), closed: true }];
+    case 'tape': {
+      // a strip with torn (zigzag) ends
+      const teeth = 6;
+      const left = Array.from({ length: teeth + 1 }, (_, i): Pt => [-w / 2 + (i % 2 ? 0.05 * w : 0), h / 2 - (i / teeth) * h]);
+      const right = Array.from({ length: teeth + 1 }, (_, i): Pt => [w / 2 - (i % 2 ? 0.05 * w : 0), -h / 2 + (i / teeth) * h]);
+      return [{ pts: [...left, ...right], closed: true }];
+    }
+    case 'scrap': {
+      // a torn piece: every edge wanders a little, the same way each time
+      const n = 36;
+      return [{ pts: Array.from({ length: n }, (_, i): Pt => {
+        const u = (i / n) * 4;
+        const side = Math.floor(u);
+        const f = u - side;
+        const j = (noiseless(i * 3 + 1) - 0.5) * 0.045;
+        const pos: Pt[] = [[-0.5 + f, -0.5], [0.5, -0.5 + f], [0.5 - f, 0.5], [-0.5, 0.5 - f]];
+        const [px, py] = pos[side];
+        // the wander is square to the edge
+        return [(px + (side % 2 ? j : 0)) * w, (py + (side % 2 ? 0 : j)) * h];
+      }), closed: true }];
+    }
+    case 'flower': {
+      // eight rounded petals round a middle
+      const petals = ring(96, (a) => { const k = 0.58 + 0.42 * Math.abs(Math.cos(4 * a)); return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; });
+      const centre = ring(24, (a) => [(Math.sin(a) * w * 0.1), (-Math.cos(a) * h * 0.1)]);
+      return [{ pts: petals, closed: true }, { pts: centre, closed: true }];
+    }
+    case 'asterisk':
+      return [{ pts: ring(32, (a) => { const i = Math.round((a / (Math.PI * 2)) * 32); const k = i % 4 === 0 ? 1 : 0.2; return [(Math.sin(a) * w * k) / 2, (-Math.cos(a) * h * k) / 2]; }), closed: true }];
+    case 'squiggle':
+      return [{ pts: Array.from({ length: 49 }, (_, i): Pt => [(i / 48 - 0.5) * w, Math.sin((i / 48) * Math.PI * 6) * h * 0.5]), closed: false }];
     // (drawn from the subject's matte, not from lines)
     case 'subject':
       return [];
@@ -295,6 +331,11 @@ export function newShape(shape: ShapeKind, id: string, row: string, start: numbe
   if (shape === 'sparkle') Object.assign(s, { color: '#fff6c9', fill: '#ffffff', glow: 0.7, drawOn: undefined, w: sq(0.18)[0], h: 0.18 });
   if (shape === 'burst') Object.assign(s, { color: '#111111', fill: '#ffe23d', width: 0.006, drawOn: undefined, w: sq(0.4)[0] * 1.3, h: 0.4 });
   if (shape === 'progress') Object.assign(s, { w: 0.5, h: 0.035, color: '#ffffff', width: 0.004, drawOn: undefined });
+  if (shape === 'tape') Object.assign(s, { w: sq(0.3)[0] * 1.2, h: 0.07, color: 'rgba(235,225,180,0.85)', fill: 'rgba(235,225,180,0.65)', width: 0.001, drawOn: undefined, rotate: -6 });
+  if (shape === 'scrap') Object.assign(s, { w: sq(0.34)[0] * 1.2, h: 0.3, color: '#d8d0c0', fill: '#f6f1e6', width: 0.002, drawOn: undefined, rotate: 3 });
+  if (shape === 'flower') Object.assign(s, { color: '#ff7ab8', fill: '#ffc2de', width: 0.004, drawOn: undefined });
+  if (shape === 'asterisk') Object.assign(s, { color: '#111111', fill: '#111111', width: 0.003, drawOn: undefined });
+  if (shape === 'squiggle') Object.assign(s, { w: sq(0.3)[0] * 1.5, h: 0.05, color: '#ff2d55', width: 0.008 });
   if (shape === 'arrow') s.head = 0.22;
   if (shape === 'highlight') {
     s.color = look.color === DEFAULT_LOOK.color ? '#ffe600' : look.color;

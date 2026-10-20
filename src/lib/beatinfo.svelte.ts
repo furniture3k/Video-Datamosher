@@ -22,6 +22,12 @@ export const beatInfo = $state({
   downbeats: [] as number[],
 });
 
+/** Times in the inspector are shown in seconds or in beats of the music. */
+export const timeUnit = $state({ beats: localGet('timeBeats', false) });
+$effect.root(() => {
+  $effect(() => localSet('timeBeats', timeUnit.beats));
+});
+
 let latest: AudioFeatures | null = null;
 let job = 0;
 

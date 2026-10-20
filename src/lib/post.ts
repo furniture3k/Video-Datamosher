@@ -345,7 +345,7 @@ export class PostProcessor {
           grain: { amount: n('amount'), grain: n('grain'), colour: paramAt(e, 'colour', t) ? 1 : 0, fade: n('fade') },
           posterize: { levels: n('levels'), dither: ({ none: 0, bayer: 1, noise: 2 } as Record<string, number>)[String(e.params.dither)] ?? 1, pixel: n('pixel'), mixAmt: n('mix') },
           threshold: { level: n('level'), soft: n('soft'), dither: paramAt(e, 'dither', t) ? 1 : 0, ink: (INKS[String(e.params.ink)] ?? INKS.bw)[0], paper: (INKS[String(e.params.ink)] ?? INKS.bw)[1], mixAmt: n('mix') },
-          halftone: { cell: Math.max(2, n('cell')), angle: n('angle'), mono: paramAt(e, 'mono', t) ? 1 : 0, paper: [0.97, 0.96, 0.93], mixAmt: n('mix') },
+          halftone: { cell: Math.max(2, n('cell')), angle: n('angle'), mono: paramAt(e, 'mono', t) ? 1 : 0, lines: e.params.screen === 'lines' ? 1 : 0, twoTone: INKS[String(e.params.ink)] ? 1 : 0, inkTone: (INKS[String(e.params.ink)] ?? INKS.bw)[0], paper: INKS[String(e.params.ink)] ? INKS[String(e.params.ink)][1] : [0.97, 0.96, 0.93], mixAmt: n('mix') },
           lineArt: { thick: n('thick'), strength: n('strength'), mode: ({ paper: 0, neon: 1, over: 2 } as Record<string, number>)[String(e.params.mode)] ?? 0, ink: LINE_INKS[String(e.params.ink)] ?? LINE_INKS.black, mixAmt: n('mix') },
           glow: { thr: n('thr'), radius: n('radius'), amount: n('amount'), halation: n('halation') },
           vignette: { amount: n('amount'), reach: n('reach'), soft: n('soft'), white: paramAt(e, 'white', t) ? 1 : 0 },

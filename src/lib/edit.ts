@@ -201,7 +201,7 @@ export function addVideoTrack(): string {
  * Flipbook: the chosen media swapped on each of `times` (to `t1`) on a new track above, in
  * order, shuffled or back and forth, filling the frame. One undo step. Returns how many clips.
  */
-export function addFlipbook(mediaIds: string[], times: number[], t1: number, order: FlipOrder, fit: Clip['fit'] = 'fill'): number {
+export function addFlipbook(mediaIds: string[], times: number[], t1: number, order: FlipOrder, fit: Clip['fit'] = 'fill', behind = false): number {
   const p = store.project;
   const items = mediaIds.map((id) => p.media.find((m) => m.id === id)).filter((m): m is MediaItem => !!m?.hasVideo);
   if (!items.length || !times.length) return 0;
@@ -211,7 +211,7 @@ export function addFlipbook(mediaIds: string[], times: number[], t1: number, ord
     const track = addVideoTrackTo(q);
     for (const f of flips) {
       const m = items.find((x) => x.id === f.media)!;
-      q.clips.push(makeClip(m, track, { start: f.start, in: f.from, out: f.from + f.duration, fit, muted: true }));
+      q.clips.push(makeClip(m, track, { start: f.start, in: f.from, out: f.from + f.duration, fit, muted: true, ...(behind ? { depth: 'behind' as const } : {}) }));
     }
   });
   return flips.length;
@@ -423,6 +423,17 @@ export async function removeTrack(id: string) {
 }
 
 export const DEFAULT_DURATION: Record<string, number> = { melt: 1.5, bloom: 1.5, glitch: 1, stutter: 1.5, liquid: 1.5, ghost: 1.5, rewind: 1.5 };
+
+/** Give every clip on a clip's track its step print (or take it off every one): a whole row that looks hand-animated. */
+export function stepPrintTrack(clipId: string) {
+  const from = store.project.clips.find((c) => c.id === clipId);
+  if (!from) return;
+  const step = from.stepFps;
+  store.editTimeline((p) => {
+    for (const c of p.clips) if (c.track === from.track && !c.freeze) c.stepFps = step;
+  }, 'stp' + from.track);
+  store.toast(step ? `Every clip on this track is now at ${step} pictures a second.` : 'Every clip on this track is smooth again.');
+}
 
 /** Set (or clear with null) the transition into a video clip. */
 export function setTransition(clipId: string, type: TransitionType | null, patch: { duration?: number; intensity?: number; resolve?: boolean } = {}) {

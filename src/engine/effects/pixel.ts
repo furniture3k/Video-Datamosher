@@ -293,6 +293,33 @@ export const halftone: PixelEffectDef = {
     { key: 'cell', label: 'Dot size', type: 'number', min: 3, max: 40, step: 0.5, default: 9, unit: 'px', intensity: 'up', help: 'Spacing of the dots.' },
     { key: 'angle', label: 'Angle', type: 'number', min: 0, max: 90, step: 1, default: 45, unit: '°', help: 'How the grid of dots is turned.' },
     { key: 'mono', label: 'Black dots', type: 'bool', default: false, help: 'Black dots (newspaper) instead of dots in the picture\'s colours (pop art).' },
+    {
+      key: 'screen',
+      label: 'Screen',
+      type: 'select',
+      default: 'dots',
+      options: [
+        { value: 'dots', label: 'Dots' },
+        { value: 'lines', label: 'Lines' },
+      ],
+      help: 'Dots, or lines that get thicker where the picture is darker (an engraving).',
+    },
+    {
+      key: 'ink',
+      label: 'Two colours',
+      type: 'select',
+      default: 'picture',
+      options: [
+        { value: 'picture', label: 'The picture\'s own colours' },
+        { value: 'bw', label: 'Black on paper' },
+        { value: 'red', label: 'Red ink' },
+        { value: 'blue', label: 'Blue ink' },
+        { value: 'lime', label: 'Black on lime' },
+        { value: 'pink', label: 'Plum on pink' },
+        { value: 'night', label: 'White on black' },
+      ],
+      help: 'Print in just two colours, ink and paper, like a risograph.',
+    },
     MIX,
   ],
 };

@@ -4,7 +4,8 @@
   import { store } from '../lib/store.svelte';
   import Field from './Field.svelte';
   import type { Layer } from '../engine/layers';
-  import type { Particles } from '../engine/particles';
+  import { burstTimes, type Particles } from '../engine/particles';
+  import { beatInfo } from '../lib/beatinfo.svelte';
 
   let { layer }: { layer: Layer } = $props();
   const pt = $derived(layer.particles);
@@ -20,6 +21,13 @@
       },
       'particles' + id + Object.keys(change ?? {}).join(),
     );
+  }
+
+  /** burst on every beat the layer is on screen for, or back to once */
+  function onBeats(on: boolean) {
+    if (!on) return set({ at: undefined });
+    if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+    set({ at: burstTimes(beatInfo.beats, layer.start, layer.duration) });
   }
 </script>
 
@@ -39,5 +47,8 @@
 {#if pt}
   <Field label="How many" min={2} max={80} step={1} value={pt.count} help="Copies at once." onchange={(v: number) => set({ count: Math.round(v) })} />
   <Field label="Speed" min={0.05} max={2} step={0.01} value={pt.speed} help="Frame heights a second." onchange={(v: number) => set({ speed: v })} />
+  {#if pt.kind === 'burst'}
+    <Field type="bool" label="Burst on the beats" value={!!pt.at?.length} help="Fly out again on every beat while it is on screen, instead of just once. Move the title and press this again to follow the beats." onchange={onBeats} />
+  {/if}
   <Field label="Spread" min={0} max={1.5} step={0.01} value={pt.spread} help="How wide they spread, as a share of the frame width." onchange={(v: number) => set({ spread: v })} />
 {/if}

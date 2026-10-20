@@ -11,7 +11,7 @@ import { canvasZoomAt } from '../engine/canvas';
 import { matteSourceFor } from './mattes.svelte';
 import { drawCanvas } from './canvas';
 import { hasCanvas } from '../engine/canvas';
-import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
+import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, xfadeOf, type Placed } from '../engine/timeline';
 import { keyedValue } from '../engine/keys';
 import { linearAt } from '../engine/track';
 import { lutApplier } from '../engine/lut';
@@ -556,7 +556,7 @@ export class EditPreview {
 
   private blend(ctx: CanvasRenderingContext2D, w: number, h: number, a: Placed, imgA: CanvasImageSource | null, b: Placed, imgB: CanvasImageSource | null, p: number, tv: number) {
     const type = b.clip.transition?.type ?? 'dissolve';
-    const xf = BLEND_TRANSITIONS[type]?.xfade ?? 'fade';
+    const xf = xfadeOf(type, a.clip, b.clip);
     const alA = clipAlpha(a.clip, tv - a.start, a.end - a.start);
     const alB = clipAlpha(b.clip, tv - b.start, b.end - b.start);
     const drawA = (dx = 0) => imgA && this.paint(ctx, imgA, a.clip, w, h, alA * ctx.globalAlpha, 'source-over', dx, tv - a.start);
@@ -579,6 +579,37 @@ export class EditPreview {
         ctx.fillStyle = col;
         ctx.fillRect(0, 0, w, h);
         ctx.globalAlpha = 1;
+        break;
+      }
+      case 'fadegrays': {
+        if (p < 0.5) drawA();
+        else drawB();
+        ctx.globalAlpha = p < 0.5 ? p * 2 : (1 - p) * 2;
+        ctx.fillStyle = '#808080';
+        ctx.fillRect(0, 0, w, h);
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'circlecrop':
+      case 'rectcrop': {
+        // the first shot shrinks to a point on black, then the next grows from one
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, w, h);
+        const k = p < 0.5 ? 1 - p * 2 : p * 2 - 1;
+        clipped(() => (xf === 'circlecrop' ? ctx.arc(w / 2, h / 2, (k * Math.hypot(w, h)) / 2, 0, Math.PI * 2) : ctx.rect((w * (1 - k)) / 2, (h * (1 - k)) / 2, w * k, h * k)), p < 0.5 ? drawA : drawB);
+        break;
+      }
+      case 'vertopen':
+        drawA();
+        clipped(() => ctx.rect((w * (1 - p)) / 2, 0, w * p, h), drawB);
+        break;
+      case 'dissolve': {
+        // grains: in the render each pixel switches at its own moment; here, a quick fade
+        drawA();
+        ctx.save();
+        ctx.globalAlpha = p;
+        drawB();
+        ctx.restore();
         break;
       }
       case 'wipeleft':

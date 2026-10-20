@@ -147,7 +147,7 @@ d('native ffmpeg pipeline', () => {
   });
 
   it('blend transitions overlap clips and keep exact frame counts', () => {
-    for (const type of ['dissolve', 'dip', 'wipeleft', 'circleopen', 'pixelize', 'whipleft', 'whipright', 'zoomin', 'blurdissolve', 'clock', 'diagonal', 'squeeze', 'circleclose'] as const) {
+    for (const type of ['dissolve', 'dip', 'wipeleft', 'circleopen', 'pixelize', 'whipleft', 'whipright', 'zoomin', 'blurdissolve', 'clock', 'diagonal', 'squeeze', 'circleclose', 'whip', 'circlecrop', 'rectcrop', 'doors', 'dipgrey', 'grainy'] as const) {
       const p: Project = { ...project, clips: [project.clips[0], { ...project.clips[1], transition: { type, duration: 0.8, intensity: 0.5 } }] };
       expect(timelineDuration(p)).toBeCloseTo(3.2, 5);
       const segs = segments(p, 25);

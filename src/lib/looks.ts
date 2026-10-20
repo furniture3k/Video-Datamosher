@@ -26,19 +26,23 @@ void main(){
 /** Halftone: the picture as dots on a turned grid, bigger where it's darker (in black, or in its colours). */
 export const HALFTONE = `${HEAD}
 uniform float cell; uniform float angle; uniform float mono; uniform vec3 paper; uniform float mixAmt;
+uniform float lines; uniform float twoTone; uniform vec3 inkTone;
 void main(){
   vec2 p = uv * size;
   float a = radians(angle);
   mat2 r = mat2(cos(a), -sin(a), sin(a), cos(a));
   vec2 q = r * p;
+  // dots sit in the middle of each cell; a line screen keeps the position along the line
   vec2 cq = (floor(q / cell) + 0.5) * cell;
-  vec2 cp = transpose(r) * cq;
+  vec2 sq = lines > 0.5 ? vec2(q.x, cq.y) : cq;
+  vec2 cp = transpose(r) * sq;
   vec3 c = texture(src, clamp(cp / size, 0., 1.)).rgb;
   float l = lum(c);
   float rad = cell * 0.5 * sqrt(1. - l) * 1.25;
-  float d = length(q - cq);
+  float d = lines > 0.5 ? abs(q.y - cq.y) : length(q - cq);
+  if (lines > 0.5) rad = cell * 0.5 * (1. - l) * 1.1;
   float dot1 = 1. - smoothstep(rad - 0.8, rad + 0.8, d);
-  vec3 inkc = mono > 0.5 ? vec3(0.06) : clamp((c - l * 0.35) * 1.35, 0., 1.);
+  vec3 inkc = twoTone > 0.5 ? inkTone : mono > 0.5 ? vec3(0.06) : clamp((c - l * 0.35) * 1.35, 0., 1.);
   vec3 col = mix(paper, inkc, dot1);
   o = vec4(mix(texture(src, uv).rgb, col, mixAmt), 1.);
 }`;

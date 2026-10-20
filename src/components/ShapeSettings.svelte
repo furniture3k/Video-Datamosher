@@ -9,12 +9,13 @@
   import BeatChips from './BeatChips.svelte';
   import Icon from './Icon.svelte';
   import TrailSettings from './TrailSettings.svelte';
-  import SurfaceSettings from './SurfaceSettings.svelte';
+  import PinSettings from './PinSettings.svelte';
   import TiltSettings from './TiltSettings.svelte';
   import DepthSettings from './DepthSettings.svelte';
   import EffectsSettings from './EffectsSettings.svelte';
   import ShapeStylePicker from './ShapeStylePicker.svelte';
   import ParticleSettings from './ParticleSettings.svelte';
+  import { layersOnBeat } from '../lib/graphicsops.svelte';
 
   let { shape }: { shape: ShapeLayer } = $props();
 
@@ -45,8 +46,9 @@
       <button class="small" class:on={shape.shape === s.value} title={s.hint} onclick={() => set('shape', s.value)}>{s.label}</button>
     {/each}
   </div>
-  <Field label="Start" unit="s" min={0} max={Math.max(1, store.duration)} step={0.05} value={shape.start} help="When it appears." onchange={(v: number) => set('start', v)} />
-  <Field label="Duration" unit="s" min={0.05} max={60} step={0.05} value={shape.duration} help="How long it stays." onchange={(v: number) => set('duration', Math.max(0.05, v))}>
+  <Field label="Start" unit="s" time="at" min={0} max={Math.max(1, store.duration)} step={0.05} value={shape.start} help="When it appears." onchange={(v: number) => set('start', v)} />
+  <button class="small" onclick={() => layersOnBeat([shape.id])} title="Move it to start on the nearest beat of the music">Start on the beat</button>
+  <Field label="Duration" unit="s" time="span" from={shape.start} min={0.05} max={60} step={0.05} value={shape.duration} help="How long it stays." onchange={(v: number) => set('duration', Math.max(0.05, v))}>
     <BeatChips counts={[0.25, 0.5, 1, 2, 4]} onpick={(v) => set('duration', v)} />
   </Field>
   <div class="row">
@@ -93,7 +95,7 @@
   <EffectsSettings layer={shape} />
   <DepthSettings layer={shape} />
   <TiltSettings layer={shape} />
-  <SurfaceSettings layer={shape} />
+  <PinSettings layer={shape} />
   <ParticleSettings layer={shape} />
   <Field label="Fade" unit="s" min={0} max={3} step={0.05} value={shape.fade} help="Fade in and out." onchange={(v: number) => set('fade', v)} />
   {#if shape.follow?.length}

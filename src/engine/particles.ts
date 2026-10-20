@@ -11,6 +11,8 @@ export interface Particles {
   speed: number;
   /** how wide they spread across (a share of the frame width) */
   spread: number;
+  /** burst only: seconds after the layer starts at which it bursts again (on the beats); empty or missing: once, at the start */
+  at?: number[];
 }
 
 export interface Particle {
@@ -28,12 +30,24 @@ export const LIFE = 1.6;
 
 /** Where every particle is `local` seconds after the layer starts. */
 export function particlesAt(p: Particles, local: number): Particle[] {
+  if (p.kind === 'burst' && p.at?.length) {
+    // one burst per trigger, each its own scatter, overlapping if the beats are close
+    const out: Particle[] = [];
+    p.at.forEach((t, k) => {
+      if (local >= t && local - t <= LIFE) out.push(...one({ ...p, at: undefined }, local - t, k * 17));
+    });
+    return out;
+  }
+  return one(p, local, 0);
+}
+
+function one(p: Particles, local: number, salt: number): Particle[] {
   const out: Particle[] = [];
   const n = Math.max(1, Math.min(200, Math.round(p.count)));
   for (let i = 0; i < n; i++) {
-    const a = noise(i, 1.7);
-    const b = noise(i, 4.3);
-    const c = noise(i, 7.9);
+    const a = noise(i + salt, 1.7);
+    const b = noise(i + salt, 4.3);
+    const c = noise(i + salt, 7.9);
     let age: number;
     if (p.kind === 'burst') age = local;
     else {
@@ -58,4 +72,13 @@ export function particlesAt(p: Particles, local: number): Particle[] {
     }
   }
   return out;
+}
+
+/** The moments (seconds after the layer starts) of a burst on each `every`th beat while the layer is on screen. */
+export function burstTimes(beats: number[], start: number, duration: number, every = 1): number[] {
+  const step = Math.max(1, Math.round(every));
+  return beats
+    .filter((b) => b >= start - 1e-6 && b < start + duration)
+    .filter((_, i) => i % step === 0)
+    .map((b) => Math.round((b - start) * 1000) / 1000);
 }
