@@ -90,14 +90,15 @@ export function matteAlpha(f: Uint8Array, mw: number, mh: number, W: number, H: 
 
 /**
  * The matte of the footage on screen at timeline time t: the top clip that has one covering that
- * moment. Null when there is none, or its frames are still loading (they are asked for).
+ * moment (`only: 'main'`: just the main track's, the footage a clip can go behind). Null when there
+ * is none, or its frames are still loading (they are asked for).
  */
-export function matteSourceFor(p: Pick<Project, 'clips' | 'media' | 'tracks'>): MatteSource {
+export function matteSourceFor(p: Pick<Project, 'clips' | 'media' | 'tracks'>, only: 'all' | 'main' = 'all'): MatteSource {
   return (t, W, H) => {
     void matteState.version;
     // top first: clips on tracks above, then the main track
     const on: { clip: (typeof p.clips)[number]; media: Project['media'][number]; start: number }[] = [];
-    for (const l of [...layers(p)].reverse()) if (t >= l.start - 1e-6 && t < l.end) on.push({ clip: l.clip, media: l.media, start: l.start });
+    if (only === 'all') for (const l of [...layers(p)].reverse()) if (t >= l.start - 1e-6 && t < l.end) on.push({ clip: l.clip, media: l.media, start: l.start });
     for (const pl of layoutVideo(p)) if (t >= pl.start - 1e-6 && t < pl.end) on.push({ clip: pl.clip, media: pl.media, start: pl.start });
     for (const { clip, media, start } of on) {
       for (const m of media.mattes ?? []) {
@@ -113,3 +114,30 @@ export function matteSourceFor(p: Pick<Project, 'clips' | 'media' | 'tracks'>): 
 
 /** Does any footage in the project have a matte (so a layer can go behind a subject)? */
 export const hasMattes = (p: Pick<Project, 'media'>) => p.media.some((m) => (m.mattes ?? []).length > 0);
+
+let greyC: HTMLCanvasElement | null = null;
+let whiteC: HTMLCanvasElement | null = null;
+
+/**
+ * The matte at timeline time t as a grey picture the size of the frame (white = the subject, black
+ * = not), for things that read maps. Null when there is no matte. The picture is reused: use it at once.
+ */
+export function matteGrey(source: MatteSource, t: number, w: number, h: number): HTMLCanvasElement | null {
+  const m = source(t, w, h);
+  if (!m) return null;
+  greyC ??= document.createElement('canvas');
+  whiteC ??= document.createElement('canvas');
+  for (const c of [greyC, whiteC]) if (c.width !== w || c.height !== h) ((c.width = w), (c.height = h));
+  const wg = whiteC.getContext('2d')!;
+  wg.globalCompositeOperation = 'source-over';
+  wg.fillStyle = '#fff';
+  wg.fillRect(0, 0, w, h);
+  wg.globalCompositeOperation = 'destination-in';
+  wg.drawImage(m, 0, 0, w, h);
+  const g = greyC.getContext('2d')!;
+  g.globalCompositeOperation = 'source-over';
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, w, h);
+  g.drawImage(whiteC, 0, 0);
+  return greyC;
+}

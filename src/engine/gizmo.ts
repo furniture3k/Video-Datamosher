@@ -2,7 +2,7 @@
 // drags and pinches into moves, scales and turns (pure, in pixels of the output frame).
 import { apply, type Affine } from './placement';
 import { keyedValue, withKeyAt } from './keys';
-import { layerPos } from './layers';
+import { layerPos, moveGroupMates } from './layers';
 import { clipLen, layoutVideo } from './timeline';
 import { VIDEO_TRACK, transformOf, type Clip, type Project } from './types';
 
@@ -141,6 +141,8 @@ export function setPose(p: Pick<Project, 'clips' | 'media' | 'layers'>, id: stri
     const dx = to.x - now.x;
     const dy = to.y - now.y;
     if (changed(dx, 0) || changed(dy, 0)) {
+      // a layer in a group takes the rest of the group with it
+      moveGroupMates(p.layers, l.id, dx, dy);
       l.x += dx;
       l.y += dy;
       if (l.follow) l.follow = l.follow.map(([ft, fx, fy]) => [ft, fx + dx, fy + dy]);

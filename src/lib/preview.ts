@@ -284,16 +284,20 @@ export class EditPreview {
     };
     const layer = (pl: Placed) => source(pl.clip, pl.media, pl.start, pl.index % 2, tv);
 
-    if (visible.length) {
+    /** the main track's picture (with its transition) onto `c2`: the frame, and again for the subject a clip goes behind */
+    const drawBase = (c2: CanvasRenderingContext2D) => {
+      if (!visible.length) return;
       const a = visible[0];
       const b = visible[1];
       const imgA = layer(a);
       if (b && b.overlap > 0) {
         const imgB = layer(b);
         const prog = Math.max(0, Math.min(1, (tv - b.start) / b.overlap));
-        this.blend(ctx, w, h, a, imgA, b, imgB, prog, tv);
-      } else if (imgA) this.paint(ctx, imgA, a.clip, w, h, clipAlpha(a.clip, tv - a.start, a.end - a.start), 'source-over', 0, tv - a.start);
-    }
+        this.blend(c2, w, h, a, imgA, b, imgB, prog, tv);
+      } else if (imgA) this.paint(c2, imgA, a.clip, w, h, clipAlpha(a.clip, tv - a.start, a.end - a.start), 'source-over', 0, tv - a.start);
+    };
+    drawBase(ctx);
+    const mainMatte = p.clips.some((c) => c.depth === 'behind') ? matteSourceFor(p, 'main') : null;
 
     // clips on the upper video tracks, bottom track first
     for (const l of layers(p)) {
@@ -304,6 +308,20 @@ export class EditPreview {
       }
       const img = source(l.clip, l.media, l.start, 'L' + l.clip.id, t);
       if (img) this.paint(ctx, img, l.clip, w, h, clipAlpha(l.clip, t - l.start, l.end - l.start), COMPOSITE[l.clip.blend ?? 'normal'], 0, t - l.start);
+      // behind the subject: the main track's subject goes back over the clip
+      const cut = l.clip.depth === 'behind' ? mainMatte?.(t, w, h) : null;
+      if (cut) {
+        const sc = (this.subjectCanvas ??= document.createElement('canvas'));
+        if (sc.width !== w || sc.height !== h) ((sc.width = w), (sc.height = h));
+        const sg = sc.getContext('2d')!;
+        sg.globalCompositeOperation = 'source-over';
+        sg.clearRect(0, 0, w, h);
+        drawBase(sg);
+        sg.globalCompositeOperation = 'destination-in';
+        sg.drawImage(cut, 0, 0, w, h);
+        sg.globalCompositeOperation = 'source-over';
+        ctx.drawImage(sc, 0, 0);
+      }
     }
 
     // get the next clip ready so cuts don't stall
@@ -340,6 +358,9 @@ export class EditPreview {
   private dims(img: CanvasImageSource, w: number, h: number): [number, number] {
     return [(img as HTMLVideoElement).videoWidth || (img as HTMLImageElement).naturalWidth || w, (img as HTMLVideoElement).videoHeight || (img as HTMLImageElement).naturalHeight || h];
   }
+
+  /** the main track's picture cut to the subject, for clips that go behind it */
+  private subjectCanvas: HTMLCanvasElement | null = null;
 
   /** The GPU grader (made on first use); null where WebGL2 isn't available or was lost. */
   private gpu(): GradeGL | null {

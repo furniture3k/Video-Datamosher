@@ -9,6 +9,7 @@
   import { randomSeed } from '../engine/rng';
   import { EFFECTS } from '../engine/effects';
   import { takeSnapshot } from '../lib/snapshots.svelte';
+  import { beatInfo } from '../lib/beatinfo.svelte';
   import type { Project } from '../engine/types';
 
   type Item = { project: Project; jpegs: Uint8Array[] | null; error?: string; parent?: boolean };
@@ -50,7 +51,7 @@
     history = [];
     renderAll(
       Array.from({ length: count }, () => ({
-        project: mode === 'mutate' ? mutate(base, total, amount, randomSeed()) : chaos(base, total, randomSeed(), store.ui.chaosIntensity),
+        project: mode === 'mutate' ? mutate(base, total, amount, randomSeed(), store.ui.chaosGraphics) : chaos(base, total, randomSeed(), store.ui.chaosIntensity, store.ui.chaosGraphics ? { beats: beatInfo.beats } : undefined),
         jpegs: null,
       })),
     );
@@ -66,7 +67,7 @@
     const n = Math.max(1, count - kept.length);
     const kids: Item[] = Array.from({ length: n }, () => ({
       // one parent: nudged copies; two or more: crossover
-      project: ps.length > 1 ? breed(ps, total, randomSeed(), amount * 0.4) : mutate(ps[0], total, amount, randomSeed()),
+      project: ps.length > 1 ? breed(ps, total, randomSeed(), amount * 0.4, store.ui.chaosGraphics) : mutate(ps[0], total, amount, randomSeed(), store.ui.chaosGraphics),
       jpegs: null,
     }));
     history = [...history, items];
@@ -108,6 +109,7 @@
       <button class:on={mode === 'chaos'} onclick={() => (mode = 'chaos')}>Random stacks</button>
     </div>
     <label class="row">{mode === 'mutate' || history.length ? 'Mutation' : 'Strength'} <input type="range" min="0.05" max="1" step="0.05" bind:value={amount} style="width:100px" /></label>
+    <label class="row" title="Also change the titles, shapes and canvas: fonts, colours, entrances, places, timing on the beat"><input type="checkbox" checked={store.ui.chaosGraphics} onchange={(e) => store.setPref('chaosGraphics', (e.target as HTMLInputElement).checked)} />Titles &amp; graphics</label>
     <label class="row">Count
       <select bind:value={count}>{#each [4, 6, 9, 12] as n}<option value={n}>{n}</option>{/each}</select>
     </label>

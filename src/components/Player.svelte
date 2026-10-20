@@ -18,7 +18,8 @@
   import { SAMPLE_RATE } from '../engine/audio';
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawLayers } from '../lib/layers';
-  import { matteState, matteSourceFor } from '../lib/mattes.svelte';
+  import { matteState, matteSourceFor, hasMattes } from '../lib/mattes.svelte';
+  import DepthStrip from './DepthStrip.svelte';
   import Gizmo from './Gizmo.svelte';
   import QuickMenu from './QuickMenu.svelte';
   import { addPen } from '../lib/edit';
@@ -941,6 +942,7 @@
 <svelte:window onclick={() => (pmenu = false)} />
 
 <div class="player">
+  {#if hasMattes(store.project) && hasTimeline}<DepthStrip />{/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stage"

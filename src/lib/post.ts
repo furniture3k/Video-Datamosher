@@ -21,7 +21,7 @@ import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project } from '../engine/types';
 import { isEmpty, type Layer } from '../engine/layers';
 import { anyLayerAt, drawLayers } from './layers';
-import { ensureMattes, matteSourceFor } from './mattes.svelte';
+import { ensureMattes, matteGrey, matteSourceFor } from './mattes.svelte';
 import { ensureFonts } from './fonts.svelte';
 import { Cancelled } from './ffmpeg';
 
@@ -148,9 +148,9 @@ void main(){
   o = vec4(mix(texture(cur, uv).rgb, texture(clean, uv).rgb, clamp(m * amt, 0., 1.)), 1.);
 }`;
 
-const MASK_MODES: Record<string, number> = { person: 0, paint: 0, media: 0, depth: 0, track: 1, luma: 2, dark: 3, chroma: 4, gradient: 5 };
+const MASK_MODES: Record<string, number> = { person: 0, paint: 0, media: 0, depth: 0, cutout: 0, track: 1, luma: 2, dark: 3, chroma: 4, gradient: 5 };
 /** Sources whose mask is a picture of its own (drawn into the `person` texture). */
-const PICTURE_SOURCES = new Set(['person', 'paint', 'media', 'depth']);
+const PICTURE_SOURCES = new Set(['person', 'paint', 'media', 'depth', 'cutout']);
 /** Sources that blend by their grey level instead of cutting out. */
 const MAP_SOURCES = new Set(['gradient', 'paint', 'media', 'depth']);
 
@@ -440,10 +440,8 @@ export class PostRunner {
   /** jpegs[i] is output frame offset + i */
   async run(jpegs: Uint8Array[], frames: Pick<Frame, 'src' | 'at'>[], offset: number, onProgress?: (p: number) => void, signal?: { cancelled: boolean }): Promise<Uint8Array[]> {
     if (!this.active || !jpegs.length) return jpegs;
-    if (this.layers.length) {
-      await ensureFonts(this.project);
-      await ensureMattes(this.project);
-    }
+    if (this.layers.length) await ensureFonts(this.project);
+    await ensureMattes(this.project);
     const matte = matteSourceFor(this.project);
     const out: Uint8Array[] = [];
     for (let i = 0; i < jpegs.length; i++) {
@@ -516,7 +514,17 @@ export class PostRunner {
       const src = e.params.source;
       if (src === 'paint') maps.set(e.id, paintedMask(e.id, (e.data?.maskStrokes as MaskStroke[] | undefined) ?? [], 256, Math.max(8, Math.round((256 * h) / w))));
       else if (src === 'media') maps.set(e.id, await mediaMap(this.project, e.data?.mediaId as string | undefined, pos - e.start));
-      else if (src === 'depth') {
+      else if (src === 'cutout') {
+        // the main track's cut-out at this moment, as a grey picture (nothing cut out there: nothing is kept)
+        const g = matteGrey(matteSourceFor(this.project, 'main'), pos / this.fps, w, h);
+        if (g) {
+          const copy = document.createElement('canvas');
+          copy.width = w;
+          copy.height = h;
+          copy.getContext('2d')!.drawImage(g, 0, 0);
+          maps.set(e.id, copy);
+        } else maps.set(e.id, null);
+      } else if (src === 'depth') {
         let d = this.depthCache.get(pos);
         if (!d) {
           d = await depthMap(clean);

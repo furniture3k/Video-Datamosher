@@ -2,7 +2,7 @@
   // A subject effect's settings: what it does to the subject cut out of the footage.
   import { store } from '../lib/store.svelte';
   import { deleteSelected } from '../lib/edit';
-  import { SUBJECT_EFFECTS } from '../lib/cutout.svelte';
+  import { SUBJECT_EFFECTS, isFaceEffect } from '../lib/cutout.svelte';
   import type { ShapeLayer, SubjectFx } from '../engine/layers';
   import Field from './Field.svelte';
   import BeatChips from './BeatChips.svelte';
@@ -33,13 +33,14 @@
     );
   }
   const colourFx = $derived(['fill', 'outline', 'glow', 'echo'].includes(fx.effect));
-  const changesPicture = $derived(fx.effect === 'blur' || fx.effect === 'grade');
+  const changesPicture = $derived(fx.effect === 'blur' || fx.effect === 'grade' || fx.effect === 'blurFaces' || fx.effect === 'pixelFaces');
+  const faceFx = $derived(fx.effect === 'blurFaces' || fx.effect === 'pixelFaces');
 </script>
 
 <div class="col">
   <div class="row"><b class="grow">Subject effect</b><span class="small faint mono">{fmt(shape.start)}</span></div>
   <div class="kinds">
-    {#each SUBJECT_EFFECTS as s (s.value)}
+    {#each SUBJECT_EFFECTS.filter((s) => isFaceEffect(s.value) === faceFx) as s (s.value)}
       <button class="small" class:on={fx.effect === s.value} title={s.hint} onclick={() => setFx({ effect: s.value, ...s.fx })}>{s.label}</button>
     {/each}
   </div>
@@ -56,7 +57,7 @@
     <Field label="Step across" min={-0.3} max={0.3} step={0.005} value={fx.dx ?? 0.04} help="How far each copy steps right (+) or left (−), as a share of the frame width." onchange={(v: number) => setFx({ dx: v })} />
     <Field label="Step down" min={-0.3} max={0.3} step={0.005} value={fx.dy ?? 0} help="How far each copy steps down (+) or up (−), as a share of the frame height." onchange={(v: number) => setFx({ dy: v })} />
   {/if}
-  {#if changesPicture}
+  {#if changesPicture && !faceFx}
     <Field type="select" label="Applies to" value={fx.part ?? 'background'} options={[{ value: 'background', label: 'Everything but the subject' }, { value: 'subject', label: 'Only the subject' }]} help="Which part of the picture is changed." onchange={(v: string) => setFx({ part: v as 'subject' | 'background' })} />
   {/if}
   {#if fx.effect === 'grade'}

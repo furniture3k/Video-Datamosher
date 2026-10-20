@@ -12,11 +12,13 @@ import { store } from '../lib/store.svelte';
   import Icon from './Icon.svelte';
   import { clipLen, mediaOf, layoutVideo, BLEND_TRANSITIONS, MOSH_TRANSITIONS, isMoshTransition, isOverlayTrack } from '../engine/timeline';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
-  import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, EMOJI } from '../lib/edit';
+  import { setTransition, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, groupSelected, ungroupSelected, EMOJI } from '../lib/edit';
+  import { revealOnBeats } from '../lib/graphicsops.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { addSubjectEffect, cutoutJob, deleteMatte, SUBJECT_EFFECTS, titleBehind, toggleCutout } from '../lib/cutout.svelte';
+  import { hasMattes } from '../lib/mattes.svelte';
+  import { addFaceEffect, addSubjectEffect, cutoutJob, deleteMatte, isFaceEffect, makeSticker, SUBJECT_EFFECTS, titleBehind, toggleCutout } from '../lib/cutout.svelte';
   import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, toggleSurfacePick, titleOnSurface, putClipOnSurface, takeClipOffSurface, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
@@ -25,6 +27,9 @@ import { store } from '../lib/store.svelte';
   const layer = $derived(store.ui.selectedClips.length === 1 ? store.project.layers.find((t) => t.id === store.ui.selectedClips[0]) : undefined);
   const text = $derived(layer?.kind === 'text' ? layer : undefined);
   const shape = $derived(layer?.kind === 'shape' ? layer : undefined);
+  /** several titles or shapes picked together */
+  const manyLayers = $derived(store.ui.selectedClips.length > 1 && store.ui.selectedClips.filter((id) => store.project.layers.some((l) => l.id === id)).length > 1);
+  let revealEvery = $state(1);
   const trClip = $derived(store.ui.selectedTransition ? store.project.clips.find((x) => x.id === store.ui.selectedTransition) : undefined);
   const isStill = $derived(media?.source.kind === 'file' && media.source.isImage);
   const isVideo = $derived(c?.track === VIDEO_TRACK);
@@ -439,9 +444,10 @@ import { store } from '../lib/store.svelte';
           <div class="pathrow">
             <span class="small grow">{mt.name} · {(mt.to - mt.from).toFixed(1)} s</span>
             <button class="small" onclick={() => titleBehind(c.id)} title="Add a big title behind the subject">Title behind</button>
+            <button class="small" onclick={() => makeSticker(c.id)} title="Freeze the subject at the playhead into a cut-out picture in the media">Make sticker</button>
             <select class="small" aria-label="Effect on the subject" onchange={(e) => { const v = (e.target as HTMLSelectElement).value; if (v) addSubjectEffect(c.id, v as import('../engine/layers').SubjectFx['effect']); (e.target as HTMLSelectElement).value = ''; }}>
               <option value="">Effect…</option>
-              {#each SUBJECT_EFFECTS as ef}<option value={ef.value}>{ef.label}</option>{/each}
+              {#each SUBJECT_EFFECTS.filter((x) => !isFaceEffect(x.value)) as ef}<option value={ef.value}>{ef.label}</option>{/each}
             </select>
             <button class="icon ghost" aria-label="Delete cut-out" title="Delete cut-out" onclick={() => deleteMatte(media!.id, mt.id)}><Icon name="x" size={12} /></button>
           </div>
@@ -462,6 +468,12 @@ import { store } from '../lib/store.svelte';
             <button class="icon ghost" aria-label="Delete surface" title="Delete surface" onclick={() => editKeys((x) => (x.planes = x.planes?.filter((y) => y.id !== plane.id)))}><Icon name="x" size={12} /></button>
           </div>
         {/each}
+        {#if (c.paths ?? []).some((x) => x.name.startsWith('Face'))}
+          <div class="row btns">
+            <button class="small" onclick={() => addFaceEffect(c.id, 'blurFaces')} title="Blur every face found in the clip, following each one">Blur faces</button>
+            <button class="small" onclick={() => addFaceEffect(c.id, 'pixelFaces')} title="Turn every face found in the clip into big squares">Pixelate faces</button>
+          </div>
+        {/if}
         {#each c.paths ?? [] as path (path.id)}
           <div class="pathrow">
             <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>
@@ -483,6 +495,18 @@ import { store } from '../lib/store.svelte';
       {/if}
 
       {#if isUpper && !isAdjust}
+        <div class="row sect"><span class="label grow">Depth</span></div>
+        <Field
+          type="select"
+          label="Depth"
+          value={c.depth ?? 'front'}
+          options={[
+            { value: 'front', label: 'In front', hint: 'Over the main track.' },
+            { value: 'behind', label: 'Behind the subject', hint: 'The subject cut out of the main track stays in front of this clip.' },
+          ]}
+          help={hasMattes(store.project) ? "Over the main track, or behind the subject you cut out of it (the subject comes back over this clip)." : 'To go behind a subject, cut the subject out of a clip on the main track first (Clip tab, Motion).'}
+          onchange={(v: string) => editKeys((x) => (v === 'behind' ? (x.depth = 'behind') : delete x.depth))}
+        />
         <div class="row sect"><span class="label grow">Surface</span></div>
         {#if c.screen}
           <div class="row small faint">Plays on a tracked surface: it follows the surface's corners (its own position, zoom and turn don't apply). <button class="small ghost" onclick={() => takeClipOffSurface(c.id)}>Take it off</button></div>
@@ -554,6 +578,21 @@ import { store } from '../lib/store.svelte';
     {#if isVideo && store.project.clips.filter((x) => x.track === VIDEO_TRACK)[0] !== c}
       <button class="ghost" onclick={() => store.selectTransition(c.id)}><Icon name="split" />Transition into this clip{c.transition ? `: ${c.transition.type}` : ''}</button>
     {/if}
+  </div>
+{:else if manyLayers}
+  <div class="col">
+    <div class="row"><b class="grow">{store.ui.selectedClips.length} layers selected</b></div>
+    <div class="row btns">
+      <button class="small" onclick={() => groupSelected()} title="They move, copy and delete together">Group</button>
+      <button class="small" onclick={() => ungroupSelected()}>Ungroup</button>
+    </div>
+    <div class="row btns">
+      <button class="small" onclick={() => revealOnBeats(revealEvery)} title="They come in one after another on the beat, from the earliest start">Reveal one per beat</button>
+      <select class="small" aria-label="Beats between reveals" bind:value={revealEvery}>
+        {#each [0.25, 0.5, 1, 2] as n}<option value={n}>{n === 0.25 ? '¼ beat' : n === 0.5 ? '½ beat' : n === 1 ? 'every beat' : `every ${n} beats`}</option>{/each}
+      </select>
+    </div>
+    <p class="small faint">Pick them with Shift-click on the player or the timeline.</p>
   </div>
 {:else}
   <div class="muted small empty">

@@ -103,7 +103,7 @@ class Store {
     /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
     // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
     previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'wordBeats' | 'flipbook' | 'fonts' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history' | 'batch',
+    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'wordBeats' | 'script' | 'flipbook' | 'fonts' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history' | 'batch',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
@@ -112,6 +112,8 @@ class Store {
     /** imported clips on an empty timeline get a melt (or a bloom) straight away */
     autoMosh: localGet('autoMosh', true),
     /** which model cuts subjects out: 'auto' (quick, precise once something is left out), 'mediapipe' (quick), 'sam' (precise), 'person' (people only, quickest) */
+    /** randomizing, varying and breeding also change the titles, shapes and canvas */
+    chaosGraphics: localGet('chaosGraphics', false),
     cutModel: localGet<'auto' | 'mediapipe' | 'sam' | 'person'>('cutModel', 'auto'),
     /** start on the home screen (else straight into the last project) */
     startHome: localGet('startHome', true),
@@ -594,7 +596,7 @@ class Store {
     return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapProxies];
   }
 
-  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics' | 'startHome' | 'autoMosh' | 'cutModel'>(k: K, v: (typeof this.ui)[K]) {
+  setPref<K extends 'advanced' | 'autoRender' | 'theme' | 'view' | 'timelineHeight' | 'tips' | 'previewRes' | 'haptics' | 'startHome' | 'autoMosh' | 'cutModel' | 'chaosGraphics'>(k: K, v: (typeof this.ui)[K]) {
     this.ui[k] = v;
     localSet(k, v);
     if (k === 'autoRender' && v) this.scheduleRender(50);

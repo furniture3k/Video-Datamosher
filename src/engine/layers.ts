@@ -28,6 +28,8 @@ interface LayerBase {
   fade: number;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
+  /** layers that share a group move, copy and delete together (the box, arrow and label of a mark) */
+  group?: string;
   /** 'behind': under the subject cut out of the footage below (the layer is hidden where the matte is white); 'inside': a track matte, shown only on the subject */
   depth?: 'front' | 'behind' | 'inside';
   /** leaned back or to the side in perspective: degrees about the horizontal and the vertical axis through its position */
@@ -132,7 +134,7 @@ export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'lin
 
 /** What a subject effect does to the subject cut out of the footage (or, for blur and grade, to everything but it). */
 export interface SubjectFx {
-  effect: 'fill' | 'outline' | 'glow' | 'echo' | 'blur' | 'grade';
+  effect: 'fill' | 'outline' | 'glow' | 'echo' | 'blur' | 'grade' | 'blurFaces' | 'pixelFaces';
   /** how much: thickness of an outline, size of a glow or blur (0..1) */
   amount: number;
   /** blur and grade: the subject, or everything else */
@@ -141,6 +143,8 @@ export interface SubjectFx {
   dx?: number;
   dy?: number;
   copies?: number;
+  /** blurFaces, pixelFaces: where each face is, over the timeline: [timeline seconds, x, y (shares of the frame)] and the size of its box (shares) */
+  faces?: { pts: [number, number, number][]; size: [number, number] }[];
   /** grade: brightness, saturation and contrast (1 = as it is) */
   brightness?: number;
   saturation?: number;
@@ -263,4 +267,57 @@ export const layersIn = <L extends Pick<Layer, 'start' | 'duration'>>(layers: L[
 export function freeRow(layers: Layer[], t0: number, t1: number): string {
   for (const row of layerRows(layers)) if (!layersIn(layers.filter((l) => l.row === row), t0, t1).length) return row;
   return nextRow(layers);
+}
+
+/** The ids with those of everything grouped with them: what is moved, copied or deleted together. */
+export function withGroups(layers: Pick<Layer, 'id' | 'group'>[], ids: string[]): string[] {
+  const groups = new Set(layers.filter((l) => ids.includes(l.id) && l.group).map((l) => l.group));
+  return layers.filter((l) => ids.includes(l.id) || (l.group && groups.has(l.group))).map((l) => l.id);
+}
+
+/** Give each group among `copies` a new id, so a copy of a group is a group of its own. */
+export function regroup<L extends Pick<Layer, 'group'>>(copies: L[], newId: () => string): L[] {
+  const ids = new Map<string, string>();
+  return copies.map((l) => {
+    if (!l.group) return l;
+    if (!ids.has(l.group)) ids.set(l.group, newId());
+    return { ...l, group: ids.get(l.group) };
+  });
+}
+
+/**
+ * Where the layers of a group are after the one named `id` moves by (dx, dy): the others move with
+ * it (and what they follow). The layer itself is the caller's to move.
+ */
+export function moveGroupMates(layers: Layer[], id: string, dx: number, dy: number) {
+  const me = layers.find((l) => l.id === id);
+  if (!me?.group) return;
+  for (const l of layers) {
+    if (l.id === id || l.group !== me.group) continue;
+    l.x += dx;
+    l.y += dy;
+    if (l.follow) l.follow = l.follow.map(([t, x, y]) => [t, x + dx, y + dy]);
+  }
+}
+
+/** The layers on screen at timeline time t, split by which side of the subject they are drawn on, each side in drawing order (back to front). */
+export function depthStack<L extends Pick<Layer, 'row' | 'start' | 'duration' | 'depth'>>(layers: L[], t: number): { behind: L[]; front: L[] } {
+  const on = drawOrder(layers).filter((l) => t >= l.start && t < layerEnd(l));
+  return { behind: on.filter((l) => l.depth === 'behind' || l.depth === 'inside'), front: on.filter((l) => l.depth !== 'behind' && l.depth !== 'inside') };
+}
+
+/**
+ * Swap where two layers are drawn: if they are on different rows the rows swap, otherwise they
+ * trade places in the list (a lower place is drawn first, so under the other).
+ */
+export function swapDrawOrder(layers: Layer[], a: string, b: string) {
+  const la = layers.find((l) => l.id === a);
+  const lb = layers.find((l) => l.id === b);
+  if (!la || !lb || la === lb) return;
+  if (la.row !== lb.row) [la.row, lb.row] = [lb.row, la.row];
+  else {
+    const i = layers.indexOf(la);
+    const j = layers.indexOf(lb);
+    [layers[i], layers[j]] = [layers[j], layers[i]];
+  }
 }

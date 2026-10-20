@@ -8,12 +8,14 @@ import { busy, framesBuffer, inWorker } from './motion.svelte';
 import { cacheMatte, forgetMattes } from './mattes.svelte';
 import { putFile } from './storage';
 import { cutOut, type ObjectPrompt } from '../engine/cutout';
-import { matteFrames, matteKey, maskBox, packMatte, type MatteRef } from '../engine/matte';
+import { matteAt, matteFrames, matteKey, maskBox, packMatte, type MatteRef } from '../engine/matte';
 import { trackBox, type TrackPoint } from '../engine/track';
 import { clipLen, mediaOf, sourceTime } from '../engine/timeline';
 import { even } from '../engine/args';
 import { uid } from '../engine/presets';
-import { clipStart, trackableAt } from './motion.svelte';
+import { clipStart, pathOnTimeline, pathSize, trackableAt } from './motion.svelte';
+import * as mediaLib from './media';
+import { loadMatte, matteFramesNow, matteAlpha } from './mattes.svelte';
 import { FIRST_ROW, freeRow, type ShapeLayer, type SubjectFx, type TextLayer } from '../engine/layers';
 import type { Clip, Project } from '../engine/types';
 
@@ -196,6 +198,8 @@ export const SUBJECT_EFFECTS: { value: SubjectFx['effect']; label: string; hint:
   { value: 'glow', label: 'Glow', hint: 'A soft light round the subject.', colour: '#ff5cc8', fx: { amount: 0.5 } },
   { value: 'echo', label: 'Echo', hint: 'Copies of the subject stepping away behind it.', colour: '#22d3ee', fx: { amount: 0.5, copies: 4, dx: 0.04, dy: 0 } },
   { value: 'blur', label: 'Blur the background', hint: 'Everything but the subject out of focus.', colour: '#ffffff', fx: { amount: 0.5, part: 'background' } },
+  { value: 'blurFaces', label: 'Blur faces', hint: 'Every face found in the clip blurred out.', colour: '#ffffff', fx: { amount: 0.5 } },
+  { value: 'pixelFaces', label: 'Pixelate faces', hint: 'Every face found in the clip turned into big squares.', colour: '#ffffff', fx: { amount: 0.5 } },
   { value: 'grade', label: 'Darken the background', hint: 'Everything but the subject dimmer and greyer (or change it to taste).', colour: '#ffffff', fx: { amount: 0.5, part: 'background', brightness: 0.45, saturation: 0.3, contrast: 1 } },
 ];
 
@@ -215,4 +219,76 @@ export function addSubjectEffect(clipId: string, effect: SubjectFx['effect']) {
   store.ui.selectedClips = [l.id];
   store.toast(`${def.label}: change it in the settings.`, 'ok');
   return l.id;
+}
+
+/** The effects that need a cut-out's matte, and the ones that need found faces (kept apart in the pickers). */
+export const isFaceEffect = (e: SubjectFx['effect']) => e === 'blurFaces' || e === 'pixelFaces';
+
+/** Blur or pixelate every face found in a clip (Find faces), following each one. */
+export function addFaceEffect(clipId: string, effect: 'blurFaces' | 'pixelFaces') {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  if (!c) return;
+  const faces = (c.paths ?? []).filter((x) => x.name.startsWith('Face')).flatMap((x) => {
+    const pts = pathOnTimeline(p, c, x.id);
+    const size = pathSize(p, c, x.id);
+    return pts.length && size ? [{ pts, size }] : [];
+  });
+  if (!faces.length) return store.toast('Find the faces in the clip first (Find faces).', 'error');
+  const def = SUBJECT_EFFECTS.find((x) => x.value === effect)!;
+  const t0 = Math.min(...faces.map((f) => f.pts[0][0]));
+  const t1 = Math.max(...faces.map((f) => f.pts[f.pts.length - 1][0]));
+  const l: ShapeLayer = { id: uid(), kind: 'shape', row: p.layers.length ? freeRow(p.layers, t0, t1) : FIRST_ROW, shape: 'subject', start: t0, duration: Math.max(0.5, t1 - t0), x: 0.5, y: 0.5, w: 1, h: 1, color: '#ffffff', width: 0.004, fade: 0, moshed: false, subject: { effect, amount: 0.5, ...def.fx, faces } };
+  store.edit((q) => q.layers.push(l));
+  store.ui.selectedClips = [l.id];
+  store.toast(`${def.label}: ${faces.length} face${faces.length > 1 ? 's' : ''}, followed.`, 'ok');
+  return l.id;
+}
+
+/**
+ * Freeze the cut-out at the playhead into a transparent picture of just the subject, cropped to it,
+ * and put it in the media library (drop it on a track above, or use it as a sticker).
+ */
+export async function makeSticker(clipId: string): Promise<string | void> {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !m) return;
+  const ref = m.mattes?.[0];
+  if (!ref) return store.toast('Cut a subject out of the clip first: the sticker is made of it.', 'error');
+  const srcT = sourceAt(p, c, store.ui.time) ?? c.in;
+  await loadMatte(ref);
+  const frames = matteFramesNow(ref);
+  const a = frames ? matteAt(ref, frames, srcT) : null;
+  const box = a && maskBox(a, ref.w, ref.h);
+  if (!a || !box) return store.toast('There is nothing cut out at the playhead: move it to where the subject is.', 'error');
+  const W = Math.min(m.width || 1280, 1280);
+  const bmp = await frameAt(c, p, srcT, W);
+  try {
+    const H = bmp.height;
+    const cv = document.createElement('canvas');
+    cv.width = W;
+    cv.height = H;
+    const g = cv.getContext('2d')!;
+    g.drawImage(bmp, 0, 0);
+    g.globalCompositeOperation = 'destination-in';
+    g.drawImage(matteAlpha(a, ref.w, ref.h, W, H), 0, 0);
+    // cropped to the subject, with a little room
+    const pad = 0.02;
+    const x0 = Math.max(0, Math.floor((box[0] - pad) * W));
+    const y0 = Math.max(0, Math.floor((box[1] - pad) * H));
+    const x1 = Math.min(W, Math.ceil((box[2] + pad) * W));
+    const y1 = Math.min(H, Math.ceil((box[3] + pad) * H));
+    const out = document.createElement('canvas');
+    out.width = Math.max(2, x1 - x0);
+    out.height = Math.max(2, y1 - y0);
+    out.getContext('2d')!.drawImage(cv, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+    const blob = await new Promise<Blob>((res, rej) => out.toBlob((b) => (b ? res(b) : rej(new Error('Could not make the picture.'))), 'image/png'));
+    const n = p.media.filter((x) => x.source.kind === 'file' && x.source.name.startsWith('Sticker')).length + 1;
+    const added = await mediaLib.addFiles([new File([blob], `Sticker ${n}.png`, { type: 'image/png' })], 'none');
+    store.toast(`Sticker ${n} is in the media: drop it on a track above the footage.`, 'ok', 5000);
+    return added[0]?.id;
+  } finally {
+    bmp.close();
+  }
 }

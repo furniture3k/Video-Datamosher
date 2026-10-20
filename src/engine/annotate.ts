@@ -30,7 +30,10 @@ export function markLayers(path: [number, number, number][], bw: number, bh: num
   const at = (dx: number, dy: number) => path.map(([t, x, y]) => [t, Math.round((x + dx) * 1e4) / 1e4, Math.round((y + dy) * 1e4) / 1e4] as [number, number, number]);
 
   const out: Layer[] = [];
+  // the box, arrow and label are one group: they move, copy and delete together
+  const group = id();
   const add = (l: Layer) => {
+    l.group = group;
     l.row = freeRow([...layers, ...out], l.start, l.start + l.duration);
     out.push(l);
   };
