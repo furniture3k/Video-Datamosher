@@ -2,11 +2,12 @@
 import { store } from './store.svelte';
 import { ask } from './ask';
 import { forgetMedia } from './media';
-import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips } from '../engine/timeline';
+import { splitClip, splitText, clipsAt, deleteClips, detachAudio, insertVideo, layoutVideo, nearestCut, uid, clipLen, isMoshTransition, BLEND_TRANSITIONS, rippleDelete, insertFreeze, makeClip, isOverlayTrack, isVideoTrack, clipEnd, videoClips, layers as timelineLayers } from '../engine/timeline';
 import { VIDEO_TRACK, CLIP_AUDIO, type Clip, type MediaItem, type Project, type TransitionType } from '../engine/types';
 import { FIRST_ROW, freeRow, nextRow, type ShapeLayer, type TextLayer } from '../engine/layers';
 import { DEFAULT_LOOK, fitPen, newShape, type Pt, type ShapeLook } from '../engine/shapes';
 import { outputSize } from '../engine/args';
+import { GRID_LAYOUTS, cellTransform, inset } from '../engine/grid';
 import { localGet, localSet } from './storage';
 import { addToTimeline } from './media';
 import { styleForNew } from './styles.svelte';
@@ -458,6 +459,37 @@ export function addPen(raw: Pt[]) {
   store.edit((p) => p.layers.push(s));
   store.selectClip(s.id);
   return s;
+}
+
+/**
+ * Split screen: put the clips under the playhead (or the selected ones) into the cells of a
+ * layout, the main track's first. Each is zoomed, moved and cropped to cover its cell.
+ */
+export function arrangeGrid(layoutId: string, gap = 0) {
+  const L = GRID_LAYOUTS.find((g) => g.id === layoutId);
+  if (!L) return;
+  const p = store.project;
+  const t = store.ui.time;
+  const picture = (m: MediaItem | undefined) => !!m?.hasVideo && m.source.kind !== 'adjust';
+  const sel = store.ui.selectedClips.map((id) => p.clips.find((c) => c.id === id)).filter((c): c is Clip => !!c && picture(p.media.find((m) => m.id === c.mediaId)));
+  const under = [
+    ...layoutVideo(p).filter((pl) => t >= pl.start && t < pl.end).map((pl) => pl.clip),
+    ...timelineLayers(p).filter((l) => t >= l.start && t < l.end).map((l) => l.clip),
+  ].filter((c) => picture(p.media.find((m) => m.id === c.mediaId)));
+  const clips = sel.length >= 2 ? sel : under;
+  if (clips.length < 2) return store.toast('Put two or more clips under the playhead (on tracks above each other), or select them.', 'error', 5000);
+  const { w: W, h: H } = outputSize(p, 640);
+  const ids = clips.slice(0, L.cells.length).map((c) => c.id);
+  store.edit((q) => {
+    ids.forEach((id, i) => {
+      const c = q.clips.find((x) => x.id === id)!;
+      const m = q.media.find((x) => x.id === c.mediaId)!;
+      c.transform = cellTransform(inset(L.cells[i], gap, W, H), c.fit, m.width, m.height, W, H);
+      if (c.keys) for (const k of ['x', 'y', 'zoom', 'rotate'] as const) delete c.keys[k];
+    });
+  });
+  const left = clips.length - ids.length;
+  store.toast(`${L.name}: ${ids.length} clips arranged${left > 0 ? ` (${left} more than there are cells)` : ''}.`, 'ok');
 }
 
 /** Add a text title at the playhead. */

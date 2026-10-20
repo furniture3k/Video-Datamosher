@@ -113,16 +113,16 @@ unlocks, where it goes in the code, and when it counts as done.
 - [ ] Glow, drop shadow and outer stroke as layer styles.
 
 ### Canvas, frames and collage (R3, R4, R8)
-- [x] **Canvas background** *(M6a: `src/engine/canvas.ts`; colour, gradient and blurred copy, round corners, border, shadow, moved up or down; an image backdrop is still to do)*: colour, gradient, image or blurred copy of the video; the picture
+- [x] **Canvas background** *(M6a: `src/engine/canvas.ts`; colour, gradient, an image or a blurred copy (M6b), round corners, border, shadow, moved up or down)*: colour, gradient, image or blurred copy of the video; the picture
   inset with padding, border and corner radius (R4 off-white, R8 blue border).
 - [ ] **Card style** for clips and images: border, shadow, rounded corners, caption under it
   (polaroid).
-- [ ] **Stamp trail.** On each beat, leave a copy of the card behind, offset in a chosen direction
+- [x] **Stamp trail.** *(M6b: on any title or shape, every beat or so many seconds; echo copies that follow motion are still to do)* On each beat, leave a copy of the card behind, offset in a chosen direction
   (R3); also "echo" copies that follow motion.
 - [ ] **Pop-in on beat** for cards and stickers: snap, scale-pop, slide, no easing option.
 - [ ] **Animated shape masks** on any clip or layer: circle, triangle, rectangle, star, text-as-mask;
   shape wipe transitions using the kit colour (R4).
-- [ ] **Split/grid layouts**: 2-up, 3-up, 2×2, 3×3, filled by dropping clips; cells can swap on
+- [x] **Split/grid layouts** *(M6b: `src/engine/grid.ts`, seven layouts with a gap, for the clips under the playhead or the selected ones; swapping cells on beats is still to do)*: 2-up, 3-up, 2×2, 3×3, filled by dropping clips; cells can swap on
   beats.
 - [ ] **Device and window mockups**: phone, laptop, generic browser window, generic music player,
   desktop window with title bar, chat bubble. Drop a clip in and it plays on the "screen";

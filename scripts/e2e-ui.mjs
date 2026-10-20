@@ -668,6 +668,92 @@ await step('canvas: set the picture in as a card, in the preview and the render,
   }
 });
 
+await step('collage: split screen side by side, a stamp trail, an image backdrop', async () => {
+  // a clip on the timeline (when this step runs on its own)
+  if (!(await S(() => window.__moshpit.store.project.clips.length))) {
+    await S(async () => {
+      const m = window.__moshpit;
+      await m.media.addFiles([new File([await m.renderer.renderGenerator('testsrc2', 2, 320, 180, 24)], 'testsrc2.mp4', { type: 'video/mp4' })]);
+    });
+    await idle();
+  }
+  // two clips at the playhead: the main track's and one on a track above
+  const id = await S(() => {
+    const { store: st, edit, timeline } = window.__moshpit;
+    st.setPref('view', 'edit');
+    st.ui.playing = false;
+    const track = edit.addVideoTrack();
+    const c = timeline.makeClip(st.project.media[0], track, { start: 0 });
+    st.edit((p) => p.clips.push(c));
+    st.seek(0.5);
+    st.selectClip(null);
+    return c.id;
+  });
+  try {
+    await S(() => window.__moshpit.edit.arrangeGrid('side'));
+    const T = await S((id) => window.__moshpit.store.project.clips.find((c) => c.id === id).transform, id);
+    // the clip above is in the right half
+    if (!(T.x > 0.15 && T.x < 0.35) || !(T.zoom > 0.5)) throw new Error('not in the right half: ' + JSON.stringify(T));
+    const base = await S(() => {
+      const { store: st, timeline } = window.__moshpit;
+      return timeline.layoutVideo(st.project)[0].clip.transform;
+    });
+    if (!(base?.x < -0.15)) throw new Error('the main clip is not in the left half: ' + JSON.stringify(base));
+    // a green square stepping right every half second, leaving copies
+    const sq = await S(() => {
+      const { store: st, edit } = window.__moshpit;
+      const s = edit.addShape('rect');
+      st.edit((p) => Object.assign(p.layers.find((l) => l.id === s.id), { start: 0, x: 0.2, y: 0.2, w: 0.05, h: 0.05 * 16 / 9, color: '#00ff00', fill: '#00ff00', drawOn: 0, boil: 0, trail: { every: 0.5, count: 3, dx: 0.15, dy: 0 } }));
+      st.seek(1.2);
+      return s.id;
+    });
+    await page.waitForTimeout(500);
+    const greens = await S(() => {
+      const cv = document.querySelector('.stage canvas.edit');
+      const g = cv.getContext('2d');
+      return [0.2, 0.35, 0.5, 0.65].map((x) => { const d = g.getImageData(Math.round(x * cv.width), Math.round(0.2 * cv.height), 1, 1).data; return d[1] > 200 && d[0] < 60 && d[2] < 60; });
+    });
+    await dropLayer(sq);
+    // at 1.2 s: two steps taken, so copies at 0.2, 0.35 and 0.5, nothing yet at 0.65
+    if (greens.join() !== 'true,true,true,false') throw new Error('stamp trail: ' + greens.join());
+    // an image as the backdrop
+    await S(async () => {
+      const { media } = window.__moshpit;
+      const c = document.createElement('canvas');
+      c.width = 64;
+      c.height = 64;
+      const g = c.getContext('2d');
+      g.fillStyle = '#0000ff';
+      g.fillRect(0, 0, 64, 64);
+      const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+      await media.addFiles([new File([blob], 'backdrop.png', { type: 'image/png' })], 'none');
+    });
+    await idle();
+    await S(() => {
+      const st = window.__moshpit.store;
+      const im = st.project.media.find((m) => m.source.name === 'backdrop.png');
+      st.edit((p) => (p.canvas = { bg: 'image', image: im.id, color: '#000000', inset: 0.1 }));
+    });
+    await page.waitForTimeout(800);
+    const corner = await S(() => [...document.querySelector('.stage canvas.edit').getContext('2d').getImageData(2, 2, 1, 1).data]);
+    if (!(corner[2] > 200 && corner[0] < 60)) throw new Error('no image backdrop: ' + corner.join());
+    await S(() => window.__moshpit.store.doRender(true));
+    await settle();
+  } finally {
+    await S((id) => {
+      const st = window.__moshpit.store;
+      st.edit((p) => {
+        delete p.canvas;
+        p.clips = p.clips.filter((c) => c.id !== id);
+        for (const c of p.clips) delete c.transform;
+        p.media = p.media.filter((m) => m.source.name !== 'backdrop.png');
+      });
+      st.setPref('view', 'auto');
+    }, id);
+    await settle();
+  }
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));

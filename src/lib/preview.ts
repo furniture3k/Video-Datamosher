@@ -300,7 +300,11 @@ export class EditPreview {
     for (const v of this.videos.values()) if (!used.has(v) && !v.paused) v.pause();
 
     // the picture as a card on its backdrop; graphics go over the whole frame
-    if (hasCanvas(p.canvas)) drawCanvas(ctx, p.canvas, w, h);
+    if (hasCanvas(p.canvas)) {
+      const bm = p.canvas.bg === 'image' ? p.media.find((m) => m.id === p.canvas!.image) : undefined;
+      const im = bm && this.image(bm);
+      drawCanvas(ctx, p.canvas, w, h, im ? { src: im, w: im.naturalWidth, h: im.naturalHeight } : undefined);
+    }
     drawLayers(ctx, p.layers, t, w, h, 'all');
     if (waiting || unavailable) {
       const msg = unavailable ? "this browser can't preview this file live (the mosh view works)" : 'preparing preview…';
