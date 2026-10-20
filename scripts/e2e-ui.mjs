@@ -57,6 +57,8 @@ const step = async (name, fn) => {
     console.log('ok');
   } catch (e) {
     failed++;
+    // a picture of where it stopped, for finding out why
+    await page.screenshot({ path: path.join('test-results', 'failed-' + name.replace(/[^a-z0-9]+/gi, '-').slice(0, 50) + '.png') }).catch(() => {});
     console.log('FAILED\n   ' + String(e.message).split('\n').slice(0, 6).join('\n   '));
   }
 };
@@ -2072,7 +2074,8 @@ await step('shortcuts: change one in Help, use it, back to the defaults', async 
   const row = page.locator('tr', { hasText: 'Loop on / off' });
   await row.locator('.keybtn').click();
   await page.keyboard.press('Shift+L');
-  await row.locator('.kbd', { hasText: 'Shift L' }).waitFor();
+  // the key is drawn as "Shift L" on Windows and Linux and "⇧ L" on a Mac
+  await row.locator('.kbd', { hasText: /^(Shift|⇧)\s*L$/ }).waitFor();
   await page.keyboard.press('Escape');
   const loop = await S(() => window.__moshpit.store.ui.loopOn);
   await page.keyboard.press('Shift+L');
