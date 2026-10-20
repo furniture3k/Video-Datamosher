@@ -101,6 +101,16 @@ Picture effects run on the decoded frames:
 | `CRT` | CRT | Curved glass, scanlines, red-green-blue stripes, glow and dark corners. |
 | `GRN` | Film Grain | Grain that dances every frame, strongest in the midtones, and an optional faded-print look. |
 | `PST` | Posterise | A few levels per colour with an ordered or noise dither, and bigger pixels. |
+| `1BT` | 1-bit | Every pixel ink or paper (black, red, blue, lime, plum, or white on black), with an optional dither. |
+| `HTN` | Halftone | Newspaper or pop-art dots on a turned grid, bigger where it's darker. |
+| `LIN` | Line Art | Only the edges: ink on paper, light on black, or lines over the picture. |
+| `GLW` | Glow | Bright parts bloom; halation tints it red like film. |
+| `VIG` | Vignette | Dark (or white) corners. |
+| `LKS` | Light Leak | Warm light drifting in from the edges. |
+| `GTE` | Gate Weave | Projector jitter, flicker and dust. |
+| `DV` | DV Tape | A 2000s camcorder: blocky colour, over-sharp edges, interlaced lines. |
+| `TRL` | Light Trails | Bright things leave fading trails, like a long exposure. |
+| `STP` | Step Print | Each picture held for a few frames (also per clip: **Step print** in the Inspector). |
 | `SUB` | Subject Guard | Keeps people (found by a small on-device model), a tracked object, the bright or dark parts, or a colour clean while everything else moshes. Or the reverse. Or follows a **Mosh Map**: a gradient (automate it to sweep), a map you paint on the player, a picture or video, or the depth of the scene (an on-device model). |
 
 Effects that repeat or insert frames (Bloom, Stutter, Echo, Motion Transfer's insert mode, Frame Drop) have a **Timing** setting. **Keep length** (the default) makes the repeats replace the frames after them, so the effect lasts exactly as long as its bar and the picture, the sound and the playhead stay in sync. **Stretch** inserts them instead, so the video gets longer (slow, syrupy melts). Every setting has a description underneath it; the **?** button in the Inspector hides them.

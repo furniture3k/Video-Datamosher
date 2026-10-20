@@ -239,11 +239,14 @@ export class EditPreview {
     /** The picture of a clip at timeline time tt (a playing / seeking video, an image or a thumbnail). */
     const source = (c: Clip, m: MediaItem, start: number, slot: number | string, tt: number): CanvasImageSource | null => {
       if (m.source.kind === 'file' && m.source.isImage) return this.image(m) ?? this.thumb(m);
-      const target = sourceTime(c, tt - start);
+      // step print: the picture moves on only a few times a second
+      const step = c.stepFps && c.stepFps < fps && !c.freeze ? c.stepFps : 0;
+      const local = step ? Math.floor((tt - start) * step + 1e-6) / step : tt - start;
+      const target = sourceTime(c, local);
       const rate = speedAt(c, tt - start) * speed;
       const sync = (v: HTMLVideoElement) => {
         used.add(v);
-        if (playing && !c.reverse && !c.freeze && rate >= 0.0625 && rate <= 16) {
+        if (playing && !c.reverse && !c.freeze && !step && rate >= 0.0625 && rate <= 16) {
           if (Math.abs(v.playbackRate - rate) > 1e-3) v.playbackRate = rate;
           if (v.paused) {
             v.currentTime = target;

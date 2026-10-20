@@ -303,6 +303,19 @@ import { store } from '../lib/store.svelte';
       </Field>
       {/if}
       <Field type="bool" label="Reverse" value={c.reverse} help="Play the clip backwards." onchange={setC('reverse', true)} />
+      {#if hasPicture}
+        <Field
+          type="select"
+          label="Step print"
+          value={String(c.stepFps ?? 0)}
+          options={[
+            { value: '0', label: 'Smooth' },
+            ...[12, 8, 6, 4].filter((f) => f < store.project.encoder.fps).map((f) => ({ value: String(f), label: `${f} pictures a second` })),
+          ]}
+          help="Choppy, held motion like step-printed film or anime: the picture only changes a few times a second."
+          onchange={(v: string) => setC('stepFps')(Number(v) || undefined)}
+        />
+      {/if}
       {#if isVideo && !isStill}
         <Field
           type="select"

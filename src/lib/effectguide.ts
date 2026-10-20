@@ -38,6 +38,7 @@ export const FAMILIES: Family[] = [
   { id: 'damage', title: 'Damage', note: 'Corrupts the compressed data itself: blocks, tears and colour bursts.' },
   { id: 'colour', title: 'Colour & pixels', note: 'Works on the finished picture, so it looks the same on any footage.' },
   { id: 'code', title: 'Your own', note: 'Write the effect yourself, in JavaScript.' },
+  { id: 'film', title: 'Film and print', note: 'Film, print and camera looks on top of the finished picture: ink, dots, lines, light and old cameras.' },
   { id: 'retro', title: 'Retro looks', note: 'Old tape, old screens, film and cheap colour, on top of the finished picture.' },
   { id: 'protect', title: 'Protect', note: 'Decides where the mosh is allowed to happen.' },
 ];
@@ -100,6 +101,16 @@ export const GUIDE: Record<string, Guide> = {
   crt: { family: 'retro', looks: 'An old TV: curved glass, scanlines and glowing stripes.' },
   grain: { family: 'retro', looks: 'Dancing film grain, and a faded print if you like.' },
   posterize: { family: 'retro', looks: 'A handful of colours with a retro dither, and chunky pixels.' },
+  threshold: { family: 'film', essential: true, looks: 'Ink or paper only: a hard photocopy or risograph, in black or a coloured ink.' },
+  halftone: { family: 'film', looks: 'Newspaper or pop-art dots, bigger where the picture is darker.' },
+  lineArt: { family: 'film', essential: true, looks: 'Only the outlines, as ink on paper or glowing lines on black.' },
+  glow: { family: 'film', essential: true, looks: 'Soft bloom round the bright parts, red-tinted halation if you like.' },
+  vignette: { family: 'film', looks: 'Dark (or white) corners.' },
+  lightLeak: { family: 'film', looks: 'Warm light drifting in from the edges.' },
+  gateWeave: { family: 'film', looks: 'Projector jitter, flicker and dust.' },
+  dvTape: { family: 'film', looks: 'A 2000s camcorder: blocky colour, crunchy edges, interlacing.' },
+  trails: { family: 'film', looks: 'Long-exposure light trails behind bright things.' },
+  hold: { family: 'film', essential: true, looks: 'Choppy step-printed motion: each picture held for a few frames.' },
   mask: { family: 'protect', essential: true, looks: 'Keeps a person, a tracked object or a colour clean while everything else moshes, or follows a map you paint, a gradient, a video or the depth of the scene.' },
 };
 

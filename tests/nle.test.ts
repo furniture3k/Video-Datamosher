@@ -177,6 +177,19 @@ d('native ffmpeg renders', () => {
     expect(mean(fr[10], 27, 37, 19, 29)).toBeLessThan(150);
   });
 
+  it('step print holds each picture for a few frames', () => {
+    const dir = tmpdir();
+    sources(dir);
+    const c = { ...makeClip(media('test'), 'v1'), out: 2, stepFps: 6 };
+    const fr = render(dir, project([c], [media('test')]));
+    const diff = (a: Uint8Array, b: Uint8Array) => a.reduce((s, v, i) => s + Math.abs(v - b[i]), 0) / a.length;
+    // at 24 fps, a new picture every 4 frames: within a group nothing moves, between groups it does
+    const within = [1, 2, 3, 5, 6, 7].map((i) => diff(fr[i], fr[i - 1]));
+    const between = [4, 8, 12].map((i) => diff(fr[i], fr[i - 1]));
+    expect(Math.max(...within)).toBeLessThan(1.5);
+    expect(Math.min(...between)).toBeGreaterThan(1.5);
+  });
+
   it('luma key: black (or white) goes see-through', () => {
     const dir = tmpdir();
     sources(dir);

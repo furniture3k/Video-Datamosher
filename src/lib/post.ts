@@ -5,8 +5,10 @@ import { rasterizeField, encodeField, FIELD_MAX, type Stroke } from '../engine/f
 import { personMask } from './segment';
 import { paintedMask, mediaMap, depthMap, type MaskStroke } from './maps';
 import { VHS, CRT, GRAIN, POSTERIZE } from './retro';
+import { THRESHOLD, HALFTONE, LINEART, GLOW, VIGNETTE, LEAKS, WEAVE, DVCRUSH, TRAILS, INKS } from './looks';
 
-const RETRO: Record<string, string> = { vhs: VHS, crt: CRT, grain: GRAIN, posterize: POSTERIZE };
+const RETRO: Record<string, string> = { vhs: VHS, crt: CRT, grain: GRAIN, posterize: POSTERIZE, threshold: THRESHOLD, halftone: HALFTONE, lineArt: LINEART, glow: GLOW, vignette: VIGNETTE, lightLeak: LEAKS, gateWeave: WEAVE, dvTape: DVCRUSH };
+const LINE_INKS: Record<string, number[]> = { black: [0.05, 0.05, 0.05], white: [0.97, 0.97, 0.97], red: [0.9, 0.1, 0.12], blue: [0.15, 0.3, 0.95], lime: [0.6, 1, 0.2] };
 import { pathOnTimeline, pathSize, pathAt, guardPath } from './motion.svelte';
 import { outputSize } from '../engine/args';
 import { activeEffects, allEffects } from '../engine/mosh';
@@ -174,6 +176,8 @@ export class PostProcessor {
   private a: Target;
   private b: Target;
   private flows = new Map<string, FlowEngine>();
+  /** light trails and step print: the picture they remember, and the frame it was */
+  private held = new Map<string, { t: Target; last: number }>();
   private wasActive = new Map<string, boolean>();
   private cleanT: Target | null = null;
   private personT: Target | null = null;
@@ -315,6 +319,22 @@ export class PostProcessor {
         const ang = ((Number(paramAt(e, 'angle', t)) + wob * 90 * (rng() * 2 - 1)) * Math.PI) / 180;
         gl.pass(CHROMA, other, { src: cur.tex }, { size: [this.w, this.h], off: [Math.cos(ang) * off, Math.sin(ang) * off], tear: Number(paramAt(e, 'scanTear', t)), seed: index % 997 });
         [cur, other] = [other, cur];
+      } else if (e.type === 'trails' || e.type === 'hold') {
+        // these remember earlier frames: start afresh when it comes on or the frames jump
+        let st = this.held.get(e.id);
+        if (!st) this.held.set(e.id, (st = { t: gl.target(this.w, this.h), last: -2 }));
+        const jumped = !was || index !== st.last + 1;
+        st.last = index;
+        if (e.type === 'trails') {
+          if (jumped) gl.pass(COPY, st.t, { src: cur.tex });
+          gl.pass(TRAILS, other, { src: cur.tex, prev: st.t.tex }, { size: [this.w, this.h], time: 0, seed: 0, decay: Number(paramAt(e, 'decay', t)), add: paramAt(e, 'add', t) ? 1 : 0 });
+          gl.pass(COPY, st.t, { src: other.tex });
+        } else {
+          const every = Math.max(1, Math.round(Number(paramAt(e, 'every', t))));
+          if (jumped || index % every === 0) gl.pass(COPY, st.t, { src: cur.tex });
+          gl.pass(COPY, other, { src: st.t.tex });
+        }
+        [cur, other] = [other, cur];
       } else if (RETRO[e.type]) {
         const n = (k: string) => Number(paramAt(e, k, t));
         const common = { size: [this.w, this.h], time: index / this.fps, seed: (e.seed % 997) + (index % 101) };
@@ -323,6 +343,14 @@ export class PostProcessor {
           crt: { curve: n('curve'), scan: n('scan'), mask: n('mask'), glow: n('glow'), vignette: n('vignette') },
           grain: { amount: n('amount'), grain: n('grain'), colour: paramAt(e, 'colour', t) ? 1 : 0, fade: n('fade') },
           posterize: { levels: n('levels'), dither: ({ none: 0, bayer: 1, noise: 2 } as Record<string, number>)[String(e.params.dither)] ?? 1, pixel: n('pixel'), mixAmt: n('mix') },
+          threshold: { level: n('level'), soft: n('soft'), dither: paramAt(e, 'dither', t) ? 1 : 0, ink: (INKS[String(e.params.ink)] ?? INKS.bw)[0], paper: (INKS[String(e.params.ink)] ?? INKS.bw)[1], mixAmt: n('mix') },
+          halftone: { cell: Math.max(2, n('cell')), angle: n('angle'), mono: paramAt(e, 'mono', t) ? 1 : 0, paper: [0.97, 0.96, 0.93], mixAmt: n('mix') },
+          lineArt: { thick: n('thick'), strength: n('strength'), mode: ({ paper: 0, neon: 1, over: 2 } as Record<string, number>)[String(e.params.mode)] ?? 0, ink: LINE_INKS[String(e.params.ink)] ?? LINE_INKS.black, mixAmt: n('mix') },
+          glow: { thr: n('thr'), radius: n('radius'), amount: n('amount'), halation: n('halation') },
+          vignette: { amount: n('amount'), reach: n('reach'), soft: n('soft'), white: paramAt(e, 'white', t) ? 1 : 0 },
+          lightLeak: { amount: n('amount'), speed: n('speed'), hue: n('hue') },
+          gateWeave: { amount: n('amount'), flicker: n('flicker'), dust: n('dust') },
+          dvTape: { amount: n('amount'), res: n('res'), lines: paramAt(e, 'lines', t) ? 1 : 0 },
         };
         gl.pass(RETRO[e.type], other, { src: cur.tex }, { ...common, ...u[e.type] });
         [cur, other] = [other, cur];
@@ -358,6 +386,7 @@ export class PostProcessor {
 
   dispose() {
     this.flows.forEach((f) => f.dispose());
+    this.held.forEach((h) => this.gl.dispose(h.t));
     this.fields.forEach((f) => this.gl.dispose(f.t));
     this.gl.dispose(this.input, this.a, this.b, this.cleanT, this.personT, this.maskA, this.maskB);
     this.gl.gl.getExtension('WEBGL_lose_context')?.loseContext();
