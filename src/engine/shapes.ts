@@ -100,9 +100,9 @@ function strokesOf(s: Pick<ShapeLayer, 'shape' | 'w' | 'h' | 'count' | 'head' | 
   const w = s.w * W;
   const h = s.h * H;
   switch (s.shape) {
-    // (a ripple is drawn as rings that grow and fade: see rippleRings)
+    // (a ripple is drawn as rings that grow and fade, see rippleRings; the outline is its widest ring)
     case 'ripple':
-      return [];
+      return [{ pts: ring(48, (a) => [(Math.sin(a) * w) / 2, (-Math.cos(a) * h) / 2]), closed: true }];
     case 'handle': {
       // a text-selection handle: a line with a ball on its top end (on its bottom end when flipped)
       const q = Math.max(3, w / 2);

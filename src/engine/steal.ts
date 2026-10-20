@@ -144,7 +144,7 @@ export function effectiveFps(g: Gray, fps: number, cuts: number[] = [], eps = 0.
   if (changed.length < 3 || median(changed.map((x) => x.v)) < 1.5) return { fps, repeated: 0 };
   // the distance (in frames) from one change to the next
   const gaps = changed.slice(1).map((x, k) => x.i - changed[k].i).filter((x) => x < 12);
-  const gap = gaps.length ? mean(gaps) : 1;
+  const gap = gaps.length ? median(gaps) : 1;
   const real = r3(fps / Math.max(1, gap));
   const step = STEP_RATES.find((c) => Math.abs(real - c) <= 0.12 * c);
   return { fps: real, repeated, ...(step && repeated > 0.2 && real < fps * 0.8 ? { stepFps: step } : {}) };
@@ -325,6 +325,8 @@ export function detectBorders(rgb: RGBFrames, minShare = 0.02): Borders | null {
   const right = count((i) => col(w - 1 - i), w >> 1);
   const out = { top: r3(top / h), bottom: r3(bottom / h), left: r3(left / w), right: r3(right / w) };
   if (Math.max(out.top, out.bottom, out.left, out.right) < minShare || !ref) return null;
+  // a picture that is one flat colour all through has no frame round it
+  if (top >= h >> 1 || bottom >= h >> 1 || left >= w >> 1 || right >= w >> 1) return null;
   const c = ref as number[];
   return { ...out, colour: '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('') };
 }
