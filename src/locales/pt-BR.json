@@ -84,5 +84,8 @@
  "Subject Guard": "Proteger o assunto",
  "VHS": "VHS",
  "Vector Edit": "Editar vetores",
- "Vector Warp": "Deformar vetores"
+ "Vector Warp": "Deformar vetores",
+ "Steal this edit": "Copiar esta edição",
+ "Pick a video whose edit you like (a screen recording of a Reel). moshpit measures its cuts, frame rate and colours, and cuts your footage the same way.": "Escolha um vídeo cuja edição você gosta (uma gravação de tela de um Reel). O moshpit mede os cortes, a taxa de quadros e as cores, e corta seu material do mesmo jeito.",
+ "Pick a reference video": "Escolher o vídeo de referência"
 }

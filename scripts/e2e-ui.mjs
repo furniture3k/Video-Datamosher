@@ -2218,6 +2218,80 @@ await isoStep('effortless: a script becomes timed titles and follows its text, l
   await settle();
 });
 
+await isoStep('steal this edit: a reference is measured, and my clips are cut like it (rhythm, frame rate, colours, frame)', async () => {
+  // the reference: four different shots (1 s, 1.5 s, 0.5 s, 1.5 s), step-printed at 12 fps, a warm cast, black bars top and bottom
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-steal-'));
+  const ref = path.join(dir, 'reference.mp4');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc2=s=320x180:r=24:d=1', '-f', 'lavfi', '-i', 'rgbtestsrc=s=320x180:r=24:d=1.5', '-f', 'lavfi', '-i', 'smptebars=s=320x180:r=24:d=0.5', '-t', '1.5', '-f', 'lavfi', '-i', 'life=s=320x180:r=24:mold=10:ratio=0.2:death_color=#102040:life_color=#ffd060', '-filter_complex', '[0]format=yuv420p[a];[1]format=yuv420p[b];[2]format=yuv420p[c];[3]format=yuv420p[d];[a][b][c][d]concat=n=4:v=1:a=0,fps=12,fps=24,colorbalance=rs=.25:gs=.05:bs=-.25,pad=320:226:0:23:black', '-pix_fmt', 'yuv420p', '-r', '24', ref]);
+  // two clips of my own to cut
+  await S(async () => {
+    const { ffmpeg, media } = window.__moshpit;
+    for (const [name, src] of [['mine-a.mp4', 'testsrc2'], ['mine-b.mp4', 'smptehdbars']]) {
+      const r = await ffmpeg.run(['-f', 'lavfi', '-i', `${src}=s=320x180:r=24:d=6`, '-pix_fmt', 'yuv420p', name], { outputs: [name] });
+      await media.addFiles([new File([r.out[name]], name, { type: 'video/mp4' })], 'auto');
+    }
+  });
+  await idle();
+  const n0 = await S(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length);
+  await page.keyboard.press('Control+p');
+  await page.locator('.pal input').waitFor();
+  await page.keyboard.type('steal this edit');
+  await page.keyboard.press('Enter');
+  await page.locator('input[aria-label="Reference video"]').setInputFiles(ref);
+  await page.locator('.found').waitFor({ timeout: 180000 });
+  const found = await page.locator('.found').innerText();
+  const cutsMatch = /(\d+) shots/.exec(found);
+  if (!cutsMatch || Math.abs(Number(cutsMatch[1]) - 4) > 1) throw new Error('the shots were not found: ' + found);
+  if (!/12 pictures a second/.test(found)) throw new Error('the step print was not found: ' + found);
+  if (!/frame round the picture/.test(found)) throw new Error('the bars were not found: ' + found);
+  const lutsBefore = await S(() => (window.__moshpit.store.project.luts ?? []).length);
+  await page.getByRole('button', { name: 'Cut my clips like this' }).click();
+  await page.locator('.modal').waitFor({ state: 'detached', timeout: 120000 });
+  await idle();
+  const out = await S(() => {
+    const p = window.__moshpit.store.project;
+    const main = p.clips.filter((c) => c.track === 'v1');
+    return { lens: main.map((c) => Math.round((c.out - c.in) * 100) / 100), step: main.map((c) => c.stepFps), luts: (p.luts ?? []).length, lut: main.every((c) => c.grade?.lut && c.grade.lutAmount === 1), canvas: p.canvas ? { bg: p.canvas.bg, color: p.canvas.color, inset: p.canvas.inset } : null, transitions: main.some((c) => c.transition) };
+  });
+  const total = out.lens.reduce((a, b) => a + b, 0);
+  // the rhythm: the reference's shot lengths in turn, filling the footage (it has 12 s, the reference 4.5 s)
+  if (!(out.lens.length >= 4 && Math.abs(out.lens[0] - 1) < 0.2 && Math.abs(out.lens[1] - 1.5) < 0.2 && Math.abs(out.lens[2] - 0.5) < 0.2 && total > 4 && total < 12.1)) throw new Error('the cuts are not the reference’s: ' + JSON.stringify(out.lens));
+  if (!out.step.every((v) => v === 12)) throw new Error('the step print was not copied: ' + JSON.stringify(out.step));
+  if (!(out.luts === lutsBefore + 1 && out.lut)) throw new Error('the grade was not copied: ' + JSON.stringify(out));
+  if (!(out.canvas && out.canvas.color === '#000000' && out.canvas.inset > 0.05)) throw new Error('the frame was not copied: ' + JSON.stringify(out.canvas));
+  // the picture really is warmer than before: the LUT pushes grey towards the reference's cast
+  const warm = await S(async () => {
+    const { store, storage } = window.__moshpit;
+    const lut = store.project.luts[0];
+    const text = await (await storage.getFile('lut:' + lut.id)).text();
+    const rows = text.split('\n').filter((l) => /^[-+.\d]/.test(l.trim()));
+    const size = Number((/LUT_3D_SIZE\s+(\d+)/.exec(text) ?? [])[1]);
+    const mid = Math.floor(size / 2);
+    const row = rows[mid * size * size + mid * size + mid].trim().split(/\s+/).map(Number);
+    return row;
+  });
+  if (!(warm[0] - warm[2] > 0.05)) throw new Error('the grade does not make grey warmer: ' + warm);
+  // undo takes the re-cut back (the grade it imported and the cuts are a step or two)
+  let back = false;
+  for (let i = 0; i < 4 && !back; i++) {
+    await S(() => window.__moshpit.store.undo());
+    back = (await S(() => window.__moshpit.store.project.clips.filter((c) => c.track === 'v1').length)) === n0;
+  }
+  if (!back) throw new Error('undo did not bring the original clips back');
+  // the phone's Steal tool and the home screen's button open the same thing
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(500);
+  await page.locator('.tools .tool', { hasText: 'Steal' }).click();
+  await page.locator('input[aria-label="Reference video"]').waitFor({ state: 'attached' });
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await S(() => (window.__moshpit.store.ui.home = true));
+  await page.getByRole('button', { name: 'Pick a reference video' }).click();
+  await page.locator('input[aria-label="Reference video"]').waitFor({ state: 'attached' });
+  await page.getByRole('button', { name: 'Cancel' }).click();
+  await S(() => (window.__moshpit.store.ui.home = false));
+});
+
 await isoStep('type: text bent into an arch follows the arc, and a title leaned back shrinks towards the top, in the preview and the render', async () => {
   // where the white pixels of a picture are, by columns (the ends against the middle) and by rows (top against bottom)
   await S(() => {

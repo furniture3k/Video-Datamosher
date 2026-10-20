@@ -15,6 +15,7 @@
   import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
   import WordBeatsDialog from './dialogs/WordBeatsDialog.svelte';
   import ScriptDialog from './dialogs/ScriptDialog.svelte';
+  import StealDialog from './dialogs/StealDialog.svelte';
   import FlipbookDialog from './dialogs/FlipbookDialog.svelte';
   import FontsDialog from './dialogs/FontsDialog.svelte';
   import BakeDialog from './dialogs/BakeDialog.svelte';
@@ -252,6 +253,7 @@
 {#if store.ui.dialog === 'beatEdit'}<BeatEditDialog />{/if}
 {#if store.ui.dialog === 'wordBeats'}<WordBeatsDialog />{/if}
 {#if store.ui.dialog === 'script'}<ScriptDialog />{/if}
+{#if store.ui.dialog === 'steal'}<StealDialog />{/if}
 {#if store.ui.dialog === 'flipbook'}<FlipbookDialog />{/if}
 {#if store.ui.dialog === 'fonts'}<FontsDialog />{/if}
 {#if store.ui.dialog === 'bake'}<BakeDialog />{/if}

@@ -84,5 +84,8 @@
  "Subject Guard": "被写体ガード",
  "VHS": "VHS",
  "Vector Edit": "ベクター編集",
- "Vector Warp": "ベクターワープ"
+ "Vector Warp": "ベクターワープ",
+ "Steal this edit": "この編集をまねる",
+ "Pick a video whose edit you like (a screen recording of a Reel). moshpit measures its cuts, frame rate and colours, and cuts your footage the same way.": "編集が気に入った動画（リールの画面収録など）を選んでください。moshpit がカット、フレームレート、色を測り、あなたの素材を同じように編集します。",
+ "Pick a reference video": "参考動画を選ぶ"
 }

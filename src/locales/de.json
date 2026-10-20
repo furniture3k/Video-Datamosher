@@ -84,5 +84,8 @@
  "Subject Guard": "Motivschutz",
  "VHS": "VHS",
  "Vector Edit": "Vektoren bearbeiten",
- "Vector Warp": "Vektoren verzerren"
+ "Vector Warp": "Vektoren verzerren",
+ "Steal this edit": "Diesen Schnitt klauen",
+ "Pick a video whose edit you like (a screen recording of a Reel). moshpit measures its cuts, frame rate and colours, and cuts your footage the same way.": "Wähle ein Video, dessen Schnitt dir gefällt (eine Bildschirmaufnahme eines Reels). moshpit misst Schnitte, Bildrate und Farben und schneidet dein Material genauso.",
+ "Pick a reference video": "Referenzvideo wählen"
 }

@@ -94,6 +94,7 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'pen', title: 'Draw with the pen', group: 'Mosh', keys: [], words: 'freehand scribble shape annotate' },
   { id: 'cutout', title: 'Cut out a subject (put titles behind it)', group: 'Mosh', keys: [], words: 'matte mask segment subject object person behind depth rotoscope' },
   { id: 'surface', title: 'Track a surface (pin titles to a screen, wall or sign)', group: 'Mosh', keys: [], words: 'pin plane corner perspective screen wall sign planar track homography' },
+  { id: 'steal', title: 'Steal this edit: cut my clips like a reference video', group: 'Project', keys: [], words: 'copy reference rhythm cuts template style reel tiktok measure grade frame rate' },
   { id: 'script', title: 'Script: lines that become timed titles', group: 'Edit', keys: [], words: 'write lines titles words lyrics captions text timed beats' },
   { id: 'reveal-beats', title: 'Reveal the selected layers one per beat', group: 'Edit', keys: [], words: 'stagger build up arrive beat titles shapes' },
   { id: 'group', title: 'Group the selected titles and shapes', group: 'Edit', keys: [], words: 'link together move copy delete mark' },

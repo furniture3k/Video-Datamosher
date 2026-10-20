@@ -168,6 +168,7 @@ const ACTIONS: Record<string, Action> = {
   flipbook: { run: dialog('flipbook'), when: () => store.project.media.length > 0 },
   'word-beats': { run: dialog('wordBeats'), when: hasClips },
   script: { run: dialog('script'), when: hasClips },
+  steal: { run: dialog('steal') },
   'reveal-beats': { run: () => revealOnBeats(1), when: hasClips },
   group: { run: () => edit.groupSelected(), when: hasClips },
   ungroup: { run: () => edit.ungroupSelected(), when: hasClips },
