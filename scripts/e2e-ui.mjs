@@ -63,6 +63,48 @@ const step = async (name, fn) => {
   }
 };
 
+/**
+ * Run a step on a bare project (no clips, titles, effects or canvas), then put back what was there
+ * and clear every mode it may have left on, whether it passed or not. The steps that draw things
+ * and read their pixels use this, so what earlier steps left behind can't move the picture.
+ */
+const isolated = async (fn) => {
+  const keep = await S(() => {
+    const st = window.__moshpit.store;
+    const p = st.project;
+    const copy = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+    const k = { clips: copy(p.clips), layers: copy(p.layers), effects: copy(p.effects), canvas: copy(p.canvas), tracks: copy(p.tracks) };
+    st.edit((q) => {
+      q.clips = [];
+      q.layers = [];
+      q.effects = [];
+      delete q.canvas;
+    });
+    st.ui.selectedClips = [];
+    st.ui.dialog = null;
+    return k;
+  });
+  try {
+    await fn();
+  } finally {
+    await S((k) => {
+      const st = window.__moshpit.store;
+      st.edit((q) => {
+        q.clips = k.clips;
+        q.layers = k.layers;
+        q.effects = k.effects;
+        q.tracks = k.tracks;
+        if (k.canvas) q.canvas = k.canvas;
+        else delete q.canvas;
+      });
+      Object.assign(st.ui, { selectedClips: [], dialog: null, cutout: null, surfacePick: null, surfaceThen: null, trackPick: null, view: 'auto' });
+      window.__moshpit.objectseg.setObjectSegmenter(null);
+    }, keep);
+    await settle().catch(() => {});
+  }
+};
+const isoStep = (name, fn) => step(name, () => isolated(fn));
+
 await page.goto(url);
 // no model downloads in the sweep: a fake people segmenter (everything is a person)
 await S(() => window.__moshpit.segment.setPersonSegmenter(async () => {
@@ -1364,7 +1406,7 @@ await step('analysis: track an object, title follows, stabilize', async () => {
   await settle();
 });
 
-await step('surface: four corners on a leaning screen are tracked; a shape, a title and a clip pinned to it follow it in the preview and the render', async () => {
+await isoStep('surface: four corners on a leaning screen are tracked; a shape, a title and a clip pinned to it follow it in the preview and the render', async () => {
   // the footage: a noisy square ("a screen") sliding and leaning on a grey wall, drawn per pixel here
   // (from a known homography each frame) and encoded by the page's own FFmpeg
   const truth = await S(async () => {
@@ -1648,7 +1690,7 @@ await step('surface: four corners on a leaning screen are tracked; a shape, a ti
   await settle();
 });
 
-await step('cut out: tap a moving subject, follow it through the clip, put a layer behind it, in the preview and the render', async () => {
+await isoStep('cut out: tap a moving subject, follow it through the clip, put a layer behind it, in the preview and the render', async () => {
   // the footage: a bright square sliding and bobbing over a dim noisy background (frames drawn here, encoded by the page's FFmpeg)
   const gen = await S(async () => {
     const { ffmpeg, media } = window.__moshpit;
@@ -1873,7 +1915,7 @@ await step('cut out: tap a moving subject, follow it through the clip, put a lay
   await settle();
 });
 
-await step('type: text bent into an arch follows the arc, and a title leaned back shrinks towards the top, in the preview and the render', async () => {
+await isoStep('type: text bent into an arch follows the arc, and a title leaned back shrinks towards the top, in the preview and the render', async () => {
   // where the white pixels of a picture are, by columns (the ends against the middle) and by rows (top against bottom)
   await S(() => {
     window.__whiteStats = (cv) => {
