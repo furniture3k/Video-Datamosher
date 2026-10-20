@@ -28,6 +28,8 @@ interface LayerBase {
   fade: number;
   /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
   follow?: [number, number, number][];
+  /** pinned to a tracked surface: it is drawn where it is on `refT`, then carried along with the surface */
+  surface?: Surface;
   /** stamp trail: every `every` seconds it steps on by (dx, dy) (shares of the frame), leaving a copy behind, `count` times */
   trail?: Trail;
   /** many copies rising, falling or bursting out from it */
@@ -35,6 +37,27 @@ interface LayerBase {
 }
 
 import type { Particles } from './particles';
+import { quadAt, quadHomography, type Mat3 } from './planar';
+
+/** A tracked surface a layer is pinned to: [timeline seconds, the four corners as shares of the frame] and the moment the layer's own position is for. */
+export interface Surface {
+  quads: number[][];
+  refT: number;
+}
+
+/**
+ * How a pinned layer is carried at timeline time t: the homography (in pixels of a w×h frame)
+ * taking the surface as it was on `refT` to the surface now. Null for a layer that isn't pinned.
+ */
+export function surfaceMatrix(l: Pick<LayerBase, 'surface'>, t: number, w: number, h: number): Mat3 | null {
+  const s = l.surface;
+  if (!s?.quads.length) return null;
+  const a = quadAt(s.quads, s.refT);
+  const b = quadAt(s.quads, t);
+  if (!a || !b) return null;
+  const px = (q: number[]) => q.map((v, i) => v * (i % 2 ? h : w));
+  return quadHomography(px(a), px(b));
+}
 
 export interface Trail {
   every: number;
@@ -186,7 +209,7 @@ export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.sha
  * single picture of it can stand in for every frame (fades are applied on top of that picture).
  */
 export function isStill(l: Layer): boolean {
-  if (l.follow?.length || l.trail || l.particles) return false;
+  if (l.follow?.length || l.surface || l.trail || l.particles) return false;
   if (l.kind === 'shape') return !l.drawOn && !l.boil && l.shape !== 'progress';
   return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
 }

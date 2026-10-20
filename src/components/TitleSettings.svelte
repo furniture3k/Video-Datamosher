@@ -6,6 +6,7 @@
   import Field from './Field.svelte';
   import BeatChips from './BeatChips.svelte';
   import TrailSettings from './TrailSettings.svelte';
+  import SurfaceSettings from './SurfaceSettings.svelte';
   import ParticleSettings from './ParticleSettings.svelte';
   import type { TextAnim, TextLayer } from '../engine/layers';
 
@@ -73,6 +74,7 @@
   {/if}
 {/if}
 <TrailSettings layer={title} />
+<SurfaceSettings layer={title} />
 <ParticleSettings layer={title} />
 
 <style>

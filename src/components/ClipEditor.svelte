@@ -15,7 +15,7 @@ import { store } from '../lib/store.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
-  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
+  import { motionJob, stabilizeClip, titleFollows, clipFollows, toggleTrackPick, toggleSurfacePick, titleOnSurface, markTracked, findFaces, emojiFollows } from '../lib/motion.svelte';
   import type { ChromaKey } from '../engine/types';
 
   const c = $derived(store.selectedClip);
@@ -412,7 +412,18 @@ import { store } from '../lib/store.svelte';
           <button class="small" disabled={motionJob.running} onclick={() => findFaces(c.id).catch((e) => store.toast('Finding faces failed: ' + (e as Error).message, 'error'))} title="Find every face in the clip, to put stickers or labels on">Find faces</button>
           <button class="small" class:on={store.ui.trackPick === c.id && store.ui.trackThen === 'mark'} disabled={motionJob.running} onclick={() => toggleTrackPick(c.id, store.ui.trackThen === 'mark' ? null : 'mark')} title="Then drag a box on the player around it: it's followed, boxed, arrowed and labelled">{store.ui.trackPick === c.id && store.ui.trackThen === 'mark' ? 'Cancel' : 'Mark something'}</button>
         </div>
+        <div class="row btns">
+          <button class="small" class:on={store.ui.surfacePick === c.id} disabled={motionJob.running} onclick={() => toggleSurfacePick(c.id)} title="Then drag four corners on the player onto a flat surface (a screen, a wall, a sign) so titles and shapes can be pinned to it">{store.ui.surfacePick === c.id ? 'Cancel' : 'Track a surface'}</button>
+        </div>
         {#if store.ui.trackPick === c.id}<p class="small faint">Drag a box on the player around something with clear detail. It is followed forwards and backwards from this frame.</p>{/if}
+        {#if store.ui.surfacePick === c.id}<p class="small faint">Drag the four corners onto the surface, then press Track it. Pick a flat surface with detail on it (a screen with content, a poster, a wall with marks).</p>{/if}
+        {#each c.planes ?? [] as plane (plane.id)}
+          <div class="pathrow">
+            <span class="small grow">{plane.name} · {(plane.quads.at(-1)![0] - plane.quads[0][0]).toFixed(1)} s</span>
+            <button class="small" onclick={() => titleOnSurface(c.id, plane.id)} title="Add a title on the surface, pinned to it">Title on it</button>
+            <button class="icon ghost" aria-label="Delete surface" title="Delete surface" onclick={() => editKeys((x) => (x.planes = x.planes?.filter((y) => y.id !== plane.id)))}><Icon name="x" size={12} /></button>
+          </div>
+        {/each}
         {#each c.paths ?? [] as path (path.id)}
           <div class="pathrow">
             <span class="small grow">{path.name} · {(path.pts.at(-1)![0] - path.pts[0][0]).toFixed(1)} s</span>

@@ -10,7 +10,7 @@
   import { snapshots, setFrameGrabber } from '../lib/snapshots.svelte';
   import { lutState } from '../lib/luts.svelte';
   import Scopes from './Scopes.svelte';
-  import { trackClip, pathOnTimeline, pathSize, pathAt, guardPath } from '../lib/motion.svelte';
+  import { trackClip, pathOnTimeline, pathSize, pathAt, guardPath, confirmSurface } from '../lib/motion.svelte';
   import { rasterizeField, type Stroke } from '../engine/flowfield';
   import { drawMask, type MaskStroke } from '../lib/maps';
   import { SAMPLE_RATE } from '../engine/audio';
@@ -498,6 +498,8 @@
     const h = shown.height * k;
     return { left: rc.left - sr.left + (rc.width - w) / 2, top: rc.top - sr.top + (rc.height - h) / 2, width: w, height: h };
   }
+  /** the picture's place, placed again whenever the stage changes size (`_` is only there to say so) */
+  const pictureBoxAt = (_size: number) => pictureBox();
   function paintStroke(e: PointerEvent) {
     const fx = paintFx;
     if (!fx) return;
@@ -595,7 +597,7 @@
   const gizmoBox = $derived.by(() => {
     // the stage's size first: it's what tells this the stage is there (and when it resizes)
     void stageSize;
-    if (!wrap || !hasTimeline || store.ui.playing || store.ui.eyedropper || store.ui.trackPick || store.ui.pen || paintFx || store.ui.compare !== 'off') return null;
+    if (!wrap || !hasTimeline || store.ui.playing || store.ui.eyedropper || store.ui.trackPick || store.ui.surfacePick || store.ui.pen || paintFx || store.ui.compare !== 'off') return null;
     // the frame letterboxed into the canvases' area (10 px in from the stage's edges), worked out
     // from its shape so it's right before the canvases have drawn anything
     const cw = wrap.clientWidth - 20;
@@ -657,6 +659,36 @@
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
+  }
+
+  /** Drag one corner of the surface being picked (0–3), or the whole shape ('all'). Arrow keys nudge a corner. */
+  function dragSurface(e: PointerEvent, which: number | 'all') {
+    e.preventDefault();
+    e.stopPropagation();
+    const [u0, v0] = pictureUV(e);
+    const q0 = store.ui.surfaceQuad.map(([x, y]) => [x, y] as [number, number]);
+    const clamp = (v: number) => Math.max(0, Math.min(1, v));
+    const move = (ev: PointerEvent) => {
+      const [u, v] = pictureUV(ev);
+      store.ui.surfaceQuad = which === 'all' ? q0.map(([x, y]) => [clamp(x + u - u0), clamp(y + v - v0)] as [number, number]) : q0.map((p, i) => (i === which ? ([clamp(u), clamp(v)] as [number, number]) : p));
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
+  function nudgeCorner(e: KeyboardEvent, i: number) {
+    const d = e.shiftKey ? 0.05 : 0.01;
+    const step = ({ ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, -d], ArrowDown: [0, d] } as Record<string, [number, number]>)[e.key];
+    if (!step) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const clamp = (v: number) => Math.max(0, Math.min(1, v));
+    store.ui.surfaceQuad = store.ui.surfaceQuad.map((p, k) => (k === i ? ([clamp(p[0] + step[0]), clamp(p[1] + step[1])] as [number, number]) : p));
   }
 
   /** Eyedropper: the colour under the pointer in the live edit picture (drawn without keys). */
@@ -747,12 +779,14 @@
   <div
     class="stage"
     class:compact
-    class:picking={store.ui.eyedropper || !!store.ui.trackPick || store.ui.pen || !!paintFx}
+    class:picking={store.ui.eyedropper || !!store.ui.trackPick || !!store.ui.surfacePick || store.ui.pen || !!paintFx}
     bind:this={wrap}
     onpointerdown={(e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
       if (store.ui.eyedropper) return pickKeyColour(e);
       if (store.ui.trackPick) return drawTrackBox(e);
+      // the corners of a surface are dragged by their own handles
+      if (store.ui.surfacePick) return;
       if (store.ui.pen) return penStroke(e);
       if (paintFx) return paintStroke(e);
       if (compact && hasTimeline && store.ui.compare === 'off') {
@@ -780,7 +814,7 @@
     }}
     onpointercancel={() => ((draggingSplit = false), (tapAt = null), clearTimeout(holdTimer))}
     oncontextmenu={(e) => {
-      if (!hasTimeline || store.ui.trackPick || store.ui.pen || paintFx) return;
+      if (!hasTimeline || store.ui.trackPick || store.ui.surfacePick || store.ui.pen || paintFx) return;
       e.preventDefault();
       openQuick(e);
     }}
@@ -816,6 +850,21 @@
         {#if penLine.length > 1}<polyline points={penLine.map(([x, y]) => `${x},${y}`).join(' ')} class="stroke" />{/if}
       </svg>
       {#if !penLine.length}<div class="stage-note mono picknote">draw on the picture · Esc to cancel</div>{/if}
+    {/if}
+    {#if store.ui.surfacePick && hasTimeline}
+      {@const pb = pictureBoxAt(stageSize)}
+      {@const sq = store.ui.surfaceQuad}
+      <svg class="surfacelayer" style="left:{pb.left}px;top:{pb.top}px;width:{pb.width}px;height:{pb.height}px" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <polygon points={sq.map(([x, y]) => `${x},${y}`).join(' ')} class="sfquad" onpointerdown={(e) => dragSurface(e, 'all')} />
+      </svg>
+      {#each sq as [x, y], i}
+        <button class="sfhandle" style="left:{pb.left + x * pb.width}px;top:{pb.top + y * pb.height}px" aria-label="Surface corner {i + 1} of 4" title="Drag onto a corner of the surface (arrow keys nudge)" onpointerdown={(e) => dragSurface(e, i)} onkeydown={(e) => nudgeCorner(e, i)}></button>
+      {/each}
+      <div class="stage-note mono picknote surfacebar">
+        <span>drag the corners onto a flat surface (a screen, a wall, a sign) · Esc to cancel</span>
+        <button class="sftrack" onclick={() => confirmSurface()}>Track it</button>
+      </div>
     {/if}
     {#if store.ui.trackPick && !trackRect}
       <div class="stage-note mono picknote">{store.ui.trackThen === 'mark' ? 'drag a box around what to mark (it is followed, then boxed, arrowed and labelled)' : 'drag a box snugly around what to follow (something with detail)'} · Esc to cancel</div>
@@ -1054,6 +1103,59 @@
     stroke: var(--accent);
     stroke-width: 3px;
     vector-effect: non-scaling-stroke;
+  }
+  .surfacelayer {
+    position: absolute;
+    pointer-events: none;
+    z-index: 3;
+    overflow: visible;
+  }
+  .surfacelayer .sfquad {
+    fill: rgba(255, 255, 255, 0.07);
+    stroke: var(--accent);
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+    pointer-events: all;
+    cursor: move;
+  }
+  .sfhandle {
+    position: absolute;
+    z-index: 4;
+    width: 22px;
+    height: 22px;
+    margin: -11px 0 0 -11px;
+    padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    background: rgba(0, 0, 0, 0.55);
+    cursor: grab;
+    touch-action: none;
+  }
+  .sfhandle:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+  }
+  .stage-note.surfacebar {
+    top: auto;
+    bottom: 8px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    z-index: 4;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, 0.6);
+  }
+  .sftrack {
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 0;
+    background: var(--accent);
+    color: #000;
+    font-size: 11px;
+    font-weight: 600;
   }
   .trackbox {
     position: absolute;

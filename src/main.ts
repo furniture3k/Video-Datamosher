@@ -62,6 +62,8 @@ import * as captions from './lib/captions.svelte';
 import * as motion from './lib/motion.svelte';
 import * as segment from './lib/segment';
 Object.assign((window as unknown as { __moshpit: object }).__moshpit, { timeline, media, captions, motion, segment });
+import * as planar from './engine/planar';
+Object.assign((window as unknown as { __moshpit: object }).__moshpit, { planar });
 import * as report from './lib/report';
 import * as incoming from './lib/incoming';
 import * as recovery from './lib/recovery';

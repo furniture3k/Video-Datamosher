@@ -83,6 +83,10 @@ class Store {
     trackPick: null as string | null,
     /** what happens once it's tracked: 'mark' adds a box, arrow and label that follow it */
     trackThen: null as null | 'mark',
+    /** id of the clip whose surface is being picked: four corners on the player, then it is tracked */
+    surfacePick: null as string | null,
+    /** the four corners of the surface being picked, clockwise from the top left (shares of the frame) */
+    surfaceQuad: [[0.3, 0.28], [0.7, 0.28], [0.7, 0.72], [0.3, 0.72]] as [number, number][],
     /** drawing a freehand line on the player */
     pen: false,
     /** scopes panel under the player */

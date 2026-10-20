@@ -208,6 +208,8 @@ export interface Clip {
   key?: ChromaKey;
   /** tracked objects: [source seconds, centre x 0..1, centre y 0..1] of the source picture, and the box's size (shares of it) */
   paths?: { id: string; name: string; pts: [number, number, number][]; size?: [number, number] }[];
+  /** tracked surfaces (a screen, a wall, a sign): [source seconds, then the four corners x,y … as shares of the source picture] */
+  planes?: { id: string; name: string; quads: number[][] }[];
   /** stabilization: corrections over source seconds (shift as shares of the frame, rotation in °), and the zoom that hides the edges */
   stab?: { x: [number, number][]; y: [number, number][]; r: [number, number][]; zoom: number };
 }

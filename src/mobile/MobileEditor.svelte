@@ -13,7 +13,7 @@
   import { BLEND_TRANSITIONS, MOSH_TRANSITIONS, clipLen, layoutVideo, isMoshTransition } from '../engine/timeline';
   import { EFFECTS } from '../engine/effects';
   import { closeCompound } from '../lib/compound.svelte';
-  import { motionJob, stabilizeClip, toggleTrackPick, findFaces, emojiFollows } from '../lib/motion.svelte';
+  import { motionJob, stabilizeClip, toggleTrackPick, toggleSurfacePick, findFaces, emojiFollows } from '../lib/motion.svelte';
   import { mediaOf } from '../engine/timeline';
   import Player from '../components/Player.svelte';
   import MediaBin from '../components/MediaBin.svelte';
@@ -138,6 +138,10 @@
       return store.toast('Finding faces failed: ' + (e as Error).message, 'error');
     }
     for (const pp of store.project.clips.find((x) => x.id === id)?.paths ?? []) if (!had.has(pp.id)) emojiFollows(id, pp.id);
+  }
+  function surface() {
+    sheet = null;
+    toggleSurfacePick(clip!.id);
   }
   function track() {
     // the box is drawn on the preview: nothing else should be open meanwhile
@@ -297,6 +301,7 @@
           <button class="tool" onclick={() => edit.freezeAtPlayhead()}><Icon name="freeze" size={22} /><span>Freeze</span></button>
           {#if canAnalyse}
             <button class="tool" class:hot={store.ui.trackPick === clip?.id} disabled={motionJob.running} onclick={track}><Icon name="target" size={22} /><span>{motionJob.running && motionJob.stage === 'Tracking' ? 'Tracking…' : store.ui.trackPick === clip?.id ? 'Cancel' : 'Track'}</span></button>
+            <button class="tool" class:hot={store.ui.surfacePick === clip?.id} disabled={motionJob.running} onclick={surface}><Icon name="screen" size={22} /><span>{motionJob.running && motionJob.stage === 'Tracking the surface' ? 'Tracking…' : store.ui.surfacePick === clip?.id ? 'Cancel' : 'Surface'}</span></button>
             <button class="tool" disabled={motionJob.running} onclick={faces}><Icon name="target" size={22} /><span>{motionJob.running && motionJob.stage === 'Finding faces' ? 'Looking…' : 'Faces'}</span></button>
             <button class="tool" class:hot={store.ui.trackThen === 'mark'} disabled={motionJob.running} onclick={() => toggleTrackPick(clip!.id, store.ui.trackThen === 'mark' ? null : 'mark')}><Icon name="shape" size={22} /><span>{store.ui.trackThen === 'mark' ? 'Cancel' : 'Mark it'}</span></button>
             <button class="tool" disabled={motionJob.running} onclick={() => stabilizeClip(clip!.id).catch((e) => store.toast('Stabilize failed: ' + (e as Error).message, 'error'))}><Icon name="steady" size={22} /><span>{motionJob.running && motionJob.stage !== 'Tracking' ? 'Steadying…' : clip?.stab ? 'Re-stabilize' : 'Stabilize'}</span></button>
