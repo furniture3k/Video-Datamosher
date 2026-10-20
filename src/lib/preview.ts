@@ -552,6 +552,73 @@ export class EditPreview {
         ctx.imageSmoothingEnabled = true;
         break;
       }
+      case 'smoothleft':
+      case 'smoothright': {
+        // a whip pan: both shots fly past, blurred most in the middle
+        const dir = xf === 'smoothleft' ? -1 : 1;
+        const e = p * p * (3 - 2 * p);
+        ctx.save();
+        ctx.filter = `blur(${(Math.sin(p * Math.PI) * w * 0.02).toFixed(1)}px)`;
+        drawA(dir * w * e);
+        drawB(-dir * w * (1 - e));
+        ctx.restore();
+        break;
+      }
+      case 'zoomin': {
+        // into the first shot, fading into the next
+        drawB();
+        const k = 1 + p * 2;
+        ctx.save();
+        ctx.translate(w / 2, h / 2);
+        ctx.scale(k, k);
+        ctx.translate(-w / 2, -h / 2);
+        ctx.globalAlpha = 1 - p;
+        drawA();
+        ctx.restore();
+        break;
+      }
+      case 'hblur': {
+        ctx.save();
+        ctx.filter = `blur(${(Math.sin(p * Math.PI) * w * 0.015).toFixed(1)}px)`;
+        drawA();
+        ctx.globalAlpha = p;
+        drawB();
+        ctx.restore();
+        break;
+      }
+      case 'radial':
+        drawA();
+        clipped(() => {
+          ctx.moveTo(w / 2, h / 2);
+          ctx.arc(w / 2, h / 2, Math.hypot(w, h), -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
+          ctx.closePath();
+        }, drawB);
+        break;
+      case 'diagtl':
+        drawA();
+        clipped(() => {
+          // everything above the line x/w + y/h = 2p
+          const pts: [number, number][] = p <= 0.5 ? [[0, 0], [2 * p * w, 0], [0, 2 * p * h]] : [[0, 0], [w, 0], [w, (2 * p - 1) * h], [(2 * p - 1) * w, h], [0, h]];
+          pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+          ctx.closePath();
+        }, drawB);
+        break;
+      case 'squeezeh': {
+        // the first shot narrows to a line in the middle, then the next widens out of it
+        const k = p < 0.5 ? 1 - p * 2 : p * 2 - 1;
+        ctx.save();
+        ctx.translate(w / 2, 0);
+        ctx.scale(Math.max(0.001, k), 1);
+        ctx.translate(-w / 2, 0);
+        if (p < 0.5) drawA();
+        else drawB();
+        ctx.restore();
+        break;
+      }
+      case 'circleclose':
+        drawB();
+        clipped(() => ctx.arc(w / 2, h / 2, ((1 - p) * Math.hypot(w, h)) / 2, 0, Math.PI * 2), drawA);
+        break;
       default:
         drawA();
         ctx.globalAlpha = p;

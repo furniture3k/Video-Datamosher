@@ -271,6 +271,7 @@
         <button class="tool" onclick={() => edit.addText()}><Icon name="text" size={22} /><span>Text</span></button>
         <button class="tool" class:hot={store.ui.pen || store.ui.trackThen === 'mark'} onclick={() => (sheet = 'shapes')}><Icon name="shape" size={22} /><span>Shape</span></button>
         <button class="tool" disabled={!hasClips} onclick={() => (store.ui.dialog = 'wordBeats')}><Icon name="music" size={22} /><span>Words</span></button>
+        <button class="tool" disabled={!store.project.media.length} onclick={() => (store.ui.dialog = 'flipbook')}><Icon name="film" size={22} /><span>Flipbook</span></button>
         <button class="tool" onclick={() => audioInput.click()}><Icon name="music" size={22} /><span>Music</span></button>
         <button class="tool" disabled={layoutVideo(store.project).length < 2} onclick={() => edit.transitionAtPlayhead('melt')}><Icon name="transition" size={22} /><span>Melt cut</span></button>
         <button class="tool" onclick={() => (sheet = 'look')}><Icon name="sliders" size={22} /><span>Look</span></button>

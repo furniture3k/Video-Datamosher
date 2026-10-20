@@ -95,6 +95,7 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'split-side', title: 'Split screen: side by side', group: 'Mosh', keys: [], words: 'grid layout collage two up' },
   { id: 'split-stack', title: 'Split screen: stacked', group: 'Mosh', keys: [], words: 'grid layout collage top bottom' },
   { id: 'split-grid', title: 'Split screen: 2 × 2 grid', group: 'Mosh', keys: [], words: 'grid layout collage four' },
+  { id: 'flipbook', title: 'Flipbook…', group: 'Mosh', keys: [], words: 'pictures swap beat collage stop motion' },
   { id: 'word-beats', title: 'Words on the beat…', group: 'Mosh', keys: [], words: 'lyrics titles text kinetic type' },
   { id: 'bake', title: 'Bake the mosh into a clip…', group: 'Mosh', keys: [] },
   { id: 'captions', title: 'Auto captions…', group: 'Mosh', keys: [], words: 'subtitles whisper' },

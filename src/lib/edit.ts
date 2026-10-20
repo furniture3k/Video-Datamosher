@@ -8,6 +8,8 @@ import { FIRST_ROW, freeRow, nextRow, type ShapeLayer, type TextLayer } from '..
 import { DEFAULT_LOOK, fitPen, newShape, type Pt, type ShapeLook } from '../engine/shapes';
 import { outputSize } from '../engine/args';
 import { GRID_LAYOUTS, cellTransform, inset } from '../engine/grid';
+import { flipbook, type FlipOrder } from '../engine/flipbook';
+import { makeRng } from '../engine/rng';
 import { localGet, localSet } from './storage';
 import { addToTimeline } from './media';
 import { styleForNew } from './styles.svelte';
@@ -190,6 +192,26 @@ export function addVideoTrack(): string {
   let id = '';
   store.edit((p) => (id = addVideoTrackTo(p)));
   return id;
+}
+
+/**
+ * Flipbook: the chosen media swapped on each of `times` (to `t1`) on a new track above, in
+ * order, shuffled or back and forth, filling the frame. One undo step. Returns how many clips.
+ */
+export function addFlipbook(mediaIds: string[], times: number[], t1: number, order: FlipOrder, fit: Clip['fit'] = 'fill'): number {
+  const p = store.project;
+  const items = mediaIds.map((id) => p.media.find((m) => m.id === id)).filter((m): m is MediaItem => !!m?.hasVideo);
+  if (!items.length || !times.length) return 0;
+  const lengths = Object.fromEntries(items.map((m) => [m.id, m.source.kind === 'file' && m.source.isImage ? 0 : m.duration]));
+  const flips = flipbook(items.map((m) => m.id), lengths, times, t1, order, makeRng(p.globalSeed + times.length));
+  store.edit((q) => {
+    const track = addVideoTrackTo(q);
+    for (const f of flips) {
+      const m = items.find((x) => x.id === f.media)!;
+      q.clips.push(makeClip(m, track, { start: f.start, in: f.from, out: f.from + f.duration, fit, muted: true }));
+    }
+  });
+  return flips.length;
 }
 
 // ---------------------------------------------------------------- markers and in / out

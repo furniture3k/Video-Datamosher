@@ -353,6 +353,15 @@ strings in `src/locales/*.json`, and the ROADMAP checkboxes ticked.
 - **Film-look presets** built from R5 and R6, added to `src/engine/presets.ts`.
 
 ### M12: Transitions and flipbook. Unlocks R5 whips, R1 and R2 swaps
+
+> **Done (PR for `feat/m12-transitions`).** Eight blend transitions on xfade transitions the
+> browser's FFmpeg has (checked in it): whip left and right (`smoothleft`/`smoothright`), zoom
+> through, blur dissolve, clock wipe, diagonal wipe, squeeze and circle close, each drawn to
+> match in `EditPreview.blend`. Flipbook (`src/engine/flipbook.ts`, dialog in the Audio panel,
+> a phone tool and the palette): the chosen media swapped on every beat (¼ to 2) or every few
+> frames, in order, shuffled (never twice in a row) or back and forth, on a new track; videos
+> carry on where they were left. Still to do: colour flash frames, dip with hold, custom shape
+> wipes, whip direction from the motion, flipbooks behind the subject.
 - **Transitions**: whip pan (xfade slide + directional `avgblur` ramp in the window; matching
   `EditPreview.blend`), flash frame, shape wipe (xfade `custom` expressions), and zoom-through.
   All added to `BLEND_TRANSITIONS`.

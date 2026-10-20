@@ -175,12 +175,12 @@ unlocks, where it goes in the code, and when it counts as done.
   adjustment layer, optionally on twos with jitter (R6 ~12 fps, R4 ~16 fps).
 
 ### Transitions
-- [ ] **Whip pan** (directional motion blur and slide, auto-direction from the clips' motion) (R5).
-- [ ] **Flash frame** (white/colour frame on the beat), **dip with hold**, **shape wipe** (from P1),
+- [x] **Whip pan** *(M12: Whip left / right, a blended slide with blur in the preview; picking the direction from the motion is still to do)* (directional motion blur and slide, auto-direction from the clips' motion) (R5).
+- [x] **Flash frame** *(M12: zoom through, blur dissolve, clock and diagonal wipes, squeeze, circle close; Dip to white is the flash; colour flashes and a dip with hold are still to do)* (white/colour frame on the beat), **dip with hold**, **shape wipe** (from P1),
   **zoom-through** (into a mockup screen or a subject).
 
 ### Flipbook clip (R1 ornaments, R2 b-roll)
-- [ ] Drop a folder or selection of images/clips into one slot; it cycles every N frames or every
+- [x] *(M12: the Flipbook dialog lays the pictures on a new track, on the beat or every few frames, in order, shuffled or back and forth; behind the subject waits for cut-outs)* Drop a folder or selection of images/clips into one slot; it cycles every N frames or every
   beat / ½ / ¼ beat, in order, random or ping-pong. Works as a layer (behind subject too) or on
   the main track.
 

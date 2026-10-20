@@ -150,6 +150,7 @@ const ACTIONS: Record<string, Action> = {
   'split-side': { run: () => edit.arrangeGrid('side'), when: hasClips },
   'split-stack': { run: () => edit.arrangeGrid('stack'), when: hasClips },
   'split-grid': { run: () => edit.arrangeGrid('g2'), when: hasClips },
+  flipbook: { run: dialog('flipbook'), when: () => store.project.media.length > 0 },
   'word-beats': { run: dialog('wordBeats'), when: hasClips },
   bake: { run: dialog('bake'), when: hasClips },
   captions: { run: dialog('captions'), when: hasClips },
