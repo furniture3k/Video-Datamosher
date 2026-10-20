@@ -1,6 +1,6 @@
 // The graphics renderer: draws layers over the picture the same way everywhere they appear (the
 // edit preview, clean layers on the mosh and in exports, and layers burned in before moshing).
-import { drawOrder, layerAlpha, layerPos, surfaceMatrix, trailSteps, type Layer } from '../engine/layers';
+import { drawOrder, layerAlpha, layerMatrix, layerPos, trailSteps, type Layer } from '../engine/layers';
 import { applyH, quadHomography, type Mat3 } from '../engine/planar';
 import { affineBetween, growTri, warpTriangles, type WarpTri } from '../engine/warp';
 import { boxQuad, type Quad } from '../engine/gizmo';
@@ -88,7 +88,7 @@ function drawWarped(ctx: CanvasRenderingContext2D, l: Layer, H: Mat3, w: number,
 
 /** Draw one layer at timeline time t with opacity `alpha` (its fades are the caller's). */
 export function drawLayer(ctx: CanvasRenderingContext2D, l: Layer, w: number, h: number, alpha: number, t: number) {
-  const H = surfaceMatrix(l, t, w, h);
+  const H = layerMatrix(l, t, w, h);
   if (H) return drawWarped(ctx, l, H, w, h, alpha, t);
   drawFlat(ctx, l, w, h, alpha, t);
 }
@@ -144,14 +144,14 @@ export function poseQuad(l: Layer, t: number, w: number, h: number): Quad {
   if (l.kind === 'shape') return boxQuad(px * w, py * h, Math.max(l.w * w, 12), Math.max(l.h * h, 12), l.rotate ?? 0);
   const b = textBox(l, w, h);
   const r = ((l.rotate ?? 0) * Math.PI) / 180;
-  // the box's centre is across from the position along the turned baseline
-  return boxQuad(px * w + b.dx * Math.cos(r), py * h + b.dx * Math.sin(r), b.w, b.h, l.rotate ?? 0);
+  // the box's centre is across from the position along the turned baseline (and, for bent text, a little off it)
+  return boxQuad(px * w + b.dx * Math.cos(r) - b.dy * Math.sin(r), py * h + b.dx * Math.sin(r) + b.dy * Math.cos(r), b.w, b.h, l.rotate ?? 0);
 }
 
 /** Where a layer is on screen at timeline time t, in pixels of a w×h frame (for the handles): carried with its surface if it is pinned. */
 export function layerQuad(l: Layer, t: number, w: number, h: number): Quad {
   const q = poseQuad(l, t, w, h);
-  const H = surfaceMatrix(l, t, w, h);
+  const H = layerMatrix(l, t, w, h);
   if (!H) return q;
   return q.map(([x, y]) => applyH(H, x, y)) as Quad;
 }

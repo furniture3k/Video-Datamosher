@@ -280,3 +280,89 @@ describe('simplifying keys', async () => {
     expect(s.map((k) => k[0])).toEqual([0, 10, 20]);
   });
 });
+
+describe('bent text and tilt', async () => {
+  const { onCurve, sagOf, layoutText } = await import('../src/engine/textlayout');
+  const { tiltMatrix } = await import('../src/engine/warp');
+  const tx = { id: 't', kind: 'text', row: 'g1', text: 'HELLO', start: 0, duration: 1, size: 0.1, color: '#fff', font: 'sans', bold: true, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false } as const;
+  const measure = (s: string) => s.length * 60;
+
+  it('keeps straight text where it was with no curve', () => {
+    const p = onCurve(200, 50, 0);
+    expect(p).toEqual({ x: -50, y: 0, a: 0 });
+    expect(sagOf(200, 0)).toBe(0);
+  });
+  it('puts the middle of an arch on the line and its ends lower and turned outwards', () => {
+    const mid = onCurve(200, 100, 0.5);
+    expect(mid.x).toBeCloseTo(0, 6);
+    expect(mid.y).toBeCloseTo(0, 6);
+    expect(mid.a).toBeCloseTo(0, 6);
+    const left = onCurve(200, 0, 0.5);
+    const right = onCurve(200, 200, 0.5);
+    expect(left.y).toBeGreaterThan(0);
+    expect(left.y).toBeCloseTo(right.y, 6);
+    expect(left.x).toBeCloseTo(-right.x, 6);
+    // a rising baseline on the left (anticlockwise), a falling one on the right
+    expect(left.a).toBeLessThan(0);
+    expect(right.a).toBeGreaterThan(0);
+    expect(right.a).toBeCloseTo(-left.a, 6);
+  });
+  it('is a smile when negative: the same, flipped', () => {
+    const arch = onCurve(200, 20, 0.6);
+    const smile = onCurve(200, 20, -0.6);
+    expect(smile.x).toBeCloseTo(arch.x, 6);
+    expect(smile.y).toBeCloseTo(-arch.y, 6);
+    expect(smile.a).toBeCloseTo(-arch.a, 6);
+  });
+  it('keeps the length along the arc: half a circle of a 200 px line is 200 px of arc', () => {
+    // sample the points of a semicircle and add up the steps
+    let len = 0;
+    let prev = onCurve(200, 0, 1);
+    for (let d = 1; d <= 200; d++) {
+      const p = onCurve(200, d, 1);
+      len += Math.hypot(p.x - prev.x, p.y - prev.y);
+      prev = p;
+    }
+    expect(len).toBeGreaterThan(198);
+    expect(len).toBeLessThan(201);
+    // the ends of a semicircle are R below the top: R = 200/π
+    expect(sagOf(200, 1)).toBeCloseTo(200 / Math.PI, 6);
+  });
+  it('grows the title’s box to hold a bent line', () => {
+    const flat = layoutText({ ...tx }, 1000, 500, measure);
+    const arch = layoutText({ ...tx, curve: 0.5 }, 1000, 500, measure);
+    expect(arch.box.h).toBeGreaterThan(flat.box.h);
+    expect(arch.box.y).toBeCloseTo(flat.box.y, 6);
+    const smile = layoutText({ ...tx, curve: -0.5 }, 1000, 500, measure);
+    expect(smile.box.y).toBeLessThan(flat.box.y);
+    expect(smile.box.y + smile.box.h).toBeCloseTo(flat.box.y + flat.box.h, 6);
+  });
+
+  it('tilts nothing for zero degrees, and about the point it is given', () => {
+    const I = tiltMatrix(0, 0, 100, 50, 300);
+    const p = applyH(I, 140, 20);
+    expect(p[0]).toBeCloseTo(140, 6);
+    expect(p[1]).toBeCloseTo(20, 6);
+    const T = tiltMatrix(25, -20, 100, 50, 300);
+    const c = applyH(T, 100, 50);
+    expect(c[0]).toBeCloseTo(100, 6);
+    expect(c[1]).toBeCloseTo(50, 6);
+  });
+  it('leans the top away (smaller and closer to the middle) and the right away', () => {
+    // top edge points are at y < centre: tilting back narrows them
+    const T = tiltMatrix(30, 0, 100, 100, 300);
+    const topL = applyH(T, 0, 0);
+    const topR = applyH(T, 200, 0);
+    const botL = applyH(T, 0, 200);
+    const botR = applyH(T, 200, 200);
+    expect(topR[0] - topL[0]).toBeLessThan(botR[0] - botL[0]);
+    expect(topL[1]).toBeGreaterThan(0);
+    const S = tiltMatrix(0, 30, 100, 100, 300);
+    const tl = applyH(S, 0, 0);
+    const bl = applyH(S, 0, 200);
+    const tr = applyH(S, 200, 0);
+    const br = applyH(S, 200, 200);
+    // the right edge is further away: shorter than the left
+    expect(br[1] - tr[1]).toBeLessThan(bl[1] - tl[1]);
+  });
+});

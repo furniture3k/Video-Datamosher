@@ -63,7 +63,7 @@ unlocks, where it goes in the code, and when it counts as done.
   other layers); double-tap text to edit in place. Applies to layers *and* upper-track clips
   (`Clip.transform`). Lives in `src/components/Player.svelte` (which today only has split-compare,
   paint and track-box modes).
-- [ ] **F4. Pins.** A layer can be pinned to: a tracked point (exists: `Clip.paths`,
+- [ ] **F4. Pins.** *(M10 added the planar pin, `Layer.surface`; the path pin is still `follow` and the face pin a path, so the three are not yet one model.)* A layer can be pinned to: a tracked point (exists: `Clip.paths`,
   `TextClip.follow`), a planar/perspective track (P3), a face (P4), or a subject's matte (P2).
   The pin feeds position, scale, rotation and (for planar pins) a 4-corner warp.
 - [ ] **F5. Mattes as a reusable asset.** A matte is a per-frame alpha attached to a clip, cached
@@ -88,7 +88,7 @@ unlocks, where it goes in the code, and when it counts as done.
   and colours per line or word ("What's On The Star? / YUNG FAZO", R4; white over red lines, R6).
   *(M4a: outline, hollow, spacing and line height done; gradient fill and mixed styles per line are still to do.)*
 - [x] **Fit to width / fit to box** and **overflow** (R2 fills the width; R6 runs past the edges).
-- [ ] Text on a path (curved text along a line, R9) and perspective/3D tilt (R7–R9).
+- [x] Text on a path (curved text along a line, R9) and perspective/3D tilt (R7–R9). *(M10: **Curve** bends a title's baseline into an arc (an arch or a smile) with the letters turned to follow it, `onCurve` in `src/engine/textlayout.ts`; **Perspective** leans any title or shape back or to the side (`tiltMatrix` in `src/engine/warp.ts`). A free-form baseline drawn by hand isn't built: the arc covers the edits studied.)*
 - [x] **Repeat**: tile the text across or down the frame, with an optional marquee scroll
   ("NUMB YOURSELF NUMB YOURSELF", R6).
 - [x] New animations: slam (scale-down snap), stamp, letter-by-letter **snap** reveal (R4),
@@ -151,15 +151,15 @@ unlocks, where it goes in the code, and when it counts as done.
 
 ## Phase 3: Pin to the scene (R7–R9)
 
-- [ ] **Planar (4-corner) tracking.** Select a flat surface (road, wall, window, screen); track it
+- [x] **Planar (4-corner) tracking.** *(M10: `src/engine/planar.ts`, run in the track worker: Shi-Tomasi corners, pyramidal Lucas-Kanade with robust weights, RANSAC homography and a least-squares fit, every frame re-matched against the first so it doesn't drift and corners that were hidden come back; forwards and backwards from the playhead. Kept as `Clip.planes`. Four corners dragged onto the player, on the phone too.)* Select a flat surface (road, wall, window, screen); track it
   with feature points and a homography solved per frame in a worker (extends `src/engine/track.ts`,
   which follows a box's position today).
-- [ ] **Pin to surface**: any layer pinned to a planar track takes its perspective (text lying on
-  the road in R9, boxes on windows).
-- [ ] **Screen replacement**: put a clip onto a tracked screen or poster.
-- [ ] **Multi-pin from one solve**: track once, pin many labels to different points that all move
-  with the camera.
-- [ ] Stretch goal: **camera solve** (3D) for handheld walk-throughs (R8's room).
+- [x] **Pin to surface**: any layer pinned to a planar track takes its perspective (text lying on
+  the road in R9, boxes on windows). *(M10: `Layer.surface`; the layer is drawn flat where it was when pinned and carried onto the surface by a triangle grid in the preview, the clean export and the burned-in plates alike. Pin from the layer's settings, **Title on it** on a surface, or **Pin here** in the picture's menu.)*
+- [x] **Screen replacement**: put a clip onto a tracked screen or poster. *(M10: `Clip.screen`; the whole picture is cropped, not squashed, to the surface's shape and carried to its corners every frame: FFmpeg's perspective filter in the render, the same triangle grid in the preview.)*
+- [x] **Multi-pin from one solve**: track once, pin many labels to different points that all move
+  with the camera. *(M10: select several layers and pin them together, or pin more later to the same surface.)*
+- [ ] Stretch goal: **camera solve** (3D) for handheld walk-throughs (R8's room). *(Not built: it is a stretch goal, and the flat surfaces tracked now cover the screens, walls and signs in the nine references. A 3D solve would need structure from motion over a whole clip, which belongs in its own milestone.)*
 
 ## Phase 4: Looks, motion and stickers (R1, R5, R6, R2)
 

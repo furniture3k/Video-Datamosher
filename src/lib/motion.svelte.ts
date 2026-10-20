@@ -15,7 +15,7 @@ import { markLayers } from '../engine/annotate';
 import { linkFaces } from '../engine/faces';
 import { detectFaces } from './faces';
 import { cardScale, offCard, onCard } from '../engine/canvas';
-import { shapeLook } from './edit';
+import { addText, shapeLook } from './edit';
 
 export const motionJob = $state({ running: false, stage: '' });
 
@@ -197,8 +197,8 @@ export async function trackClip(id: string, box: [number, number, number, number
 const DEFAULT_SURFACE: [number, number][] = [[0.3, 0.28], [0.7, 0.28], [0.7, 0.72], [0.3, 0.72]];
 
 /** Start (or stop) picking a surface to track: four corners to drag onto it on the player, with the playhead on the clip. */
-export function toggleSurfacePick(id: string) {
-  if (store.ui.surfacePick === id) return void (store.ui.surfacePick = null);
+export function toggleSurfacePick(id: string, then: null | 'title' = null) {
+  if (store.ui.surfacePick === id) return void ((store.ui.surfacePick = null), (store.ui.surfaceThen = null));
   const c = store.project.clips.find((x) => x.id === id);
   if (!c) return;
   store.ui.playing = false;
@@ -208,6 +208,7 @@ export function toggleSurfacePick(id: string) {
   const len = clipLen(c);
   if (store.ui.time < start || store.ui.time >= start + len - 1e-3) store.seek(start + Math.min(len / 2, 0.5));
   store.ui.surfaceQuad = DEFAULT_SURFACE.map(([x, y]) => [x, y]);
+  store.ui.surfaceThen = then;
   store.ui.surfacePick = id;
 }
 
@@ -216,12 +217,60 @@ export async function confirmSurface() {
   const id = store.ui.surfacePick;
   if (!id) return;
   const corners = store.ui.surfaceQuad.map(([x, y]) => [x, y] as [number, number]);
+  const then = store.ui.surfaceThen;
   store.ui.surfacePick = null;
+  store.ui.surfaceThen = null;
   try {
-    return await trackSurface(id, corners);
+    const planeId = await trackSurface(id, corners);
+    if (planeId && then === 'title') titleOnSurface(id, planeId);
+    return planeId;
   } catch (err) {
     store.toast('Tracking failed: ' + (err as Error).message, 'error');
   }
+}
+
+/**
+ * Pin a new title where the picture was pointed at: on a tracked surface that is there at the
+ * playhead, or, when none is, by picking one (four corners round the point) and tracking it first.
+ */
+export function pinHere(u: number, v: number) {
+  const p = $state.snapshot(store.project) as Project;
+  const t = store.ui.time;
+  const inside = (q: number[]) => {
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      const cr = (q[j * 2] - q[i * 2]) * (v - q[i * 2 + 1]) - (q[j * 2 + 1] - q[i * 2 + 1]) * (u - q[i * 2]);
+      if (Math.abs(cr) < 1e-12) continue;
+      if (sign && Math.sign(cr) !== sign) return false;
+      sign = Math.sign(cr);
+    }
+    return true;
+  };
+  for (const c of p.clips)
+    for (const pl of c.planes ?? []) {
+      const keys = planeOnTimeline(p, c, pl.id);
+      if (keys.length < 2 || t < keys[0][0] - 1e-6 || t > keys[keys.length - 1][0] + 1e-6) continue;
+      const q = quadAt(keys, t);
+      if (!q || !inside(q)) continue;
+      addText();
+      // (the new title is the selection)
+      const id = store.ui.selectedClips[0];
+      store.edit((x) => {
+        const l = x.layers.find((y) => y.id === id);
+        if (l) Object.assign(l, { x: Math.round(u * 1e4) / 1e4, y: Math.round(v * 1e4) / 1e4 });
+      });
+      return pinToSurface([id], c.id, pl.id);
+    }
+  const c = trackableAt(t);
+  if (!c) return store.toast('Put the playhead on a video clip first: the surface is followed in it.', 'error');
+  toggleSurfacePick(c.id, 'title');
+  // the corners start as a rectangle round the point
+  const rx = 0.16;
+  const ry = 0.14;
+  const cl = (n: number) => Math.max(0, Math.min(1, n));
+  store.ui.surfaceQuad = [[cl(u - rx), cl(v - ry)], [cl(u + rx), cl(v - ry)], [cl(u + rx), cl(v + ry)], [cl(u - rx), cl(v + ry)]];
+  store.toast('Drag the corners onto the surface and press Track it: a title is pinned to it.', 'info', 5000);
 }
 
 /** Pick a surface to track in the video clip under the playhead (for the palette and menus). */

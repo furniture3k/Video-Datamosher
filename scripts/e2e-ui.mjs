@@ -356,6 +356,19 @@ const handleTitle = (id, o = {}) =>
     st.selectClip(null);
   }, [id, o]);
 const layerOf = (id) => S((id) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.find((l) => l.id === id))), id);
+// pictures for looking at (test-results/): the player as it shows, and a frame of the rendered mosh
+const shot = (name) => page.locator('.stage').screenshot({ path: path.join('test-results', name + '.png') }).catch(() => {});
+const renderShot = async (name, t) => {
+  const b64 = await S((t) => {
+    const st = window.__moshpit.store;
+    const j = st.render?.jpegs?.[Math.round(t * st.project.encoder.fps)];
+    if (!j) return '';
+    let s = '';
+    for (let i = 0; i < j.length; i += 8192) s += String.fromCharCode(...j.subarray(i, i + 8192));
+    return btoa(s);
+  }, t);
+  if (b64) fs.writeFileSync(path.join('test-results', name + '.jpg'), Buffer.from(b64, 'base64'));
+};
 const dropLayer = (id) => S((id) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== id))), id);
 const dragBy = async (box, dx, dy) => {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -1520,6 +1533,7 @@ await step('surface: four corners on a leaning screen are tracked; a shape, a ti
     if (moved > 24 && magentaAt(atPose)) throw new Error(`at ${t} s the square stayed where it was pinned`);
   }
   await S(() => (window.__moshpit.store.ui.view = 'auto'));
+  await shot('m10-pinned-preview');
   // melted into the mosh: the same square burned in before moshing, frame by frame
   await S((lid) => window.__moshpit.store.edit((p) => (p.layers.find((l) => l.id === lid).moshed = true)), sq);
   await settle();
@@ -1541,7 +1555,25 @@ await step('surface: four corners on a leaning screen are tracked; a shape, a ti
     }
     return res;
   }, { times: [0.4, 1.0, 1.7, 2.2], spots: await where(await Promise.all([0.4, 1.0, 1.7, 2.2].map((t) => carried(Math.round(t * 24))))) });
+  await renderShot('m10-pinned-render', 2.2);
   hits.forEach((px, j) => { if (!(px[0] > 170 && px[2] > 170 && px[1] < 100)) throw new Error(`the melted square is not on the surface at ${[0.4, 1.0, 1.7, 2.2][j]} s: ${px.map(Math.round)}`); });
+  // "Pin here" in the picture's menu: on the surface it pins a new title to it
+  await S((lid) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== lid))), sq);
+  await S(() => window.__moshpit.store.seek(1.4));
+  await page.waitForTimeout(400);
+  const [onIt] = await where([centre(truth[Math.round(1.4 * 24)])]);
+  await page.mouse.click(onIt.sx, onIt.sy, { button: 'right' });
+  await page.getByRole('menuitem', { name: 'Pin here' }).click();
+  await page.waitForFunction(() => window.__moshpit.store.project.layers.some((l) => l.kind === 'text' && l.surface), null, { timeout: 5000 });
+  await S(() => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => !l.surface))));
+  // off the surface it starts picking one, round the point, and pins a title once it's tracked
+  const [offIt] = await where([[20, 20]]);
+  await page.mouse.click(offIt.sx, offIt.sy, { button: 'right' });
+  await page.getByRole('menuitem', { name: 'Pin here' }).click();
+  const picking = await S(() => ({ id: window.__moshpit.store.ui.surfacePick, then: window.__moshpit.store.ui.surfaceThen, q: window.__moshpit.store.ui.surfaceQuad }));
+  if (!picking.id || picking.then !== 'title' || !(Math.abs((picking.q[0][0] + picking.q[1][0]) / 2 - offIt.u) < 0.1)) throw new Error('Pin here off a surface did not start picking round the point: ' + JSON.stringify(picking));
+  await page.keyboard.press('Escape');
+  if (await S(() => window.__moshpit.store.ui.surfacePick)) throw new Error('Escape did not stop picking the surface');
   // a clip put on the surface: a four-colour picture on a track above, carried to the surface's corners
   await S((lid) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => l.id !== lid))), sq);
   const scr = await S(async () => {
@@ -1585,10 +1617,12 @@ await step('surface: four corners on a leaning screen are tracked; a shape, a ti
     }, spots);
     got.forEach((px, i) => { if (!close(px, want[i], 60)) throw new Error(`at ${t} s quarter ${i} of the surface shows ${px.slice(0, 3)}, not ${want[i]}`); });
   }
+  await shot('m10-screen-preview');
   await S(() => (window.__moshpit.store.ui.view = 'auto'));
   // and in the render: the picture is part of the prepared video
   await settle();
   const frR = Math.round(2.2 * 24);
+  await renderShot('m10-screen-render', 2.2);
   const rendered = await S(async ({ spots, fr }) => {
     const st = window.__moshpit.store;
     const b = await createImageBitmap(new Blob([st.render.jpegs[fr]], { type: 'image/jpeg' }));
@@ -1611,6 +1645,91 @@ await step('surface: four corners on a leaning screen are tracked; a shape, a ti
     store.edit((p) => (p.clips = p.clips.filter((c) => c.id !== id && c.id !== cid)));
     store.ui.selectedClips = [];
   }, { cid: scr, id });
+  await settle();
+});
+
+await step('type: text bent into an arch follows the arc, and a title leaned back shrinks towards the top, in the preview and the render', async () => {
+  // where the white pixels of a picture are, by columns (the ends against the middle) and by rows (top against bottom)
+  await S(() => {
+    window.__whiteStats = (cv) => {
+      const g = cv.getContext('2d');
+      const d = g.getImageData(0, 0, cv.width, cv.height).data;
+      const white = (x, y) => { const i = (y * cv.width + x) * 4; return d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200; };
+      let x0 = 1e9, x1 = -1, y0 = 1e9, y1 = -1;
+      for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) if (white(x, y)) (x0 = Math.min(x0, x)), (x1 = Math.max(x1, x)), (y0 = Math.min(y0, y)), (y1 = Math.max(y1, y));
+      if (x1 < 0) return null;
+      const cy = (xa, xb) => { let s = 0, n = 0; for (let y = 0; y < cv.height; y++) for (let x = Math.round(xa); x <= Math.round(xb); x++) if (white(x, y)) (s += y), n++; return n ? s / n : null; };
+      const span = (ya, yb) => { let lo = 1e9, hi = -1; for (let y = Math.round(ya); y <= Math.round(yb); y++) for (let x = 0; x < cv.width; x++) if (white(x, y)) (lo = Math.min(lo, x)), (hi = Math.max(hi, x)); return hi < 0 ? 0 : hi - lo; };
+      const w = x1 - x0, h = y1 - y0;
+      return { x0, x1, y0, y1, left: cy(x0, x0 + w * 0.15), mid: cy(x0 + w * 0.42, x0 + w * 0.58), right: cy(x1 - w * 0.15, x1), top: span(y0, y0 + h * 0.15), bottom: span(y1 - h * 0.15, y1), H: cv.height };
+    };
+  });
+  // titles over black (no clips), so the white pixels are the title's
+  const keep = await S(() => {
+    const { store } = window.__moshpit;
+    const clips = JSON.parse(JSON.stringify(store.project.clips));
+    const effects = JSON.parse(JSON.stringify(store.project.effects));
+    store.edit((p) => {
+      p.clips = [];
+      p.effects = [];
+      p.layers.push({ id: 'arc', kind: 'text', row: 'g1', text: 'MMMMMMMM', start: 0, duration: 2, size: 0.16, color: '#ffffff', font: 'sans', bold: true, x: 0.5, y: 0.45, align: 'center', shadow: false, box: false, fade: 0, moshed: false, curve: 0.6 });
+    });
+    store.ui.view = 'edit';
+    store.seek(0.5);
+    return { clips, effects };
+  });
+  await page.waitForTimeout(500);
+  const edit = (patch) => S((patch) => window.__moshpit.store.edit((p) => { const l = p.layers.find((x) => x.id === 'arc'); for (const [k, v] of Object.entries(patch)) (v === null ? delete l[k] : (l[k] = v)); }), patch);
+  const seen = async () => (await page.waitForTimeout(450), S(() => window.__whiteStats(document.querySelector('.stage canvas.edit'))));
+  const arc = await seen();
+  await shot('m10-text-arch');
+  if (!arc) throw new Error('no title drawn on the preview');
+  // an arch: both ends sit lower than the middle (y grows downwards), by a good part of the letter height
+  if (!(arc.left - arc.mid > 0.04 * arc.H && arc.right - arc.mid > 0.04 * arc.H)) throw new Error('the text is not on an arch: ' + JSON.stringify(arc));
+  // a smile: the other way up
+  await edit({ curve: -0.6 });
+  const smile = await seen();
+  if (!(smile.mid - smile.left > 0.04 * smile.H && smile.mid - smile.right > 0.04 * smile.H)) throw new Error('the text is not in a smile: ' + JSON.stringify(smile));
+  // leaned back in perspective: the top of the line is narrower than its bottom
+  await edit({ curve: null, tilt: [50, 0], size: 0.3, text: 'MMMM' });
+  const lean = await seen();
+  await shot('m10-text-lean');
+  // (a wide, short title only narrows a few per cent towards its top: that is how little depth it has)
+  if (!(lean.top > 0 && lean.top < lean.bottom * 0.97)) throw new Error('the title is not leaning back: ' + JSON.stringify(lean));
+  // turned to the side: the right edge goes away, so it is shorter than the left
+  await edit({ tilt: [0, 50] });
+  const side = await seen();
+  await shot('m10-text-turn');
+  const colHeight = await S((x) => {
+    const cv = document.querySelector('.stage canvas.edit');
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    const tall = (xa, xb) => { let lo = 1e9, hi = -1; for (let y = 0; y < cv.height; y++) for (let xx = xa; xx <= xb; xx++) { const i = (y * cv.width + xx) * 4; if (d[i] > 200 && d[i + 1] > 200 && d[i + 2] > 200) (lo = Math.min(lo, y)), (hi = Math.max(hi, y)); } return hi - lo; };
+    return [tall(x.x0, x.x0 + 12), tall(x.x1 - 12, x.x1)];
+  }, side);
+  if (!(colHeight[1] < colHeight[0] * 0.9)) throw new Error('the title is not turned: ' + JSON.stringify([colHeight, side]));
+  // handles: the box goes round what is drawn (its corners are warped with it)
+  const quad = await S(() => {
+    const { store } = window.__moshpit;
+    const cv = document.querySelector('.stage canvas.edit');
+    return window.__moshpit.layerQuad?.(store.project.layers.find((l) => l.id === 'arc'), 0.5, cv.width, cv.height) ?? null;
+  });
+  if (quad) {
+    const xs = quad.map((p) => p[0]);
+    if (!(Math.min(...xs) <= side.x0 + 3 && Math.max(...xs) >= side.x1 - 3)) throw new Error('the handle box does not go round the turned title: ' + JSON.stringify([quad, side]));
+  }
+  // melted into the mosh: the same arch burned in before moshing
+  await edit({ tilt: null, size: 0.16, text: 'MMMMMMMM', curve: 0.6, moshed: true });
+  await S(() => (window.__moshpit.store.ui.view = 'auto'));
+  await settle();
+  const rendered = await S(async () => {
+    const st = window.__moshpit.store;
+    const b = await createImageBitmap(new Blob([st.render.jpegs[Math.round(0.5 * st.project.encoder.fps)]], { type: 'image/jpeg' }));
+    const cv = new OffscreenCanvas(b.width, b.height);
+    cv.getContext('2d').drawImage(b, 0, 0);
+    return window.__whiteStats(cv);
+  });
+  if (!rendered || !(rendered.left - rendered.mid > 0.04 * rendered.H && rendered.right - rendered.mid > 0.04 * rendered.H)) throw new Error('the melted text is not on an arch: ' + JSON.stringify(rendered));
+  await S(({ clips, effects }) => window.__moshpit.store.edit((p) => ((p.layers = p.layers.filter((l) => l.id !== 'arc')), (p.clips = clips), (p.effects = effects))), keep);
   await settle();
 });
 
@@ -2127,6 +2246,23 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   if (merr) throw new Error('phone marking: ' + merr);
   await S((n) => window.__moshpit.store.edit((p) => (p.layers = p.layers.slice(0, n))), nl);
   if (!(await S(() => window.__moshpit.store.selectedClip))) await S((id) => window.__moshpit.store.selectClip(id), tid);
+  // a surface from the phone tools: arm it, four corners show on the preview and move, Cancel stops it
+  await page.locator('.tools .tool', { hasText: 'Surface' }).click();
+  await page.locator('.sfhandle').first().waitFor();
+  if ((await page.locator('.sfhandle').count()) !== 4 || (await S(() => window.__moshpit.store.ui.surfacePick)) !== tid) throw new Error('the Surface tool did not arm the corners');
+  const h0 = await page.locator('.sfhandle').first().boundingBox();
+  const q0 = await S(() => window.__moshpit.store.ui.surfaceQuad[0].slice());
+  await page.mouse.move(h0.x + h0.width / 2, h0.y + h0.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(h0.x + h0.width / 2 + 25, h0.y + h0.height / 2 + 15, { steps: 4 });
+  await page.mouse.up();
+  const q1 = await S(() => window.__moshpit.store.ui.surfaceQuad[0].slice());
+  if (!(q1[0] > q0[0] && q1[1] > q0[1])) throw new Error('the corner did not move: ' + JSON.stringify([q0, q1]));
+  const hb = await page.locator('.sfhandle').first().boundingBox();
+  const stageBox = await page.locator('.preview .stage').boundingBox();
+  if (hb.x < stageBox.x || hb.x + hb.width > stageBox.x + stageBox.width || hb.y < stageBox.y || hb.y + hb.height > stageBox.y + stageBox.height) throw new Error('the corner handle is off the phone preview');
+  await page.locator('.tools .tool', { hasText: 'Cancel' }).click();
+  if (await S(() => window.__moshpit.store.ui.surfacePick)) throw new Error('Cancel did not stop picking the surface');
   await page.locator('.tools .back').click();
   await page.locator('.tools .tool', { hasText: 'Media' }).click();
   await page.locator('.sheet').waitFor();

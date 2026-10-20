@@ -1,6 +1,6 @@
 // Warping a picture through a homography with a grid of triangles, each drawn with a plain affine
 // transform (what a 2D canvas can do). Pure maths: the page does the drawing.
-import { applyH, type Mat3, type Pt } from './planar';
+import { applyH, mul3, type Mat3, type Pt } from './planar';
 
 export type Tri = [Pt, Pt, Pt];
 
@@ -57,4 +57,21 @@ export function growTri(t: Tri, px: number): Tri {
     const d = Math.hypot(x - cx, y - cy) || 1;
     return [x + ((x - cx) / d) * px, y + ((y - cy) / d) * px] as Pt;
   }) as Tri;
+}
+
+/**
+ * The homography of leaning a flat picture back (`ax` degrees about the horizontal axis through
+ * (cx, cy): the top goes away for positive) and to the side (`ay` about the vertical axis: the
+ * right edge goes away for positive), seen from a camera `f` pixels in front of it.
+ */
+export function tiltMatrix(ax: number, ay: number, cx: number, cy: number, f: number): Mat3 {
+  const a = (ax * Math.PI) / 180;
+  const b = (ay * Math.PI) / 180;
+  const [ca, sa, cb, sb] = [Math.cos(a), Math.sin(a), Math.cos(b), Math.sin(b)];
+  // a point (x, y, 0) leans back about x (the top, where y is negative, goes away), then about y
+  // (the right goes away); z is the distance behind the picture's plane, and it is seen from f in front
+  //   x2 = x·cb + y·sa·sb,  y2 = y·ca,  z2 = x·sb − y·sa·cb,  and lands at f·(x2, y2) / (f + z2)
+  const M: Mat3 = [f * cb, f * sa * sb, 0, 0, f * ca, 0, sb, -sa * cb, f];
+  // about (cx, cy): move it to the origin, tilt, move it back
+  return mul3(mul3([1, 0, cx, 0, 1, cy, 0, 0, 1], M), [1, 0, -cx, 0, 1, -cy, 0, 0, 1]);
 }
