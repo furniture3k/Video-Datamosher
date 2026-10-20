@@ -17,6 +17,7 @@
   import { EditPreview, EditAudio } from '../lib/preview';
   import { drawLayers } from '../lib/layers';
   import Gizmo from './Gizmo.svelte';
+  import { addPen } from '../lib/edit';
   import { fontState } from '../lib/fonts.svelte';
   import { audioCtx } from '../lib/audioctx';
   import { download } from '../lib/storage';
@@ -591,7 +592,7 @@
   const gizmoBox = $derived.by(() => {
     // the stage's size first: it's what tells this the stage is there (and when it resizes)
     void stageSize;
-    if (!wrap || !hasTimeline || store.ui.playing || store.ui.eyedropper || store.ui.trackPick || paintFx || store.ui.compare !== 'off') return null;
+    if (!wrap || !hasTimeline || store.ui.playing || store.ui.eyedropper || store.ui.trackPick || store.ui.pen || paintFx || store.ui.compare !== 'off') return null;
     // the frame letterboxed into the canvases' area (10 px in from the stage's edges), worked out
     // from its shape so it's right before the canvases have drawn anything
     const cw = wrap.clientWidth - 20;
@@ -599,6 +600,27 @@
     const k = Math.min(cw / guideSize.w, ch / guideSize.h);
     return { left: 10 + (cw - guideSize.w * k) / 2, top: 10 + (ch - guideSize.h * k) / 2, width: guideSize.w * k, height: guideSize.h * k };
   });
+
+  /** A freehand line being drawn with the pen, as shares of the frame. */
+  let penLine = $state<[number, number][]>([]);
+  function penStroke(e: PointerEvent) {
+    store.ui.playing = false;
+    penLine = [pictureUV(e)];
+    const move = (ev: PointerEvent) => (penLine = [...penLine, pictureUV(ev)]);
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      const pts = penLine;
+      penLine = [];
+      if (ev.type === 'pointercancel') return;
+      store.ui.pen = false;
+      if (!addPen(pts)) store.toast('Drag on the picture to draw a line.', 'error');
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  }
 
   /** The box being drawn around something to track, in stage pixels. */
   let trackRect = $state<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -624,8 +646,10 @@
       if (ev.type === 'pointercancel') return;
       const b = pictureUV(ev);
       store.ui.trackPick = null;
+      const then = store.ui.trackThen;
+      store.ui.trackThen = null;
       if (Math.abs(b[0] - a[0]) < 0.01 || Math.abs(b[1] - a[1]) < 0.01) return store.toast('Drag a box around the thing to follow.', 'error');
-      trackClip(id, [a[0], a[1], b[0], b[1]]).catch((err) => store.toast('Tracking failed: ' + (err as Error).message, 'error'));
+      trackClip(id, [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])], then).catch((err) => store.toast('Tracking failed: ' + (err as Error).message, 'error'));
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -710,12 +734,13 @@
   <div
     class="stage"
     class:compact
-    class:picking={store.ui.eyedropper || !!store.ui.trackPick || !!paintFx}
+    class:picking={store.ui.eyedropper || !!store.ui.trackPick || store.ui.pen || !!paintFx}
     bind:this={wrap}
     onpointerdown={(e) => {
       (document.activeElement as HTMLElement | null)?.blur?.();
       if (store.ui.eyedropper) return pickKeyColour(e);
       if (store.ui.trackPick) return drawTrackBox(e);
+      if (store.ui.pen) return penStroke(e);
       if (paintFx) return paintStroke(e);
       if (compact && hasTimeline && store.ui.compare === 'off') {
         tapAt = { x: e.clientX, y: e.clientY, t: performance.now() };
@@ -754,8 +779,15 @@
     {#if trackRect}
       <div class="trackbox" style="left:{trackRect.x}px;top:{trackRect.y}px;width:{trackRect.w}px;height:{trackRect.h}px"></div>
     {/if}
+    {#if store.ui.pen && hasTimeline}
+      {@const pb = pictureBox()}
+      <svg class="paintlayer" style="left:{pb.left}px;top:{pb.top}px;width:{pb.width}px;height:{pb.height}px" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+        {#if penLine.length > 1}<polyline points={penLine.map(([x, y]) => `${x},${y}`).join(' ')} class="stroke" />{/if}
+      </svg>
+      {#if !penLine.length}<div class="stage-note mono picknote">draw on the picture · Esc to cancel</div>{/if}
+    {/if}
     {#if store.ui.trackPick && !trackRect}
-      <div class="stage-note mono picknote">drag a box snugly around what to follow (something with detail) · Esc to cancel</div>
+      <div class="stage-note mono picknote">{store.ui.trackThen === 'mark' ? 'drag a box around what to mark (it is followed, then boxed, arrowed and labelled)' : 'drag a box snugly around what to follow (something with detail)'} · Esc to cancel</div>
     {/if}
     {#if trackView && hasTimeline}
       <div class="tracklayer" style="left:{trackView.pb.left}px;top:{trackView.pb.top}px;width:{trackView.pb.width}px;height:{trackView.pb.height}px" aria-hidden="true">

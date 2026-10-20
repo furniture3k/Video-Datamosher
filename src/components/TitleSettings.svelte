@@ -15,7 +15,7 @@
     store.edit(
       (p) => {
         const l = p.layers.find((x) => x.id === id);
-        if (!l) return;
+        if (l?.kind !== 'text') return;
         if (v === undefined || v === false || v === 0 || v === 'none') delete l[k];
         else l[k] = v;
       },

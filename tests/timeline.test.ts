@@ -1,3 +1,4 @@
+import type { TextLayer } from '../src/engine/layers';
 import { describe, expect, it } from 'vitest';
 import { fileMedia, clipOf } from './helpers';
 import { newProject, type Project } from '../src/engine/types';
@@ -59,9 +60,10 @@ describe('edit operations', () => {
   it('split a title: two halves, word timings follow', () => {
     const p = proj();
     p.layers = [{ id: 'T', kind: 'text', row: 'g1', text: 'a b', start: 1, duration: 2, size: 0.1, color: '#fff', font: 'sans', bold: false, x: 0.5, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: false, anim: 'pop', words: [{ t0: 0, t1: 0.5, text: 'a' }, { t0: 1.2, t1: 1.6, text: 'b' }] }];
-    const b = splitText(p, 'T', 2)!;
+    const b = splitText(p, 'T', 2) as TextLayer;
+    const a = p.layers[0] as TextLayer;
     expect(p.layers.map((t) => [t.start, t.duration])).toEqual([[1, 1], [2, 1]]);
-    expect(p.layers[0].words!.map((w) => w.text)).toEqual(['a']);
+    expect(a.words!.map((w) => w.text)).toEqual(['a']);
     expect(b.words!.map((w) => [w.text, +w.t0.toFixed(6), +w.t1.toFixed(6)])).toEqual([['b', 0.2, 0.6]]);
     expect(b.anim).toBeUndefined();
     expect(splitText(p, 'T', 1.01)).toBeNull();

@@ -77,7 +77,10 @@
   /** the title being typed into on the picture */
   let editing = $state<string | null>(null);
   const round = (v: number, d: number) => Math.round(v * 10 ** d) / 10 ** d;
-  const editingLayer = $derived(editing ? store.project.layers.find((l) => l.id === editing) : undefined);
+  const editingLayer = $derived.by(() => {
+    const l = editing ? store.project.layers.find((x) => x.id === editing) : undefined;
+    return l?.kind === 'text' ? l : undefined;
+  });
   /** where the typing box goes: over the title (stage pixels), at least wide enough to type in */
   const editingBox = $derived.by(() => {
     const it = editing ? items.find((x) => x.id === editing) : undefined;
@@ -221,7 +224,7 @@
       const id = editingLayer!.id;
       store.edit((p) => {
         const l = p.layers.find((x) => x.id === id);
-        if (l) l.text = v;
+        if (l?.kind === 'text') l.text = v;
       }, 'text' + id);
     }}
     onkeydown={(e) => {

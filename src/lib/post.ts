@@ -17,7 +17,7 @@ import { bend, type BendMode, type BendOptions } from '../engine/dsp';
 import { bakeAudio, type MoshAudio } from '../engine/audiofx';
 import { makeRng, hashSeed } from '../engine/rng';
 import type { EffectInstance, Frame, Project } from '../engine/types';
-import type { TextLayer } from '../engine/layers';
+import { isEmpty, type Layer } from '../engine/layers';
 import { anyLayerAt, drawLayers } from './layers';
 import { ensureFonts } from './fonts.svelte';
 import { Cancelled } from './ffmpeg';
@@ -368,7 +368,7 @@ export class PostProcessor {
 export class PostRunner {
   private pp: PostProcessor | null = null;
   private effects: EffectInstance[];
-  private layers: TextLayer[];
+  private layers: Layer[];
   private fps: number;
   private c2d: HTMLCanvasElement | null = null;
   /** Subject Guards on a tracked object: its path on the timeline and the box's size */
@@ -400,7 +400,7 @@ export class PostRunner {
       const legacy: [number, number] = [(2 * old) / 1.4, (2 * old * w) / h / 1.4];
       if (pts.length) this.paths.set(e.id, { pts, size: pathSize(project, c, gp.pathId) ?? legacy });
     }
-    this.layers = withTexts ? (project.layers ?? []).filter((t) => !t.moshed && t.text.trim()) : [];
+    this.layers = withTexts ? (project.layers ?? []).filter((t) => !t.moshed && !isEmpty(t)) : [];
     this.fps = project.encoder.fps;
   }
   get active() {

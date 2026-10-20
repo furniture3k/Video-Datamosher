@@ -564,6 +564,64 @@ await step('fonts: a font file and a Google Font, put on the title, loaded befor
   }
 });
 
+await step('shapes: add a box from the toolbar, it is drawn and scales with the handles; draw a line with the pen', async () => {
+  await S(() => {
+    const st = window.__moshpit.store;
+    st.setPref('view', 'edit');
+    st.ui.playing = false;
+    st.seek(1);
+    st.selectClip(null);
+  });
+  const before = await S(() => window.__moshpit.store.project.layers.map((l) => l.id));
+  const now = await S(() => window.__moshpit.store.ui.time);
+  await page.getByRole('button', { name: 'Shape', exact: true }).click();
+  await page.getByRole('button', { name: 'Add box' }).click();
+  const box = await S((before) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.find((l) => !before.includes(l.id)))), before);
+  try {
+    if (box?.kind !== 'shape' || box.shape !== 'rect' || Math.abs(box.start - now) > 1e-6) throw new Error('no box at the playhead: ' + JSON.stringify(box));
+    if (JSON.stringify(await S(() => window.__moshpit.store.ui.selectedClips)) !== JSON.stringify([box.id])) throw new Error('the new box is not selected');
+    await page.locator('.tabs button', { hasText: 'Clip' }).click();
+    await page.getByRole('button', { name: 'Delete shape' }).waitFor({ timeout: 3000 });
+    // a thick, filled green box, drawn at once: its middle is green on the preview
+    await S((id) => window.__moshpit.store.edit((p) => Object.assign(p.layers.find((l) => l.id === id), { color: '#00ff00', fill: '#00ff00', drawOn: 0, width: 0.02 })), box.id);
+    await page.waitForTimeout(400);
+    const green = await S(() => {
+      const cv = document.querySelector('.stage canvas.edit');
+      const g = cv.getContext('2d');
+      const d = g.getImageData(Math.floor(cv.width / 2) - 2, Math.floor(cv.height / 2) - 2, 4, 4).data;
+      return d[1] > 200 && d[0] < 60 && d[2] < 60;
+    });
+    if (!green) throw new Error('the box is not drawn on the preview');
+    // drag a corner outwards: both sides grow, in one undo step
+    const undo0 = await S(() => window.__moshpit.store.historySize.undo);
+    await dragBy(await page.locator('circle.corner').nth(2).boundingBox(), 40, 40);
+    const big = await layerOf(box.id);
+    if (!(big.w > box.w * 1.1 && big.h > box.h * 1.1) || Math.abs(big.w / big.h - box.w / box.h) > 0.01) throw new Error('scale: ' + JSON.stringify([box.w, box.h, big.w, big.h]));
+    if ((await S(() => window.__moshpit.store.historySize.undo)) - undo0 !== 1) throw new Error('scaling was not one undo step');
+    // the kind can change in the inspector
+    await page.getByRole('button', { name: 'Circle', exact: true }).click();
+    if ((await layerOf(box.id)).shape !== 'circle') throw new Error('the kind did not change');
+  } finally {
+    await dropLayer(box.id);
+  }
+  // the pen: draw a stroke on the picture (with something on the timeline, so there's a picture)
+  await handleTitle('penbg', { y: 0.9, size: 0.05 });
+  await page.getByRole('button', { name: 'Shape', exact: true }).click();
+  await page.getByRole('button', { name: 'Draw with the pen' }).click();
+  if (!(await S(() => window.__moshpit.store.ui.pen))) throw new Error('the pen is not on');
+  const st = await page.locator('.stage').boundingBox();
+  await page.mouse.move(st.x + st.width * 0.4, st.y + st.height * 0.4);
+  await page.mouse.down();
+  for (let i = 1; i <= 10; i++) await page.mouse.move(st.x + st.width * (0.4 + i * 0.02), st.y + st.height * (0.4 + Math.sin(i / 2) * 0.05));
+  await page.mouse.up();
+  const pen = await S(() => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.at(-1))));
+  await dropLayer(pen.id);
+  await dropLayer('penbg');
+  if (pen.kind !== 'shape' || pen.shape !== 'pen' || !(pen.points?.length >= 5)) throw new Error('no pen stroke: ' + JSON.stringify(pen));
+  if (await S(() => window.__moshpit.store.ui.pen)) throw new Error('the pen stays on after a stroke');
+  await S(() => window.__moshpit.store.setPref('view', 'auto'));
+});
+
 await step('editor: edit view plays and keeps time', async () => {
   await S(() => window.__moshpit.store.setPref('view', 'edit'));
   await S(() => window.__moshpit.store.seek(0));
@@ -960,6 +1018,16 @@ await step('analysis: track an object, title follows, stabilize', async () => {
   await page.locator('.pathrow').getByRole('button', { name: 'Title follows' }).click();
   const tx = await S(() => window.__moshpit.store.project.layers.at(-1));
   if (!tx.follow?.length) throw new Error('title does not follow');
+  // mark it: a box, an arrow and a label, all following it
+  const n0 = await S(() => window.__moshpit.store.project.layers.length);
+  await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
+  await page.locator('.pathrow').getByRole('button', { name: 'Mark it' }).click();
+  const marks = await S((n0) => JSON.parse(JSON.stringify(window.__moshpit.store.project.layers.slice(n0))), n0);
+  if (marks.map((l) => l.shape ?? l.kind).join() !== 'rect,arrow,text' || marks.some((l) => !(l.follow?.length > 1))) throw new Error('marks: ' + JSON.stringify(marks.map((l) => [l.kind, l.shape, l.follow?.length])));
+  // the box moves right with the pattern
+  const fb = marks[0].follow;
+  if (!(fb.at(-1)[1] - fb[0][1] > 0.3)) throw new Error('the box does not follow the pattern: ' + JSON.stringify([fb[0], fb.at(-1)]));
+  await S((ids) => window.__moshpit.store.edit((p) => (p.layers = p.layers.filter((l) => !ids.includes(l.id)))), marks.map((l) => l.id));
   // (the new title is selected now: back to the clip)
   await S((id) => (window.__moshpit.store.ui.selectedClips = [id]), id);
   await page.getByRole('button', { name: 'Stabilize', exact: true }).click();
@@ -1467,6 +1535,19 @@ await step('phone layout: mobile editor, timeline and tool sheets usable', async
   await page.waitForFunction(({ id, n }) => (window.__moshpit.store.project.clips.find((c) => c.id === id).paths?.length ?? 0) > n || window.__moshpit.store.toasts.some((t) => t.kind === 'error'), { id: tid, n: paths0 }, { timeout: 60000 });
   const err = await S(() => window.__moshpit.store.toasts.find((t) => t.kind === 'error')?.text);
   if (err) throw new Error('phone tracking: ' + err);
+  // marking from the phone tools: arm it, drag a box, a box, arrow and label are added
+  const nl = await S(() => window.__moshpit.store.project.layers.length);
+  await page.locator('.tools .tool', { hasText: 'Mark it' }).click();
+  await page.locator('.picknote').waitFor();
+  await page.mouse.move(st.x + st.width * 0.4, st.y + st.height * 0.35);
+  await page.mouse.down();
+  await page.mouse.move(st.x + st.width * 0.6, st.y + st.height * 0.65, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForFunction((n) => window.__moshpit.store.project.layers.length >= n + 3 || window.__moshpit.store.toasts.some((t) => t.kind === 'error'), nl, { timeout: 60000 });
+  const merr = await S(() => window.__moshpit.store.toasts.find((t) => t.kind === 'error')?.text);
+  if (merr) throw new Error('phone marking: ' + merr);
+  await S((n) => window.__moshpit.store.edit((p) => (p.layers = p.layers.slice(0, n))), nl);
+  if (!(await S(() => window.__moshpit.store.selectedClip))) await S((id) => window.__moshpit.store.selectClip(id), tid);
   await page.locator('.tools .back').click();
   await page.locator('.tools .tool', { hasText: 'Media' }).click();
   await page.locator('.sheet').waitFor();

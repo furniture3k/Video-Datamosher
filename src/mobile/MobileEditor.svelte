@@ -27,10 +27,11 @@
   import Logo from '../components/Logo.svelte';
   import MobileTimeline from './MobileTimeline.svelte';
   import Sheet from './Sheet.svelte';
+  import ShapePicker from '../components/ShapePicker.svelte';
 
   let { onchaos }: { onchaos: () => void } = $props();
 
-  type SheetId = 'media' | 'effects' | 'fx' | 'clip' | 'speed' | 'volume' | 'transition' | 'look' | 'audio' | 'chaos' | 'menu';
+  type SheetId = 'media' | 'effects' | 'fx' | 'clip' | 'speed' | 'volume' | 'transition' | 'look' | 'audio' | 'chaos' | 'menu' | 'shapes';
   let sheet = $state<SheetId | null>(null);
   let fileInput: HTMLInputElement;
   let audioInput: HTMLInputElement;
@@ -54,6 +55,7 @@
     audio: 'Audio & beats',
     chaos: 'Chaos',
     menu: 'moshpit',
+    shapes: 'Add a shape',
   };
 
   async function pick(files: FileList | null) {
@@ -221,6 +223,8 @@
               <button onclick={() => (store.ui.dialog = 'snapshots')}><Icon name="history" />Snapshots</button>
             </div>
           </div>
+        {:else if sheet === 'shapes'}
+          <ShapePicker onpick={() => (sheet = null)} />
         {:else if sheet === 'menu'}
           <div class="menu">
             <button onclick={() => ((sheet = null), goHome())}><Icon name="grid" />All projects</button>
@@ -265,6 +269,7 @@
         <button class="tool" onclick={() => (sheet = 'chaos')}><Icon name="speed" size={22} /><span>Chaos</span></button>
         <button class="tool" onclick={() => (sheet = 'effects')}><Icon name="fx" size={22} /><span>Effects{store.project.effects.length ? ` ${store.project.effects.length}` : ''}</span></button>
         <button class="tool" onclick={() => edit.addText()}><Icon name="text" size={22} /><span>Text</span></button>
+        <button class="tool" class:hot={store.ui.pen || store.ui.trackThen === 'mark'} onclick={() => (sheet = 'shapes')}><Icon name="shape" size={22} /><span>Shape</span></button>
         <button class="tool" disabled={!hasClips} onclick={() => (store.ui.dialog = 'wordBeats')}><Icon name="music" size={22} /><span>Words</span></button>
         <button class="tool" onclick={() => audioInput.click()}><Icon name="music" size={22} /><span>Music</span></button>
         <button class="tool" disabled={layoutVideo(store.project).length < 2} onclick={() => edit.transitionAtPlayhead('melt')}><Icon name="transition" size={22} /><span>Melt cut</span></button>
@@ -280,6 +285,7 @@
           <button class="tool" onclick={() => edit.freezeAtPlayhead()}><Icon name="freeze" size={22} /><span>Freeze</span></button>
           {#if canAnalyse}
             <button class="tool" class:hot={store.ui.trackPick === clip?.id} disabled={motionJob.running} onclick={track}><Icon name="target" size={22} /><span>{motionJob.running && motionJob.stage === 'Tracking' ? 'Tracking…' : store.ui.trackPick === clip?.id ? 'Cancel' : 'Track'}</span></button>
+            <button class="tool" class:hot={store.ui.trackThen === 'mark'} disabled={motionJob.running} onclick={() => toggleTrackPick(clip!.id, store.ui.trackThen === 'mark' ? null : 'mark')}><Icon name="shape" size={22} /><span>{store.ui.trackThen === 'mark' ? 'Cancel' : 'Mark it'}</span></button>
             <button class="tool" disabled={motionJob.running} onclick={() => stabilizeClip(clip!.id).catch((e) => store.toast('Stabilize failed: ' + (e as Error).message, 'error'))}><Icon name="steady" size={22} /><span>{motionJob.running && motionJob.stage !== 'Tracking' ? 'Steadying…' : clip?.stab ? 'Re-stabilize' : 'Stabilize'}</span></button>
           {/if}
         {/if}

@@ -68,7 +68,7 @@ export function loadFont(f: FontRef): Promise<boolean> {
 
 /** Load every font the project's titles use (before drawing them into an export). */
 export async function ensureFonts(p: Pick<Project, 'fonts' | 'layers'>): Promise<void> {
-  const used = new Set(p.layers.map((l) => fontId(l.font)).filter((x): x is string => !!x));
+  const used = new Set(p.layers.flatMap((l) => (l.kind === 'text' ? [fontId(l.font)] : [])).filter((x): x is string => !!x));
   await Promise.all((p.fonts ?? []).filter((f) => used.has(f.id)).map(loadFont));
 }
 

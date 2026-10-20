@@ -2,13 +2,15 @@
 import { store } from './store.svelte';
 import { clipFrames } from './analysis';
 import { trackBox, stabilize, simplify, type Gray, type Stabilized, type TrackPoint } from '../engine/track';
-import { clipLen, layoutVideo, localTime, sourceTime, mediaOf } from '../engine/timeline';
+import { clipLen, layers, layoutVideo, localTime, sourceTime, mediaOf } from '../engine/timeline';
 import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
 import { uid } from '../engine/presets';
 import { VIDEO_TRACK, type Clip, type Project } from '../engine/types';
 import { FIRST_ROW, type TextLayer } from '../engine/layers';
 import type { TrackJob } from './track.worker';
+import { markLayers } from '../engine/annotate';
+import { shapeLook } from './edit';
 
 export const motionJob = $state({ running: false, stage: '' });
 
@@ -106,9 +108,13 @@ export async function stabilizeClip(id: string, strength = 20) {
   store.toast(`Stabilized (zoomed in ${Math.round((stab.zoom - 1) * 100)}% to hide the edges).`, 'ok');
 }
 
-/** Start (or stop) drawing a box to track on the player, with the playhead on the clip. */
-export function toggleTrackPick(id: string) {
-  if (store.ui.trackPick === id) return void (store.ui.trackPick = null);
+/**
+ * Start (or stop) drawing a box to track on the player, with the playhead on the clip. `then`:
+ * 'mark' adds a box, an arrow and a label that follow it once it's tracked.
+ */
+export function toggleTrackPick(id: string, then: 'mark' | null = null) {
+  store.ui.trackThen = then;
+  if (store.ui.trackPick === id) return void ((store.ui.trackPick = null), (store.ui.trackThen = null));
   const c = store.project.clips.find((x) => x.id === id);
   if (!c) return;
   store.ui.playing = false;
@@ -123,7 +129,7 @@ export function toggleTrackPick(id: string) {
  * Track the box drawn on the player (u0,v0 → u1,v1 as shares of the output frame) through the
  * selected clip, from the playhead forwards and backwards. The path is stored on the clip.
  */
-export async function trackClip(id: string, box: [number, number, number, number]) {
+export async function trackClip(id: string, box: [number, number, number, number], then: 'mark' | null = null): Promise<string | void> {
   const p = $state.snapshot(store.project) as Project;
   const c = p.clips.find((x) => x.id === id);
   const m = c && mediaOf(p, c.mediaId);
@@ -159,10 +165,15 @@ export async function trackClip(id: string, box: [number, number, number, number
   const { pts } = res;
   if (pts.length < 2) return store.toast('Could not follow that: draw the box snugly around something with detail (an edge, a pattern, a face).', 'error');
   const name = `Track ${(c.paths?.length ?? 0) + 1}`;
+  const pathId = uid();
   store.edit((q) => {
     const x = q.clips.find((y) => y.id === id);
-    if (x) x.paths = [...(x.paths ?? []), { id: uid(), name, pts, size: [Math.round((u1 - u0) * 1e4) / 1e4, Math.round((v1 - v0) * 1e4) / 1e4] }];
+    if (x) x.paths = [...(x.paths ?? []), { id: pathId, name, pts, size: [Math.round((u1 - u0) * 1e4) / 1e4, Math.round((v1 - v0) * 1e4) / 1e4] }];
   });
+  if (then === 'mark') {
+    markTracked(id, pathId, box[2] - box[0], box[3] - box[1]);
+    return pathId;
+  }
   const got = pts[pts.length - 1][0] - pts[0][0];
   if (res.whole) store.toast(`${name}: followed it through the whole clip.`, 'ok');
   else store.toast(`${name}: followed it for ${got.toFixed(1)} s of ${res.len.toFixed(1)} s, then lost it (hidden, blurred or out of frame).`, 'info', 5000);
@@ -241,6 +252,42 @@ export function titleFollows(clipId: string, pathId: string) {
   store.edit((q) => q.layers.push(tx));
   store.ui.selectedClips = [tx.id];
   store.toast('Added a title that follows it: change its words in the inspector.', 'ok');
+}
+
+/** The video clip on top at the playhead that can be tracked (stills and freeze frames can't). */
+export function trackableAt(t: number): Clip | undefined {
+  const p = store.project;
+  const ok = (c: Clip) => {
+    const m = mediaOf(p, c.mediaId);
+    return !!m && m.source.kind === 'file' && !m.source.isImage && !!m.hasVideo && !c.freeze;
+  };
+  const upper = layers(p).filter((l) => t >= l.start && t < l.end && ok(l.clip));
+  if (upper.length) return upper[upper.length - 1].clip;
+  return layoutVideo(p).find((pl) => t >= pl.start && t < pl.end && ok(pl.clip))?.clip;
+}
+
+/** Mark something moving: draw a box round it on the player, then it's tracked, boxed, arrowed and labelled. */
+export function startMark() {
+  if (store.ui.trackPick) return void ((store.ui.trackPick = null), (store.ui.trackThen = null));
+  const c = trackableAt(store.ui.time);
+  if (!c) return store.toast('Put the playhead on a video clip first: the mark follows something in it.', 'error');
+  toggleTrackPick(c.id, 'mark');
+}
+
+/** Mark a tracked object: a box round it (`bw`×`bh` of the frame), an arrow at it and a label, all following it. */
+export function markTracked(clipId: string, pathId: string, bw?: number, bh?: number) {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  if (!c) return;
+  // a path tracked earlier: the size of its box on screen
+  if (bw === undefined || bh === undefined) [bw, bh] = pathSize(p, c, pathId) ?? [0.2, 0.2];
+  const follow = pathOnTimeline(p, c, pathId);
+  if (!follow.length) return store.toast('That track is in a part of the clip that has been trimmed off.', 'error');
+  const { w, h } = outputSize(p, p.encoder.previewWidth);
+  const marks = markLayers(follow, Math.abs(bw), Math.abs(bh), w / h, shapeLook(), p.layers, uid);
+  store.edit((q) => q.layers.push(...marks));
+  store.ui.selectedClips = [marks[marks.length - 1].id];
+  store.toast('Marked it: a box, an arrow and a label that follow it. Double-click the label to change it.', 'ok', 5000);
 }
 
 /** Make a clip on a track above move with a tracked path (its position keyframes). */

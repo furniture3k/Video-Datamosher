@@ -2,6 +2,7 @@
 import { askText } from './ask';
 import { store } from './store.svelte';
 import * as edit from './edit';
+import { startMark } from './motion.svelte';
 import { chaos, mutate } from '../engine/presets';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
@@ -141,6 +142,11 @@ const ACTIONS: Record<string, Action> = {
     },
   },
   'beat-edit': { run: dialog('beatEdit'), when: () => store.project.clips.length > 0 },
+  'add-box': { run: () => void edit.addShape('rect') },
+  'add-circle': { run: () => void edit.addShape('circle') },
+  'add-arrow': { run: () => void edit.addShape('arrow') },
+  pen: { run: () => void (store.ui.pen = true), when: hasClips },
+  mark: { run: () => startMark(), when: hasClips },
   'word-beats': { run: dialog('wordBeats'), when: hasClips },
   bake: { run: dialog('bake'), when: hasClips },
   captions: { run: dialog('captions'), when: hasClips },

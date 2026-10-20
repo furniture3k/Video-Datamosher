@@ -53,6 +53,7 @@
     help: '<circle cx="8" cy="8" r="6"/><path d="M6.3 6.3a1.8 1.8 0 1 1 2.4 1.7c-.5.2-.7.6-.7 1.1v.4M8 11.5v.2"/>',
     folder: '<path d="M2 4.5V12.5h12V6H8L6.5 4.5z"/>',
     history: '<path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9M2.5 2.5v2.5H5M8 5v3.2l2 1.3"/>',
+    shape: '<rect x="2.5" y="6.5" width="7" height="7"/><circle cx="10.5" cy="5.5" r="3"/>',
     pen: '<path d="M10.5 2.5l3 3L6 13H3v-3z"/>',
     save: '<path d="M3 2.5h8l2 2v9H3zM5.5 2.5v3.5h5V2.5M5.5 13.5V10h5v3.5"/>',
     link: '<path d="M6.5 9.5l3-3M7 4.5l1-1a2.8 2.8 0 0 1 4 4l-1 1M9 11.5l-1 1a2.8 2.8 0 0 1-4-4l1-1"/>',

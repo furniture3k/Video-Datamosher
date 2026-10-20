@@ -100,12 +100,12 @@ unlocks, where it goes in the code, and when it counts as done.
 - [ ] Text behind subject (needs F5 + P2).
 
 ### Shapes and annotations (new layer kinds)
-- [ ] Shapes: rectangle, rounded rect, circle, triangle, polygon, star, line, arrow (styles:
+- [x] Shapes *(M5: `src/engine/shapes.ts`, a `shape` layer kind; polygons, the leader line with end squares and the callout are still to do)*: rectangle, rounded rect, circle, triangle, polygon, star, line, arrow (styles:
   straight, curved, hand-drawn), leader line with end squares (R9), bracket, underline,
   highlighter, nested-repeat (the "tunnel" of boxes in R7), freehand pen.
-- [ ] **Draw-on** (lines grow, boxes trace themselves) and **boil** (a slight per-frame wobble,
+- [x] **Draw-on** (lines grow, boxes trace themselves) and **boil** (a slight per-frame wobble,
   2–3 variants cycling, R9).
-- [ ] **Annotate tool.** Tap an object → a box snaps around it and tracks it (existing tracker) →
+- [x] **Annotate tool.** *(M5: "Mark something moving": drag a box round it, and a box, an arrow and a typing label follow it, as three layers on their own rows; they aren't a group yet.)* Tap an object → a box snaps around it and tracks it (existing tracker) →
   drag out from the box to make an arrow → type a label. One gesture makes a box, an arrow and a label as a
   group.
 - [ ] **Callout** = image/box + leader line + title + small print (product name and price in R4,

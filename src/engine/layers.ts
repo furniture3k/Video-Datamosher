@@ -3,7 +3,7 @@
 
 export type TextAnim = 'none' | 'type' | 'words' | 'glitch' | 'slide' | 'pop' | 'slam' | 'stamp' | 'drop';
 
-export type LayerKind = 'text';
+export type LayerKind = 'text' | 'shape';
 
 export type BuiltinFont = 'sans' | 'serif' | 'mono' | 'impact';
 
@@ -19,6 +19,15 @@ interface LayerBase {
   duration: number;
   /** burn into the video before moshing so it melts too */
   moshed: boolean;
+  /** its position (centre), 0..1 of the frame */
+  x: number;
+  y: number;
+  /** degrees clockwise, about its position */
+  rotate?: number;
+  /** fade in and out (s) */
+  fade: number;
+  /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
+  follow?: [number, number, number][];
 }
 
 export interface TextLayer extends LayerBase {
@@ -30,23 +39,15 @@ export interface TextLayer extends LayerBase {
   /** a built-in typeface, or a font added to the project ("font:" and its id) */
   font: BuiltinFont | `font:${string}`;
   bold: boolean;
-  /** position of the text centre, 0..1 */
-  x: number;
-  y: number;
-  /** degrees clockwise, about its position */
-  rotate?: number;
   align: 'left' | 'center' | 'right';
   shadow: boolean;
   box: boolean;
-  fade: number;
   /** made by auto captions */
   caption?: boolean;
   /** word timings (seconds from the title's start), for word-by-word highlighting */
   words?: { t0: number; t1: number; text: string }[];
   /** colour of the word being spoken */
   highlight?: string;
-  /** follow a tracked object: [timeline seconds, x 0..1, y 0..1] */
-  follow?: [number, number, number][];
   /** how it comes in */
   anim?: TextAnim;
   /** how long it takes to come in (s) */
@@ -76,9 +77,41 @@ export interface TextLayer extends LayerBase {
   boil?: number;
 }
 
-export type Layer = TextLayer;
+export type ShapeKind = 'rect' | 'round' | 'circle' | 'triangle' | 'star' | 'line' | 'arrow' | 'bracket' | 'underline' | 'highlight' | 'pen' | 'tunnel';
+
+/** A drawn shape: boxes, circles, arrows, lines, a freehand stroke… for marking things up. */
+export interface ShapeLayer extends LayerBase {
+  kind: 'shape';
+  shape: ShapeKind;
+  /** size, as shares of the frame's width and height (lines and arrows go corner to corner) */
+  w: number;
+  h: number;
+  /** line colour and width (a share of the frame height) */
+  color: string;
+  width: number;
+  /** filled inside, in this colour */
+  fill?: string;
+  /** a soft glow in the line colour, 0..1 */
+  glow?: number;
+  /** draws itself on over this many seconds */
+  drawOn?: number;
+  /** a hand-drawn wobble, 0..1 */
+  boil?: number;
+  /** tunnel: how many boxes, one inside another */
+  count?: number;
+  /** arrow: size of its head, as a share of its length */
+  head?: number;
+  /** arrow and line: how much it bows out to one side (−1..1) */
+  bend?: number;
+  /** pen: the stroke, in the shape's box (−0.5..0.5 each way) */
+  points?: [number, number][];
+}
+
+export type Layer = TextLayer | ShapeLayer;
 
 export const FIRST_ROW = 'g1';
+
+export const isText = (l: Layer): l is TextLayer => l.kind === 'text';
 
 /** Row number of a row id ('g3' → 3); unknown ids sort first. */
 export const rowIndex = (row: string) => Number(/^g(\d+)$/.exec(row)?.[1] ?? 0);
@@ -125,14 +158,23 @@ export function layerPos(l: Layer, t: number): [number, number] {
 }
 
 /** A layer that has nothing to draw. */
-export const isEmpty = (l: Layer) => !l.text.trim();
+export const isEmpty = (l: Layer) => (l.kind === 'text' ? !l.text.trim() : l.shape === 'pen' && (l.points?.length ?? 0) < 2);
 
 /**
  * True when the layer looks the same at every moment it's on screen apart from its fades, so a
  * single picture of it can stand in for every frame (fades are applied on top of that picture).
  */
-export const isStill = (l: Layer) =>
-  !l.follow?.length && (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
+export function isStill(l: Layer): boolean {
+  if (l.follow?.length) return false;
+  if (l.kind === 'shape') return !l.drawOn && !l.boil;
+  return (!l.anim || l.anim === 'none') && (!l.exit || l.exit === 'none') && !(l.words?.length && l.highlight) && !l.strobe && !l.boil && !(l.repeat && l.scroll);
+}
 
 /** Layers on screen at some point in [t0, t1). */
 export const layersIn = <L extends Pick<Layer, 'start' | 'duration'>>(layers: L[], t0: number, t1: number) => layers.filter((l) => l.start < t1 && layerEnd(l) > t0);
+
+/** The lowest row with nothing on it between t0 and t1 (a new row on top when every row is busy). */
+export function freeRow(layers: Layer[], t0: number, t1: number): string {
+  for (const row of layerRows(layers)) if (!layersIn(layers.filter((l) => l.row === row), t0, t1).length) return row;
+  return nextRow(layers);
+}

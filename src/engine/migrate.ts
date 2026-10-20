@@ -1,6 +1,6 @@
 // Bring saved projects (autosave, project files) up to the current format.
 import { CLIP_AUDIO, VIDEO_TRACK, defaultTracks, newProject, type Clip, type EffectInstance, type MediaItem, type Project, type Sequence } from './types';
-import { FIRST_ROW, type Layer } from './layers';
+import { FIRST_ROW, type Layer, type TextLayer } from './layers';
 
 interface V1Clip {
   id: string;
@@ -58,11 +58,11 @@ function fromV1(p: Record<string, unknown>): Project {
   } as Project;
 }
 
-type V2Text = Omit<Layer, 'kind' | 'row'>;
+type V2Text = Omit<TextLayer, 'kind' | 'row'>;
 type V2Sequence = Omit<Sequence, 'layers'> & { texts?: V2Text[]; layers?: Layer[] };
 
 /** v2 kept titles in `texts`; v3 keeps them (and other graphics) as layers on graphics rows. */
-const textsToLayers = (texts: V2Text[] | undefined): Layer[] => (texts ?? []).map((t) => ({ ...t, kind: 'text', row: FIRST_ROW }));
+const textsToLayers = (texts: V2Text[] | undefined): Layer[] => (texts ?? []).map((t) => ({ ...t, kind: 'text', row: FIRST_ROW }) as Layer);
 
 function sequenceToV3(seq: V2Sequence): Sequence {
   const { texts, ...rest } = seq;
