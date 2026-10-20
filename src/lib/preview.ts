@@ -4,7 +4,8 @@ import { getFile } from './storage';
 import { mediaState } from './mediastate.svelte';
 import { getPcm } from './media';
 import { proxyKey } from './renderer';
-import { drawLayers } from './layers';
+import { drawLayers, drawWarpedImage } from './layers';
+import { screenCorners } from '../engine/screen';
 import { drawCanvas } from './canvas';
 import { hasCanvas } from '../engine/canvas';
 import { layoutVideo, sourceTime, speedAt, audioSources, layers, baseHidden, BLEND_TRANSITIONS, type Placed } from '../engine/timeline';
@@ -365,7 +366,9 @@ export class EditPreview {
     const T = { ...T0, x: keyedValue(c.keys, 'x', local, T0.x), y: keyedValue(c.keys, 'y', local, T0.y), zoom: keyedValue(c.keys, 'zoom', local, T0.zoom), rotate: keyedValue(c.keys, 'rotate', local, T0.rotate) };
     const G = gradeOf(c);
     const keyed = !!c.key && c.track !== 'v1' && !this.noKey;
-    const [x, y, dw, dh] = this.rect(img, c.fit, w, h);
+    // a picture put on a tracked surface fills the frame (the surface's corners place it)
+    const scr = c.screen && c.track !== 'v1' ? screenCorners(c.screen, local, w, h) : null;
+    const [x, y, dw, dh] = this.rect(img, scr ? 'stretch' : c.fit, w, h);
     // colour correction and keying on the GPU when it can (then the picture draws like any other)
     let pic = img;
     let graded = !isIdentityGrade(G) || keyed;
@@ -395,33 +398,36 @@ export class EditPreview {
     }
     target.save();
     if (dx) target.translate(dx, 0);
-    if (!isIdentityTransform(T)) {
-      target.translate(w / 2 + T.x * w, h / 2 + T.y * h);
-      target.rotate((T.rotate * Math.PI) / 180);
-      target.scale(T.zoom * (T.flipH ? -1 : 1), T.zoom * (T.flipV ? -1 : 1));
-      target.translate(-w / 2, -h / 2);
-      if (T.cropL || T.cropR || T.cropT || T.cropB) {
-        target.beginPath();
-        target.rect(w * T.cropL, h * T.cropT, w * Math.max(0, 1 - T.cropL - T.cropR), h * Math.max(0, 1 - T.cropT - T.cropB));
-        target.clip();
+    if (scr) this.warpOnto(target, pic, scr, w, h);
+    else {
+      if (!isIdentityTransform(T)) {
+        target.translate(w / 2 + T.x * w, h / 2 + T.y * h);
+        target.rotate((T.rotate * Math.PI) / 180);
+        target.scale(T.zoom * (T.flipH ? -1 : 1), T.zoom * (T.flipV ? -1 : 1));
+        target.translate(-w / 2, -h / 2);
+        if (T.cropL || T.cropR || T.cropT || T.cropB) {
+          target.beginPath();
+          target.rect(w * T.cropL, h * T.cropT, w * Math.max(0, 1 - T.cropL - T.cropR), h * Math.max(0, 1 - T.cropT - T.cropB));
+          target.clip();
+        }
       }
-    }
-    if (c.stab && !c.freeze) {
-      // stabilization: zoom in, then shift and turn by the correction at this source time
-      const st = sourceTime(c, local);
-      const z = Math.max(1, Math.min(1.5, c.stab.zoom));
-      target.beginPath();
-      target.rect(x, y, dw, dh);
-      target.clip();
-      target.translate(x + dw / 2 + linearAt(c.stab.x, st) * dw * z, y + dh / 2 + linearAt(c.stab.y, st) * dh * z);
-      target.rotate((linearAt(c.stab.r, st) * Math.PI) / 180);
-      target.scale(z, z);
-      target.translate(-(x + dw / 2), -(y + dh / 2));
-    }
-    try {
-      target.drawImage(pic, x, y, dw, dh);
-    } catch {
-      /* not ready */
+      if (c.stab && !c.freeze) {
+        // stabilization: zoom in, then shift and turn by the correction at this source time
+        const st = sourceTime(c, local);
+        const z = Math.max(1, Math.min(1.5, c.stab.zoom));
+        target.beginPath();
+        target.rect(x, y, dw, dh);
+        target.clip();
+        target.translate(x + dw / 2 + linearAt(c.stab.x, st) * dw * z, y + dh / 2 + linearAt(c.stab.y, st) * dh * z);
+        target.rotate((linearAt(c.stab.r, st) * Math.PI) / 180);
+        target.scale(z, z);
+        target.translate(-(x + dw / 2), -(y + dh / 2));
+      }
+      try {
+        target.drawImage(pic, x, y, dw, dh);
+      } catch {
+        /* not ready */
+      }
     }
     target.restore();
     if (!graded) return ctx.restore();
@@ -440,6 +446,17 @@ export class EditPreview {
     ctx.globalCompositeOperation = op;
     ctx.drawImage(this.graded, 0, 0);
     ctx.restore();
+  }
+
+  /** A clip's picture put onto the surface it is pinned to (its four corners, in frame pixels). */
+  private warpOnto(ctx: CanvasRenderingContext2D, img: CanvasImageSource, quad: number[], w: number, h: number) {
+    // (the graded picture is a canvas of its own size; a video or image says its own)
+    const [iw, ih] = img instanceof HTMLCanvasElement || img instanceof OffscreenCanvas ? [img.width, img.height] : this.dims(img, w, h);
+    try {
+      drawWarpedImage(ctx, img, iw, ih, quad);
+    } catch {
+      /* not ready */
+    }
   }
 
   /** Adjustment layer: re-grade everything drawn so far, mixed in at `alpha`. */

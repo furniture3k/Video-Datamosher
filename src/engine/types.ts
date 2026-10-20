@@ -210,6 +210,8 @@ export interface Clip {
   paths?: { id: string; name: string; pts: [number, number, number][]; size?: [number, number] }[];
   /** tracked surfaces (a screen, a wall, a sign): [source seconds, then the four corners x,y … as shares of the source picture] */
   planes?: { id: string; name: string; quads: number[][] }[];
+  /** upper tracks: the picture is carried onto a tracked surface (a screen, a sign) instead of being placed by its transform */
+  screen?: import('./screen').Screen;
   /** stabilization: corrections over source seconds (shift as shares of the frame, rotation in °), and the zoom that hides the edges */
   stab?: { x: [number, number][]; y: [number, number][]; r: [number, number][]; zoom: number };
 }

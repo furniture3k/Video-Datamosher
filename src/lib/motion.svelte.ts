@@ -3,6 +3,7 @@ import { store } from './store.svelte';
 import { clipFrames } from './analysis';
 import { trackBox, stabilize, simplify, type Gray, type Stabilized, type TrackPoint } from '../engine/track';
 import { trackPlane, simplifyKeys, quadAt, type PlaneFrame } from '../engine/planar';
+import { screenFromPlane } from '../engine/screen';
 import { clipLen, layers, layoutVideo, localTime, sourceTime, mediaOf } from '../engine/timeline';
 import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
@@ -316,6 +317,37 @@ export function pinToSurface(layerIds: string[], clipId: string, planeId: string
     }
   });
   store.toast(layerIds.length > 1 ? `Pinned ${layerIds.length} layers to the surface.` : 'Pinned to the surface: it moves, turns and leans with it.', 'ok');
+}
+
+/**
+ * Put a clip on an upper track onto a tracked surface: its whole picture is carried to the
+ * surface's corners (cropped, not squashed, to the surface's shape at the playhead), frame by frame.
+ */
+export function putClipOnSurface(clipId: string, planeClipId: string, planeId: string) {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === clipId);
+  const pc = p.clips.find((x) => x.id === planeClipId);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !pc || !m) return;
+  if (c.track === VIDEO_TRACK) return store.toast('Put the clip on a track above the main one first: it is laid over the surface.', 'error');
+  const quads = planeOnTimeline(p, pc, planeId);
+  const { w, h } = outputSize(p, p.encoder.previewWidth);
+  const refT = Math.max(c.start, Math.min(c.start + clipLen(c), store.ui.time));
+  const screen = screenFromPlane(quads, c.start, w, h, (m.width || 16) / (m.height || 9), refT);
+  if (!screen) return store.toast('That surface is in a part of the clip that has been trimmed off.', 'error');
+  store.edit((q) => {
+    const x = q.clips.find((y) => y.id === clipId);
+    if (x) x.screen = screen;
+  });
+  store.toast('The clip now plays on the surface and follows it.', 'ok');
+}
+
+/** Take a clip off its surface (it goes back to being placed by its own position, zoom and turn). */
+export function takeClipOffSurface(clipId: string) {
+  store.edit((q) => {
+    const x = q.clips.find((y) => y.id === clipId);
+    if (x) delete x.screen;
+  });
 }
 
 /** A title on a tracked surface: laid across the surface as it is at the playhead, and pinned to it. */

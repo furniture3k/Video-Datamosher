@@ -1,8 +1,8 @@
 // The graphics renderer: draws layers over the picture the same way everywhere they appear (the
 // edit preview, clean layers on the mosh and in exports, and layers burned in before moshing).
 import { drawOrder, layerAlpha, layerPos, surfaceMatrix, trailSteps, type Layer } from '../engine/layers';
-import { applyH, type Mat3 } from '../engine/planar';
-import { affineBetween, growTri, warpTriangles } from '../engine/warp';
+import { applyH, quadHomography, type Mat3 } from '../engine/planar';
+import { affineBetween, growTri, warpTriangles, type WarpTri } from '../engine/warp';
 import { boxQuad, type Quad } from '../engine/gizmo';
 import { drawText, textBox } from './text';
 import { drawShape } from './shapes';
@@ -41,6 +41,31 @@ function drawnRegion(l: Layer, t: number, w: number, h: number): [number, number
   return [Math.max(0, Math.min(...xs) - pad), Math.max(0, Math.min(...ys) - pad), Math.min(w, Math.max(...xs) + pad), Math.min(h, Math.max(...ys) + pad)];
 }
 
+/** Draw `src` onto `ctx` triangle by triangle: each piece of the source moved by its own affine transform, a hair larger than it is so no seams show. */
+function paintTriangles(ctx: Cx, src: CanvasImageSource, tris: WarpTri[]) {
+  for (const { src: s, dst } of tris) {
+    const m = affineBetween(s, dst);
+    if (!m) continue;
+    const g = growTri(dst, 0.5);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(g[0][0], g[0][1]);
+    ctx.lineTo(g[1][0], g[1][1]);
+    ctx.lineTo(g[2][0], g[2][1]);
+    ctx.closePath();
+    ctx.clip();
+    ctx.transform(...m);
+    ctx.drawImage(src, 0, 0);
+    ctx.restore();
+  }
+}
+
+/** A picture (iw × ih pixels) put onto a four-cornered place (x0,y0 … x3,y3 clockwise from the top left, in pixels). */
+export function drawWarpedImage(ctx: CanvasRenderingContext2D, img: CanvasImageSource, iw: number, ih: number, quad: number[], cells = 16) {
+  const H = quadHomography([0, 0, iw, 0, iw, ih, 0, ih], quad);
+  if (H) paintTriangles(ctx, img, warpTriangles(H, 0, 0, iw, ih, cells, cells));
+}
+
 /**
  * A pinned layer: drawn flat (where it is on the moment it was pinned), then carried onto the
  * surface as it is now by a grid of small triangles, each moved by its own affine transform.
@@ -54,21 +79,7 @@ function drawWarped(ctx: CanvasRenderingContext2D, l: Layer, H: Mat3, w: number,
   const [x0, y0, x1, y1] = drawnRegion(l, t, w, h);
   const nx = 16;
   const ny = Math.max(4, Math.min(24, Math.round((nx * (y1 - y0)) / Math.max(1, x1 - x0))));
-  for (const { src, dst } of warpTriangles(H, x0, y0, x1, y1, nx, ny)) {
-    const m = affineBetween(src, dst);
-    if (!m) continue;
-    const g = growTri(dst, 0.5);
-    s.warped.save();
-    s.warped.beginPath();
-    s.warped.moveTo(g[0][0], g[0][1]);
-    s.warped.lineTo(g[1][0], g[1][1]);
-    s.warped.lineTo(g[2][0], g[2][1]);
-    s.warped.closePath();
-    s.warped.clip();
-    s.warped.transform(...m);
-    s.warped.drawImage(s.flatC, 0, 0);
-    s.warped.restore();
-  }
+  paintTriangles(s.warped, s.flatC, warpTriangles(H, x0, y0, x1, y1, nx, ny));
   ctx.save();
   ctx.globalAlpha *= alpha;
   ctx.drawImage(s.warpedC, 0, 0);
