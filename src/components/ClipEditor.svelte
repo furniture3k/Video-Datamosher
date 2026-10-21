@@ -15,7 +15,7 @@ import { store } from '../lib/store.svelte';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
   import { layersOnBeat } from '../lib/graphicsops.svelte';
   import { setTransition, stepPrintTrack, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, groupSelected, ungroupSelected, EMOJI } from '../lib/edit';
-  import { revealOnBeats, hitsOnBeats, rampOnBeats } from '../lib/graphicsops.svelte';
+  import { revealOnBeats, hitsOnBeats, hitPrefs, rampOnBeats, setHitStrength } from '../lib/graphicsops.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
@@ -419,6 +419,7 @@ import { store } from '../lib/store.svelte';
           <button class="small" title="The picture is knocked sideways on every beat and settles" onclick={() => hitsOnBeats('shake', 'beat')}>Shake</button>
           <button class="small" title="A zoom punch on the first beat of every bar" onclick={() => hitsOnBeats('punch', 'bar')}>Punch on bars</button>
         </div>
+        <Field label="Hit strength" unit="×" min={0.25} max={3} step={0.05} value={hitPrefs.strength} help="How hard the next zoom punch or shake hits: 1 is a punch of 8 % and a shake of about 2 % of the frame. Press Z (punch) or H (shake) to put them on." onchange={setHitStrength} />
       {/if}
       <div class="row">
         <Field type="bool" label="Flip horizontal" value={T.flipH} help="Mirror left to right." onchange={setTf('flipH')} />

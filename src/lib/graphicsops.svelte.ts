@@ -1,5 +1,6 @@
 // Operations on several layers at once: reveal them one per beat.
 import { store } from './store.svelte';
+import { localGet, localSet } from './storage';
 import { beatInfo } from './beatinfo.svelte';
 import { beatPoints } from '../engine/wordbeats';
 import { revealOrder, revealPlan, revealPoints } from '../engine/reveal';
@@ -135,7 +136,14 @@ export function layersOnBeat(ids: string[]) {
  * music, on the selected clips of the main track or, with none selected, all of them. Written as
  * keyframes, so they can be changed after; they replace the clips' zoom and position keys.
  */
-export function hitsOnBeats(kind: 'punch' | 'shake' | 'both', on: 'beat' | 'bar' = 'beat', strength = 1) {
+/** How hard hits on the beat are (1: a zoom punch of 8 %, a shake of about 2 % of the frame); remembered. */
+export const hitPrefs = $state({ strength: localGet('beatHitStrength', 1) });
+export function setHitStrength(v: number) {
+  hitPrefs.strength = Math.min(3, Math.max(0.25, v));
+  localSet('beatHitStrength', hitPrefs.strength);
+}
+
+export function hitsOnBeats(kind: 'punch' | 'shake' | 'both', on: 'beat' | 'bar' = 'beat', strength = hitPrefs.strength) {
   if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
   const p = store.project;
   const placed = layoutVideo(p).filter((pl) => mediaOf(p, pl.clip.mediaId)?.hasVideo);
