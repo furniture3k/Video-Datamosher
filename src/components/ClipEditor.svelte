@@ -15,7 +15,7 @@ import { store } from '../lib/store.svelte';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
   import { layersOnBeat } from '../lib/graphicsops.svelte';
   import { setTransition, stepPrintTrack, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, groupSelected, ungroupSelected, EMOJI } from '../lib/edit';
-  import { revealOnBeats } from '../lib/graphicsops.svelte';
+  import { revealOnBeats, hitsOnBeats } from '../lib/graphicsops.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
@@ -407,6 +407,14 @@ import { store } from '../lib/store.svelte';
       <Field label="Position X" min={-1} max={1} step={0.005} value={kv('x')} help="Moves the picture left (−) or right (+), as a share of the frame width." onchange={setKeyed('x')}>{@render kf('x')}</Field>
       <Field label="Position Y" min={-1} max={1} step={0.005} value={kv('y')} help="Moves the picture up (−) or down (+), as a share of the frame height." onchange={setKeyed('y')}>{@render kf('y')}</Field>
       <Field label="Rotation" unit="°" min={-180} max={180} step={0.5} value={kv('rotate')} help="Turns the picture clockwise (+) or anticlockwise (−)." onchange={setKeyed('rotate')}>{@render kf('rotate')}</Field>
+      {#if c.track === VIDEO_TRACK}
+        <div class="row" style="flex-wrap: wrap" role="group" aria-label="Hits on the beat">
+          <span class="small muted grow" title="Keyframes on every beat of the music, on the selected clips of the main track. They replace this clip's zoom and position keys.">On the beat</span>
+          <button class="small" title="The picture jumps in a little on every beat and eases back" onclick={() => hitsOnBeats('punch', 'beat')}>Zoom punch</button>
+          <button class="small" title="The picture is knocked sideways on every beat and settles" onclick={() => hitsOnBeats('shake', 'beat')}>Shake</button>
+          <button class="small" title="A zoom punch on the first beat of every bar" onclick={() => hitsOnBeats('punch', 'bar')}>Punch on bars</button>
+        </div>
+      {/if}
       <div class="row">
         <Field type="bool" label="Flip horizontal" value={T.flipH} help="Mirror left to right." onchange={setTf('flipH')} />
         <Field type="bool" label="Flip vertical" value={T.flipV} help="Upside down." onchange={setTf('flipV')} />

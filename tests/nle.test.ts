@@ -2,9 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
-import { evalKeys, keysExpr, rampIntegral, rampInverse, rampLength, rampSetpts, type KeyPoint, type Ramp } from '../src/engine/keys';
+import { beatHitKeys, evalKeys, keysExpr, rampIntegral, rampInverse, rampLength, rampSetpts, type KeyPoint, type Ramp } from '../src/engine/keys';
 import { clipLen, localTime, makeClip, segments, sourceTime, splitClip } from '../src/engine/timeline';
-import { segmentArgs, segmentKey, windowClip } from '../src/engine/args';
+import { ffmpegMajor, graphsToFiles, segmentArgs, segmentKey, windowClip } from '../src/engine/args';
 import { cubeText, lutFile, parseCube, sampleLut } from '../src/engine/lut';
 import { newProject, type Clip, type MediaItem, type Project } from '../src/engine/types';
 import { hasFfmpeg, tmpdir, ff } from './helpers';
@@ -147,6 +147,32 @@ d('native ffmpeg renders', () => {
       return sum / wsum;
     };
     expect(Math.abs(col(fr[5]) - (32 + 0.15 * 1.6 * 64))).toBeLessThanOrEqual(1);
+  });
+
+  it('long filter graphs go in files, in the form the FFmpeg version reads', () => {
+    const g = 'x'.repeat(5000);
+    expect(graphsToFiles(['-i', 'a', '-filter_complex', g, 'o.avi'], 8)).toEqual({ args: ['-i', 'a', '-/filter_complex', 'graph0.txt', 'o.avi'], files: [['graph0.txt', g]] });
+    expect(graphsToFiles(['-vf', g, '-af', 'volume=2'], 6).args).toEqual(['-filter_script:v', 'graph0.txt', '-af', 'volume=2']);
+    expect(graphsToFiles(['-vf', 'scale=2:2'], 8).files).toEqual([]);
+    expect(ffmpegMajor('ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023')).toBe(6);
+    expect(ffmpegMajor('ffmpeg version n7.1 Copyright')).toBe(7);
+    expect(ffmpegMajor('ffmpeg version N-112233-gabc Copyright')).toBe(0);
+  });
+
+  it('zoom punches and shakes on the beat render, many of them', () => {
+    const dir = tmpdir();
+    sources(dir);
+    // a hit every 0.25 s: the red box in the middle is bigger on a hit than just before one
+    const beats = Array.from({ length: 8 }, (_, i) => i * 0.25);
+    const keys = beatHitKeys({ zoom: 1, x: 0, y: 0 }, beats, 2, 1 / fps, { punch: 0.5, shake: 0, decay: 0.2 });
+    const c = { ...makeClip(media('green'), 'v1'), out: 2, keys };
+    const fr = render(dir, project([c], [media('green')]));
+    expect(fr.length).toBe(48);
+    // frame 7 is a frame after the hit at 0.25 s; frame 11 is 0.46 s, settled again
+    expect(mean(fr[7], 18, 46)).not.toBeCloseTo(mean(fr[11], 18, 46), 0);
+    // a dense run of hits with a shake (long expressions) still renders every frame
+    const dense = beatHitKeys({ zoom: 1.05, x: 0, y: 0 }, Array.from({ length: 40 }, (_, i) => i * 0.05), 2, 1 / fps, { punch: 0.08, shake: 0.02, decay: 0.28 });
+    expect(render(dir, project([{ ...c, keys: dense }], [media('green')])).length).toBe(48);
   });
 
   it('keyframed rotation and opacity', () => {

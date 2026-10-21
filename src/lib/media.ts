@@ -9,7 +9,8 @@ import { putFile, getFile, kvGet, kvSet, askPersistOnce } from './storage';
 import { probeFile, renderGenerator, makeProxy, extractPcm, proxyKey } from './renderer';
 import { mediaState, rt, PEAKS_PER_SEC } from './mediastate.svelte';
 import { keepMattes } from './mattes.svelte';
-import { GENERATORS, even } from '../engine/args';
+import { GENERATORS, even, outputSize } from '../engine/args';
+import { widthForShape } from '../engine/social';
 import { uid, makeClip, insertVideo, nearestCut, freeClips, clipLen, videoEnd, isOverlayTrack, isVideoTrack } from '../engine/timeline';
 import { VIDEO_TRACK, type MediaItem, type Project } from '../engine/types';
 
@@ -124,8 +125,16 @@ export function addToTimeline(m: MediaItem, place: Place = 'auto') {
   const c = makeClip(m, tgt.track);
   if (m.source.kind === 'file' && m.source.isImage) c.out = 3;
   store.editTimeline((p) => {
-    if ('index' in tgt) insertVideo(p, c, tgt.index);
-    else {
+    if ('index' in tgt) {
+      const first = tgt.track === VIDEO_TRACK && p.encoder.aspect === 'auto' && !p.clips.some((x) => x.track === VIDEO_TRACK);
+      insertVideo(p, c, tgt.index);
+      // the first clip sets the shape: a tall or square one keeps the mosh resolution's class
+      // (720p is 720 wide when the frame is 9:16, not 1280 × 2276)
+      if (first) {
+        const { w, h } = outputSize(p, p.encoder.width);
+        if (w <= h) p.encoder.width = widthForShape(p.encoder.width, 16 / 9, w / h);
+      }
+    } else {
       c.start = Math.max(0, tgt.start);
       if (!p.tracks.some((t) => t.id === c.track)) p.tracks.push({ id: c.track, kind: isVideoTrack(c.track) ? 'video' : 'audio', name: isVideoTrack(c.track) ? 'Video' : 'Audio', muted: false, solo: false, volume: 1, mosh: false });
       p.clips.push(c);

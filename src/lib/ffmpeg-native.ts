@@ -7,6 +7,7 @@ import { aviInfo, aviPlan } from '../engine/avi';
 import { analyzeFrame, type MoshCodec } from '../engine/bitstream';
 import type { Prepared } from '../engine/mosh';
 import type { Frame } from '../engine/types';
+import { ffmpegMajor, graphsToFiles } from '../engine/args';
 
 type LogFn = (line: string) => void;
 
@@ -74,6 +75,8 @@ export class NativeService implements Engine {
   private cancelGen = 0;
   private job = '';
   private loading: Promise<unknown> | null = null;
+  /** FFmpeg's major version: how a filter graph is read from a file */
+  private major = 99;
 
   constructor(private dir: string) {}
 
@@ -81,6 +84,8 @@ export class NativeService implements Engine {
     this.loading ??= invoke<{ version: string }>('engine_info').then(
       (info) => {
         this.ready = true;
+        // a build without a version number (from git) is taken to be a new one
+        this.major = ffmpegMajor(info.version) || 99;
         console.info('native engine:', info.version);
         return info;
       },
@@ -156,7 +161,13 @@ export class NativeService implements Engine {
         }
       };
       const level = args.includes('-loglevel') ? [] : ['-loglevel', 'info'];
-      const full = ['-hide_banner', '-nostdin', '-y', ...level, ...args.map((a) => paths.get(a) ?? a)];
+      // long filter graphs (keyframes) go in files: command lines have a length limit
+      const graphs = graphsToFiles(args, this.major);
+      for (const [name, text] of graphs.files) {
+        await put(`${this.dir}/${name}`, new TextEncoder().encode(text));
+        written.push(name);
+      }
+      const full = ['-hide_banner', '-nostdin', '-y', ...level, ...graphs.args.map((a) => paths.get(a) ?? a)];
       this.job = `${this.dir}-${++jobSeq}`;
       let code: number;
       try {

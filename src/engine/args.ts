@@ -14,6 +14,8 @@ export const GENERATORS: { id: string; name: string; spec: (w: number, h: number
   { id: 'mandelbrot', name: 'Mandelbrot zoom', spec: (w, h, r) => `mandelbrot=s=${w}x${h}:r=${r}` },
   { id: 'life', name: 'Game of Life', spec: (w, h, r) => `life=s=${w}x${h}:r=${r}:mold=10:ratio=0.1:death_color=#C83232:life_color=#00ff99,scale=${w}:${h}` },
   { id: 'testsrc2', name: 'Test pattern', spec: (w, h, r) => `testsrc2=s=${w}x${h}:r=${r}` },
+  // the test pattern made taller and its top cut off: the same moving bars without the timecode
+  { id: 'bars', name: 'Colour bars', spec: (w, h, r) => `testsrc2=s=${w}x${h + 48}:r=${r},crop=${w}:${h}:0:48` },
   { id: 'cellauto', name: 'Cellular automaton', spec: (w, h, r) => `cellauto=s=${w}x${h}:r=${r}:rule=110:scroll=1` },
   { id: 'gradients', name: 'Gradient swirl', spec: (w, h, r) => `gradients=s=${w}x${h}:r=${r}:speed=0.03:n=5` },
   { id: 'rgbtest', name: 'Plasma noise', spec: (w, h, r) => `cellauto=s=${w}x${h}:r=${r}:rule=30,hue=H=t*60:s=4,gblur=sigma=3,scale=${w}:${h}` },
@@ -923,3 +925,35 @@ export function regenArgs(project: Pick<Project, 'decoder' | 'encoder' | 'clips'
 
 /** Settings for generation g (2, 3…): quality crushed a little more each time. */
 export const generationEncoder = (enc: EncoderSettings, g: number): EncoderSettings => ({ ...enc, quality: Math.min(31, enc.quality + (g - 1) * (enc.genCrush ?? 2)) });
+
+/** Filter options whose graph can come from a file instead: [option, its FFmpeg 6 script form]. */
+const GRAPH_OPTIONS: Record<string, string> = { '-filter_complex': '-filter_complex_script', '-lavfi': '-filter_complex_script', '-vf': '-filter_script:v', '-filter:v': '-filter_script:v', '-af': '-filter_script:a', '-filter:a': '-filter_script:a' };
+
+/**
+ * The arguments with every filter graph longer than `limit` characters moved into a file (named in
+ * `files`, to be written next to the job). A native FFmpeg is started with its arguments on a
+ * command line, which Windows caps at 32 767 characters and Linux at 128 KB per argument; keyframed
+ * clips make graphs bigger than that. FFmpeg 7 and later read any option from a file with `-/option`;
+ * older ones have the `-filter_script` options.
+ */
+export function graphsToFiles(args: string[], ffmpegMajor: number, limit = 4000): { args: string[]; files: [string, string][] } {
+  const out: string[] = [];
+  const files: [string, string][] = [];
+  for (let i = 0; i < args.length; i++) {
+    const opt = args[i];
+    const val = args[i + 1];
+    if (GRAPH_OPTIONS[opt] && val !== undefined && val.length > limit) {
+      const name = `graph${files.length}.txt`;
+      files.push([name, val]);
+      out.push(ffmpegMajor >= 7 ? '-/' + opt.slice(1) : GRAPH_OPTIONS[opt], name);
+      i++;
+    } else out.push(opt);
+  }
+  return { args: out, files };
+}
+
+/** The major version in FFmpeg's first `-version` line ("ffmpeg version 8.0 …", "n7.1", "6.1.1-3ubuntu5"); 0 when unknown (a git build). */
+export function ffmpegMajor(versionLine: string): number {
+  const m = /version\s+n?(\d+)\./.exec(versionLine);
+  return m ? +m[1] : 0;
+}

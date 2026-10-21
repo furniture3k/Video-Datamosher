@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.16.0
+
+- **Hits on the beat**: **Zoom punch** and **Shake** (Clip tab › On the beat, the phone's clip tools,
+  or the palette) jump the picture in, or knock it sideways, on every beat or every bar of the music
+  and ease it back before the next one, on the selected clips of the main track or all of them. They
+  are keyframes, so they can be changed after, and they melt with the mosh like any other move.
+- **4K for vertical video**: export sizes are named by what they make in the project's shape, so on
+  a 9:16 project **4K UHD** is 2160×3840 and **1080p** is 1080×1920 (they used to be widths: "4K"
+  made a 3840×6826 file). **Made for** has **TikTok · Shorts 4K**. The export dialog shows the real
+  size when the video is reframed to another shape. The mosh resolution is named the same way.
+- **Vertical projects render faster**: a tall or square project keeps the mosh resolution's class
+  when its shape is set (a 9:16 project moshes at 720×1280, not 1280×2276: three times the pixels),
+  from the first clip, the Aspect ratio setting, **Make it 9:16** and the templates.
+- **Titles stay in the frame**: a title whose line would run off the sides is made smaller to fit,
+  which mattered most on narrow 9:16 frames (the Degraded film template's lyric ran off both edges).
+  **Width** in the title's settings has **Fit to the frame width** as before and **Let it run off the
+  edges** for the old behaviour. Tickers and repeated copies are left as they are.
+- **Keyframes on the desktop**: clips with many zoom or position keyframes no longer fail to render in
+  the desktop app (their filter graphs were longer than a command line may be, 32 767 characters on
+  Windows); long graphs are now handed to FFmpeg in a file.
+- **Better-looking templates**: the sample footage no longer has a test-pattern timecode burnt into the
+  corner, **Scrapbook** has a handwritten caption above the card (your own words) instead of copies of
+  a serif word piling onto each other, and **Glitch intro** has its own preview.
+
 ## 1.15.0
 
 - **Make a video like this**: five templates made from edits people post, at the top of the home

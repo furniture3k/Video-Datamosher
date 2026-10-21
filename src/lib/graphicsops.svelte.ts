@@ -5,7 +5,7 @@ import { beatPoints } from '../engine/wordbeats';
 import { revealOrder, revealPlan, revealPoints } from '../engine/reveal';
 import { popKeys, type Keys, type PopOptions } from '../engine/keys';
 import { transformOf, VIDEO_TRACK, type Clip } from '../engine/types';
-import { swapKeys } from '../engine/keys';
+import { swapKeys, beatHitKeys } from '../engine/keys';
 import { layoutVideo, layers as upperLayers, clipLen } from '../engine/timeline';
 import { mediaOf } from '../engine/timeline';
 import { flashLayers } from '../engine/flash';
@@ -128,4 +128,45 @@ export function layersOnBeat(ids: string[]) {
   store.edit((p) => {
     for (const l of p.layers) if (ids.includes(l.id)) l.start = Math.round(near(l.start) * 1000) / 1000;
   });
+}
+
+/**
+ * Hit the picture on the beat: a zoom punch, a shake, or both, on every beat (or every bar) of the
+ * music, on the selected clips of the main track or, with none selected, all of them. Written as
+ * keyframes, so they can be changed after; they replace the clips' zoom and position keys.
+ */
+export function hitsOnBeats(kind: 'punch' | 'shake' | 'both', on: 'beat' | 'bar' = 'beat', strength = 1) {
+  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+  const p = store.project;
+  const placed = layoutVideo(p).filter((pl) => mediaOf(p, pl.clip.mediaId)?.hasVideo);
+  const sel = placed.filter((pl) => store.ui.selectedClips.includes(pl.clip.id));
+  const targets = sel.length ? sel : placed;
+  if (!targets.length) return store.toast('Put clips on the main track first.', 'info');
+  const beats = on === 'bar' && beatInfo.downbeats.length ? beatInfo.downbeats : beatInfo.beats;
+  const frame = 1 / p.encoder.fps;
+  const punch = kind === 'shake' ? 0 : 0.08 * strength;
+  const shake = kind === 'punch' ? 0 : 0.018 * strength;
+  let hits = 0;
+  store.edit((q) => {
+    for (const pl of targets) {
+      const c = q.clips.find((x) => x.id === pl.clip.id);
+      if (!c) continue;
+      const T = transformOf(c);
+      // a shake moves the picture: zoomed in just enough that its edges stay out of the frame
+      const rest = { zoom: shake ? Math.max(T.zoom, 1 + shake * 2.4) : T.zoom, x: T.x, y: T.y };
+      const local = beats.map((b) => b - pl.start);
+      const keys = beatHitKeys(rest, local, pl.end - pl.start, frame, { punch, shake, decay: 0.28 });
+      if (!keys.zoom && !keys.x) continue;
+      hits += (keys.zoom ?? keys.x)!.length / (keys.zoom ? 3 : 4);
+      const k = { ...(c.keys ?? {}) };
+      for (const prop of ['zoom', 'x', 'y'] as const) delete k[prop];
+      // a pop-in's keys go with it (its fade too)
+      if (c.pop) delete k.opacity;
+      c.keys = { ...k, ...keys };
+      delete c.pop;
+    }
+  });
+  if (!hits) return store.toast('No beats fall on those clips.', 'info');
+  const what = kind === 'punch' ? 'Zoom punch' : kind === 'shake' ? 'Shake' : 'Zoom punch and shake';
+  store.toast(`${what} on ${hits} ${on === 'bar' ? 'bars' : 'beats'} across ${targets.length} clip${targets.length > 1 ? 's' : ''}. They are keyframes: change them in the Clip tab, or undo.`, 'ok', 6000);
 }

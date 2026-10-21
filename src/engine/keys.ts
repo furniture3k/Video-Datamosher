@@ -223,3 +223,46 @@ export function swapKeys(places: { zoom: number; x: number; y: number }[], clip:
   });
   return out;
 }
+
+// ---------- hits on the beat ----------
+
+export interface BeatHitOptions {
+  /** zoom punch: how much bigger it jumps on the hit (0.08 = 8 %), 0 for none */
+  punch: number;
+  /** shake: how far it is knocked sideways and up, as a share of the frame, 0 for none */
+  shake: number;
+  /** how long a hit takes to settle (s); shorter when the next beat comes first */
+  decay: number;
+  /** most hits made (each is a few keys) */
+  max?: number;
+}
+
+/**
+ * Keys that hit a clip on each of `beats` (clip-local seconds, inside 0..len): it jumps to a zoom
+ * punch and/or is knocked off its place in a frame, then eases back to `rest` before the next beat.
+ * The jump is a straight line (the third number is 0) so it lands on the beat; the settle is eased.
+ */
+export function beatHitKeys(rest: { zoom: number; x: number; y: number }, beats: number[], len: number, frame: number, o: BeatHitOptions): Keys {
+  // hits closer than three frames apart would overlap: the later ones are left out
+  const hits: number[] = [];
+  for (const b of beats.map((x) => Math.round(x * 1000) / 1000).sort((a, b) => a - b)) if (b >= 0 && b < len - frame && (!hits.length || b - hits[hits.length - 1] >= frame * 3 - 1e-6)) hits.push(b);
+  hits.splice(o.max ?? 96);
+  const out: Record<'zoom' | 'x' | 'y', KeyPoint[]> = { zoom: [], x: [], y: [] };
+  hits.forEach((b, i) => {
+    const next = hits[i + 1] ?? len;
+    // settled again a little before the next hit, so each one reads as its own
+    const settle = Math.max(frame * 2, Math.min(o.decay, (next - b) * 0.85));
+    const peak = b + frame;
+    if (o.punch > 0) out.zoom.push([b, rest.zoom, 0], [peak, rest.zoom * (1 + o.punch)], [b + settle, rest.zoom]);
+    if (o.shake > 0) {
+      // knocked one way, swings back past where it was, settles; the way alternates hit to hit
+      const s = i % 2 ? -1 : 1;
+      const k = o.shake;
+      out.x.push([b, rest.x, 0], [peak, rest.x + s * k, 0], [b + settle * 0.35, rest.x - s * k * 0.5], [b + settle, rest.x]);
+      out.y.push([b, rest.y, 0], [peak, rest.y - k * 0.6, 0], [b + settle * 0.35, rest.y + k * 0.3], [b + settle, rest.y]);
+    }
+  });
+  const keys: Keys = {};
+  for (const p of ['zoom', 'x', 'y'] as const) if (out[p].length) keys[p] = out[p];
+  return keys;
+}

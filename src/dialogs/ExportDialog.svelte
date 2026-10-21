@@ -28,7 +28,8 @@
   import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
-  import { SOCIAL_PRESETS, bitrateFor } from '../engine/social';
+  import { SOCIAL_PRESETS, bitrateFor, sizeChoices, widthForShape } from '../engine/social';
+  import { aspectRatio } from '../engine/reframe';
   import { EFFECTS } from '../engine/effects';
   import { hasWebCodecs, hardwareCodec, encodedSize } from '../lib/webcodecs';
 
@@ -46,11 +47,14 @@
   const hasPixel = $derived(store.project.effects.some((e) => e.enabled && EFFECTS[e.type]?.kind === 'pixel'));
   const hasAudio = $derived(audioSources(store.project).length > 0);
   const mosh = $derived(outputSize(store.project, store.project.encoder.width));
-  const outW = $derived(o.width ? even(o.width) : mosh.w);
-  const outH = $derived(even((outW * mosh.h) / mosh.w));
+  // the shape that's saved: the project's, or the one it's reframed to
+  const outAr = $derived(o.reframeTo && o.format !== 'avi' && aspectRatio(o.reframeTo) > 0 ? aspectRatio(o.reframeTo) : mosh.w / mosh.h);
+  // a reframe crops the mosh to its shape; an output size then scales the width
+  const outW = $derived(o.width && o.format !== 'avi' ? even(o.width) : outAr < mosh.w / mosh.h ? even(mosh.h * outAr) : mosh.w);
+  const outH = $derived(even(outW / outAr));
   const duration = $derived(store.duration);
   const pixels = $derived(mosh.w * mosh.h * duration * store.project.encoder.fps);
-  const heavy = $derived(pixels > 1920 * 1080 * 24 * 90 || (outW >= 2560 && duration > 20));
+  const heavy = $derived(pixels > 1920 * 1080 * 24 * 90 || (outW * outH >= 2560 * 1440 && duration > 20));
   let social = $state(localGet<string>('exportSocial', ''));
   const sp = $derived(SOCIAL_PRESETS.find((p) => p.id === social) ?? null);
   const span = $derived(onlyRange && marked ? marked[1] - marked[0] : duration);
@@ -74,7 +78,9 @@
     if (!sp?.aspect) return;
     const aspect = sp.aspect;
     store.edit((p) => {
+      const from = outputSize(p, p.encoder.width);
       p.encoder.aspect = aspect;
+      p.encoder.width = widthForShape(p.encoder.width, from.w / from.h, aspectRatio(aspect));
       for (const c of p.clips) if (c.track === 'v1' && c.fit === 'fit') c.fit = 'fill';
     });
     store.toast(`The project is now ${aspect}. Clips on the main track fill the frame; adjust their position in the Clip tab.`, 'ok', 6000);
@@ -200,7 +206,7 @@
     </div>
 
     <div class="small muted">
-      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if o.width && o.format !== 'avi'}, saved at {outW}×{outH}{o.width > mosh.w ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Picture effects (Vector Warp, Chroma, Pixel Sort, Raw Bend) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
+      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if (o.width || outAr !== mosh.w / mosh.h) && o.format !== 'avi'}, saved at {outW}×{outH}{outH > (outAr < mosh.w / mosh.h ? mosh.h : mosh.w / outAr) + 2 ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Picture effects (Vector Warp, Chroma, Pixel Sort, Raw Bend) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
     </div>
     {#if heavy && !isDesktop}
       <div class="small warn">This is a big render for a browser ({Math.round(pixels / 1e6)} megapixel-frames). Expect it to take a while; keep this tab in front. Lower the mosh resolution or use "Ultra fast" to speed it up.</div>
@@ -211,7 +217,7 @@
         type="select"
         label="Output size"
         value={o.width}
-        options={[{ value: 0, label: `Same as mosh (${mosh.w}px)` }, ...[...new Set([480, 640, 720, 854, 1080, 1280, 1920, 2560, 3840, ...(o.width ? [o.width] : [])])].sort((a, b) => a - b).map((w) => ({ value: w, label: ({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w] ? `${({ 854: '480p', 1280: '720p HD', 1920: '1080p Full HD', 2560: '1440p QHD', 3840: '4K UHD' } as Record<number, string>)[w]} (${w}px)` : `${w}px wide` }))]}
+        options={[{ value: 0, label: `Same as mosh (${mosh.w}×${mosh.h})` }, ...sizeChoices(outAr, 0, o.width)]}
         help="Rescale the final video. Use 'Nearest' scaling for crisp, chunky pixel-art upscales of a low-res mosh."
         onchange={(v: number) => (o.width = v)}
       />

@@ -6,7 +6,7 @@ import { withChaos, chaosValue } from '../src/engine/chaos';
 import { EFFECTS, type ParamDef } from '../src/engine/effects';
 import { makeEffect, breed, chaos } from '../src/engine/presets';
 import { encodeRecipe, decodeRecipe, applyRecipe, findRecipe, gifWithComment, gifComments } from '../src/engine/recipe';
-import { bitrateFor, aspectSize, SOCIAL_PRESETS } from '../src/engine/social';
+import { bitrateFor, aspectSize, sizeChoices, widthForShape, SOCIAL_PRESETS } from '../src/engine/social';
 import { exportArgs, defaultExport, parseProbe, metadataArgs } from '../src/engine/args';
 import { newProject, type Project } from '../src/engine/types';
 import { hasFfmpeg, tmpdir, ff, ffLog } from './helpers';
@@ -132,6 +132,24 @@ describe('social presets', () => {
     expect(bitrateFor(10, 6000, true)).toBe(150);
     expect(aspectSize('9:16', 1080)).toEqual({ w: 1080, h: 1920 });
     expect(SOCIAL_PRESETS.length).toBeGreaterThan(5);
+  });
+  it('size choices follow the shape of the frame', () => {
+    const wide = sizeChoices(16 / 9);
+    expect(wide.map((c) => c.value)).toEqual([320, 480, 640, 854, 960, 1280, 1920, 2560, 3840]);
+    expect(wide.find((c) => c.value === 3840)!.label).toBe('4K UHD (3840×2160)');
+    const tall = sizeChoices(9 / 16, 480);
+    expect(tall.find((c) => c.label.startsWith('4K'))!.label).toBe('4K UHD (2160×3840)');
+    expect(tall.find((c) => c.label.startsWith('1080p'))!.value).toBe(1080);
+    // a width that isn't a class stays choosable, with its real size
+    expect(sizeChoices(9 / 16, 0, 1280).find((c) => c.value === 1280)!.label).toBe('1280×2276');
+    expect(SOCIAL_PRESETS.find((p) => p.id === 'vertical4k')!.opts.width).toBe(2160);
+  });
+  it('a new shape keeps the resolution class', () => {
+    expect(widthForShape(1280, 16 / 9, 9 / 16)).toBe(720);
+    expect(widthForShape(720, 9 / 16, 16 / 9)).toBe(1280);
+    expect(widthForShape(1920, 16 / 9, 1)).toBe(1080);
+    expect(widthForShape(1080, 1, 4 / 5)).toBe(1080);
+    expect(widthForShape(1280, 0, 1)).toBe(1280);
   });
 });
 

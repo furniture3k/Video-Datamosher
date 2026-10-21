@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyBitstream, type Prepared } from '../src/engine/mosh';
 import { makeEffect } from '../src/engine/presets';
 import { migrate } from '../src/engine/migrate';
+import { beatHitKeys, evalKeys } from '../src/engine/keys';
 import { transitionEffects, transitionKeyTimes } from '../src/engine/timeline';
 import { newProject, type EffectInstance, type Frame, type MediaItem, type Project } from '../src/engine/types';
 import { keyTimes } from '../src/engine/args';
@@ -115,5 +116,25 @@ describe('timecode', () => {
     expect(parseTimecode('+2', 24, 10)).toBe(12);
     expect(parseTimecode('-12f', 24, 10)).toBe(9.5);
     expect(parseTimecode('abc', 24)).toBeNull();
+  });
+});
+
+describe('hits on the beat', () => {
+  const rest = { zoom: 1.1, x: 0, y: 0 };
+  it('punches in on each beat and settles before the next', () => {
+    const k = beatHitKeys(rest, [0.5, 1, 9], 2, 1 / 30, { punch: 0.1, shake: 0, decay: 0.3 });
+    expect(k.x).toBeUndefined();
+    expect(evalKeys(k.zoom!, 0.2)).toBeCloseTo(1.1, 6);
+    expect(evalKeys(k.zoom!, 0.5 + 1 / 30)).toBeCloseTo(1.21, 6);
+    // settled again before the second beat (the beat past the end is left out)
+    expect(evalKeys(k.zoom!, 0.99)).toBeCloseTo(1.1, 6);
+    expect(k.zoom!.length).toBe(6);
+  });
+  it('shakes back and forth, each hit the other way', () => {
+    const k = beatHitKeys(rest, [0, 1], 2, 0.04, { punch: 0, shake: 0.02, decay: 0.4 });
+    expect(k.zoom).toBeUndefined();
+    expect(evalKeys(k.x!, 0.04)).toBeCloseTo(0.02, 6);
+    expect(evalKeys(k.x!, 1.04)).toBeCloseTo(-0.02, 6);
+    expect(evalKeys(k.x!, 0.6)).toBeCloseTo(0, 6);
   });
 });

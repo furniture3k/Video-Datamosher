@@ -124,8 +124,9 @@ export interface TextLayer extends LayerBase {
   stroke?: number;
   strokeColor?: string;
   strokeOnly?: boolean;
-  /** 'width': as big as fits across the frame (`size` is then ignored) */
-  fit?: 'width';
+  /** 'width': as big as fits across the frame (`size` is then ignored); 'none': its size even where
+   * that runs off the frame. Missing: its size, made smaller where a line would run off the sides. */
+  fit?: 'width' | 'none';
   /** copies side by side, one above another, or both, filling the frame */
   repeat?: 'across' | 'down' | 'both';
   /** space between copies, as a share of the letter size */

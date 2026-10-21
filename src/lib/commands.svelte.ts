@@ -6,7 +6,7 @@ import { startMark, startSurface } from './motion.svelte';
 import { startCutout } from './cutout.svelte';
 import { chaos, mutate } from '../engine/presets';
 import { chaosGraphics } from '../engine/graphicschaos';
-import { flashOnBeats, revealOnBeats, swapCellsOnBeat } from './graphicsops.svelte';
+import { flashOnBeats, hitsOnBeats, revealOnBeats, swapCellsOnBeat } from './graphicsops.svelte';
 import { beatInfo } from './beatinfo.svelte';
 import { randomSeed } from '../engine/rng';
 import { takeSnapshot } from './snapshots.svelte';
@@ -178,6 +178,10 @@ const ACTIONS: Record<string, Action> = {
   steal: { run: dialog('steal') },
   'reveal-beats': { run: () => revealOnBeats(1), when: hasClips },
   'flash-beats': { run: () => flashOnBeats('#ffffff', 2), when: hasClips },
+  'punch-beats': { run: () => hitsOnBeats('punch', 'beat'), when: hasClips },
+  'punch-bars': { run: () => hitsOnBeats('punch', 'bar'), when: hasClips },
+  'shake-beats': { run: () => hitsOnBeats('shake', 'beat'), when: hasClips },
+  'punch-shake-beats': { run: () => hitsOnBeats('both', 'beat'), when: hasClips },
   'swap-cells': { run: () => swapCellsOnBeat(1), when: hasClips },
   group: { run: () => edit.groupSelected(), when: hasClips },
   ungroup: { run: () => edit.ungroupSelected(), when: hasClips },

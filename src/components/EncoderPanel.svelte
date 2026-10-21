@@ -3,11 +3,14 @@
   import Field from './Field.svelte';
   import CanvasPanel from './CanvasPanel.svelte';
   import type { EncoderSettings, DecoderSettings } from '../engine/types';
+  import { outputSize, even } from '../engine/args';
+  import { sizeChoices, widthForShape } from '../engine/social';
   const e = $derived(store.project.encoder);
   const d = $derived(store.project.decoder);
   const setE = <K extends keyof EncoderSettings>(k: K) => (v: EncoderSettings[K]) => store.edit((p) => (p.encoder[k] = v), 'enc' + k);
   const setD = <K extends keyof DecoderSettings>(k: K) => (v: DecoderSettings[K]) => store.edit((p) => (p.decoder[k] = v), 'dec' + k);
   const adv = $derived(store.ui.advanced);
+  const mosh = $derived(outputSize(store.project, e.width));
   import { threads, THREADS } from '../lib/ffmpeg';
   import { isDesktop } from '../lib/platform';
   import { localSet } from '../lib/storage';
@@ -71,7 +74,7 @@
     type="select"
     label="Mosh resolution"
     value={e.width}
-    options={[320, 480, 640, 854, 960, 1280, 1920, 2560, 3840].map((w) => ({ value: w, label: `${w}px${({ 854: ' (480p)', 1280: ' (720p)', 1920: ' (1080p)', 2560: ' (1440p, slow)', 3840: ' (4K, very slow)' } as Record<number, string>)[w] ?? ''}` }))}
+    options={sizeChoices(mosh.w / mosh.h, 0, e.width).map((c) => ({ ...c, label: c.label + (Math.min(c.value, even(c.value / (mosh.w / mosh.h))) >= 2160 ? ', very slow' : Math.min(c.value, even(c.value / (mosh.w / mosh.h))) >= 1440 ? ', slow' : '') }))}
     help="Resolution the export is moshed at. The codec moves 16-pixel blocks, so lower resolutions give chunkier, bigger smears; you can still export at a higher size (Export → Output size) to upscale the result."
     onchange={setE('width')}
   />
@@ -102,7 +105,14 @@
     value={e.aspect}
     options={['auto', '16:9', '4:3', '1:1', '9:16', '4:5', '21:9'].map((a) => ({ value: a, label: a === 'auto' ? 'Match first clip' : a }))}
     help="Shape of the output video."
-    onchange={setE('aspect')}
+    onchange={(v: EncoderSettings['aspect']) =>
+      store.edit((p) => {
+        // the same resolution class in the new shape: 720p stays 720p when the frame turns tall
+        const from = outputSize(p, p.encoder.width);
+        p.encoder.aspect = v;
+        const to = outputSize(p, p.encoder.width);
+        p.encoder.width = widthForShape(p.encoder.width, from.w / from.h, to.w / to.h);
+      }, 'encaspect')}
   />
   <CanvasPanel />
   <Field type="select" label="Frame rate" value={e.fps} options={[8, 12, 15, 24, 25, 30, 50, 60].map((f) => ({ value: f, label: `${f} fps` }))} help="Lower frame rates make every mosh step bigger and choppier." onchange={(v: number) => store.editTimeline((p) => (p.encoder.fps = v))} />
