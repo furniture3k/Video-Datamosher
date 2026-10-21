@@ -93,9 +93,29 @@ if (dev) {
 
 const url = process.env.MOSHPIT_FFMPEG_URL || URLS[target];
 if (!url) throw new Error(`no FFmpeg download for ${target}; set MOSHPIT_FFMPEG_URL`);
+/** The download, tried again a few times (waiting longer each time) when the server is down or busy or the connection drops. */
+async function download(u) {
+  const waits = [5, 15, 30, 60, 120];
+  for (let i = 0; ; i++) {
+    let why;
+    try {
+      const r = await fetch(u, { redirect: 'follow' });
+      if (r.ok) return r;
+      // a missing file won't appear by waiting; a server error or rate limit might pass
+      if (r.status < 500 && r.status !== 429) throw new Error(`download failed: ${r.status} ${r.statusText}`);
+      why = `${r.status} ${r.statusText}`;
+    } catch (e) {
+      if (String(e.message).startsWith('download failed')) throw e;
+      why = e.message;
+    }
+    if (i >= waits.length) throw new Error(`download failed: ${why}`);
+    console.log(`download failed (${why}), trying again in ${waits[i]} s`);
+    await new Promise((r) => setTimeout(r, waits[i] * 1000));
+  }
+}
+
 console.log('downloading', url);
-const res = await fetch(url, { redirect: 'follow' });
-if (!res.ok) throw new Error(`download failed: ${res.status} ${res.statusText}`);
+const res = await download(url);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'moshpit-ffmpeg-'));
 // name from the requested URL: redirects (GitHub release assets) end in opaque names
 const file = path.join(tmp, path.basename(new URL(url).pathname) || 'ffmpeg');
