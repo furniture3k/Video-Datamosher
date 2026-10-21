@@ -13,6 +13,21 @@ export function splitWords(text: string, per: 'word' | 'line'): string[] {
     : text.split(/\s+/).filter(Boolean);
 }
 
+/**
+ * What the person typed, as short pieces: its lines, or (one line) its phrases split at commas,
+ * full stops and slashes. Never empty.
+ */
+export function phrases(text: string, fallback = 'your words'): string[] {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  // (a phrase keeps its ! or ?, not its comma or full stop)
+  const pieces = (l: string) => (l.match(/[^.,;!?/]+[.,;!?]*/g) ?? []).map((x) => x.trim().replace(/[.,;]+$/, '').trim()).filter(Boolean);
+  const out = lines.length > 1 ? lines : pieces(lines[0] ?? '');
+  return out.length ? out : [fallback];
+}
+
 /** The points of a beat grid every `every` beats (¼ and ½ fall between beats). */
 export function beatPoints(beats: number[], every: number): number[] {
   if (every < 1) return subdivide(beats, Math.round(1 / every));

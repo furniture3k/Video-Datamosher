@@ -8,7 +8,7 @@ import { addShape, arrangeGrid, newText } from './edit';
 import { beatInfo, refreshBeats } from './beatinfo.svelte';
 import { BUILTIN_STYLES, applyStyle } from '../engine/styles';
 import { CANVAS_PRESETS, cardRect } from '../engine/canvas';
-import { beatPoints, splitWords, wordSlots, wordTitles } from '../engine/wordbeats';
+import { beatPoints, phrases, splitWords, wordSlots, wordTitles } from '../engine/wordbeats';
 import { freeRow, nextRow, type BuiltinFont, type Layer, type TextLayer } from '../engine/layers';
 import { clipLen, layoutVideo, makeClip, mediaOf, uid } from '../engine/timeline';
 import { GENERATORS, even, outputSize } from '../engine/args';
@@ -111,19 +111,6 @@ function spans(): { clip: Clip; start: number; end: number }[] {
   const placed = layoutVideo(store.project);
   // a clip's span ends where the next one starts (in a transition, the next one's words take over)
   return placed.map((pl, i) => ({ clip: pl.clip, start: pl.start, end: Math.max(pl.start + 0.1, Math.min(pl.end, placed[i + 1]?.start ?? Infinity)) }));
-}
-
-/**
- * What the person typed, as short pieces: its lines, or (one line) its phrases split at commas,
- * full stops and slashes. Never empty.
- */
-export function phrases(text: string, fallback = 'your words'): string[] {
-  const lines = text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  const out = lines.length > 1 ? lines : (lines[0] ?? '').split(/[.,;!?/]+\s*/).map((l) => l.trim()).filter(Boolean);
-  return out.length ? out : [fallback];
 }
 
 /** The beats of the music, if there is music with a beat (else null): the beats are worked out first. */
@@ -271,7 +258,7 @@ export const TEMPLATES: Template[] = [
     words: 'EVERYTHING WORKS IN MY FAVOR BECAUSE I WORK FOR EVERYTHING',
     wordsHint: 'One word lands on each beat.',
     hint: 'A few clips and a song.',
-    sample: [['life', 2], ['testsrc2', 2], ['life', 2]],
+    sample: [['gradients', 2], ['testsrc2', 2], ['gradients', 2]],
     build: async (media, words) => {
       const cut = await toTheBeat(media);
       const beats = cut ? beatPoints(beatInfo.beats, 1) : null;

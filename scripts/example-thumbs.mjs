@@ -29,6 +29,20 @@ const page = await ctx.newPage();
 page.on('pageerror', (e) => console.error('page error:', e.message));
 await page.goto(`http://localhost:${server.address().port}/app/`);
 await page.waitForFunction(() => window.__moshpit?.starters);
+// titles in the Impact style look the same on every machine (Linux has no Impact): a condensed font of the same weight under its name
+await page.evaluate(async () => {
+  try {
+    const css = await (await fetch('https://fonts.googleapis.com/css2?family=Anton')).text();
+    // the Latin letters' file (the CSS lists one file per alphabet)
+    const url = /\/\* latin \*\/[^}]*?url\((https:[^)]+)\)/.exec(css)?.[1];
+    if (!url) return;
+    const face = new FontFace('Impact', await (await fetch(url)).arrayBuffer());
+    await face.load();
+    document.fonts.add(face);
+  } catch {
+    /* the thin fallback, then */
+  }
+});
 // cut-outs without downloading a model: the subject is whatever differs from the colour in the
 // corners (the sample footage's subjects sit on a plain background)
 await page.evaluate(() =>
