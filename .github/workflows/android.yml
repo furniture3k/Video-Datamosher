@@ -58,7 +58,7 @@ jobs:
           "$tools/apksigner" sign --ks release.jks --ks-pass "pass:$pass" --out moshpit-android-arm64.apk aligned.apk
           "$tools/apksigner" verify moshpit-android-arm64.apk
           rm -f release.jks
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moshpit-android
           path: moshpit-android-arm64.apk

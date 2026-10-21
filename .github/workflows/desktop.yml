@@ -84,7 +84,7 @@ jobs:
 
             Includes a GPL build of FFmpeg, built by this project's own workflow from FFmpeg's signed source release and pinned sources of x264, libvpx, libvorbis and zlib (`scripts/build-ffmpeg.sh`; the exact sources are listed in `FFMPEG-NOTICE.txt` in each install).
           releaseDraft: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: moshpit-${{ matrix.name }}
           path: |
