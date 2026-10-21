@@ -44,8 +44,6 @@ jobs:
       - name: Build FFmpeg from source
         if: steps.cache.outputs.cache-hit != 'true'
         run: scripts/build-ffmpeg.sh ${{ matrix.target }}
-        env:
-          MOSHPIT_FFMPEG_LEARN: 1
       - uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-${{ matrix.target }}

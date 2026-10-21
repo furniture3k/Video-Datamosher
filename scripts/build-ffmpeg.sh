@@ -121,9 +121,10 @@ case $TARGET in
     ;;
   x86_64-pc-windows-msvc)
     CROSS=x86_64-w64-mingw32-
-    HOST=(--host=x86_64-w64-mingw32)
+    # (the cross compiler named outright: a configure that can't find it would quietly use the Linux one)
+    HOST=(--host=x86_64-w64-mingw32 CC=${CROSS}gcc AR=${CROSS}ar RANLIB=${CROSS}ranlib)
     VPX_TARGET=x86_64-win64-gcc
-    FF_EXTRA=(--enable-cross-compile --arch=x86_64 --target-os=mingw32 --cross-prefix=$CROSS --extra-ldflags=-static)
+    FF_EXTRA=(--enable-cross-compile --arch=x86_64 --target-os=mingw32 --cross-prefix=$CROSS --pkg-config=pkg-config --extra-ldflags=-static)
     ;;
   *)
     echo "no build for $TARGET" >&2
