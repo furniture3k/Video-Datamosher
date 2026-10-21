@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyBitstream, type Prepared } from '../src/engine/mosh';
 import { makeEffect } from '../src/engine/presets';
 import { migrate } from '../src/engine/migrate';
-import { beatHitKeys, evalKeys } from '../src/engine/keys';
+import { beatHitKeys, beatRamp, evalKeys, rampForLength, rampLength, rampSpeedAt } from '../src/engine/keys';
 import { transitionEffects, transitionKeyTimes } from '../src/engine/timeline';
 import { newProject, type EffectInstance, type Frame, type MediaItem, type Project } from '../src/engine/types';
 import { keyTimes } from '../src/engine/args';
@@ -136,5 +136,25 @@ describe('hits on the beat', () => {
     expect(evalKeys(k.x!, 0.04)).toBeCloseTo(0.02, 6);
     expect(evalKeys(k.x!, 1.04)).toBeCloseTo(-0.02, 6);
     expect(evalKeys(k.x!, 0.6)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('speed ramps on the beat', () => {
+  it('is slow on each beat and fast between', () => {
+    const r = beatRamp([0.25, 0.75, 1.5], 0.3, 3)!;
+    expect(rampSpeedAt(r, 0.25)).toBeCloseTo(0.3, 6);
+    expect(rampSpeedAt(r, 0.5)).toBeCloseTo(3, 6);
+    expect(rampSpeedAt(r, 0)).toBeCloseTo(3, 6);
+    expect(rampSpeedAt(r, 1)).toBeCloseTo(3, 6);
+    expect(beatRamp([2], 0.3, 3)).toBeNull();
+  });
+  it('keeps the clip its length, slowing down when the source runs short', () => {
+    const r = beatRamp([0.5], 0.5, 2)!;
+    const { span } = rampForLength(r, 2, 100);
+    // the clip stays 2 s long on the timeline
+    expect(rampLength(r, span)).toBeCloseTo(2, 6);
+    const short = rampForLength(r, 2, 1);
+    expect(short.span).toBeLessThanOrEqual(1 + 1e-9);
+    expect(rampLength(short.ramp, short.span)).toBeCloseTo(2, 6);
   });
 });

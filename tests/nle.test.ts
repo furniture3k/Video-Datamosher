@@ -175,6 +175,31 @@ d('native ffmpeg renders', () => {
     expect(render(dir, project([{ ...c, keys: dense }], [media('green')])).length).toBe(48);
   });
 
+  it('motion blur smears a fast keyframed move, and only when it is on', () => {
+    const dir = tmpdir();
+    ff(dir, ['-f', 'lavfi', '-i', 'color=c=black:s=320x240:r=24:d=3,drawbox=x=150:y=0:w=20:h=240:color=white:t=fill', '-pix_fmt', 'yuv420p', 'bar.mp4']);
+    // the bar crosses half the frame in a second: about 7 px a frame at 320 px wide
+    const keys = { x: [[0, -0.25], [1, 0.25]] as KeyPoint[] };
+    const sharp = render(dir, project([{ ...makeClip(media('bar', 2), 'v1'), out: 1, keys }], [media('bar', 2)]));
+    const blurred = render(dir, project([{ ...makeClip(media('bar', 2), 'v1'), out: 1, keys, motionBlur: true }], [media('bar', 2)]));
+    expect(blurred.length).toBe(sharp.length);
+    // in-between greys along a row (the smeared edges) in the middle of the move
+    const greys = (px: Uint8Array) => {
+      let n = 0;
+      for (let x = 0; x < 64; x++) if (px[24 * 64 + x] > 40 && px[24 * 64 + x] < 200) n++;
+      return n;
+    };
+    expect(greys(blurred[12])).toBeGreaterThan(greys(sharp[12]));
+    // the bar is in the same place (the shutter ends on the frame)
+    const centre = (px: Uint8Array) => {
+      let s = 0;
+      let w = 0;
+      for (let x = 0; x < 64; x++) ((s += px[24 * 64 + x] * x), (w += px[24 * 64 + x]));
+      return s / w;
+    };
+    expect(Math.abs(centre(blurred[12]) - centre(sharp[12]))).toBeLessThan(2);
+  });
+
   it('keyframed rotation and opacity', () => {
     const dir = tmpdir();
     sources(dir);

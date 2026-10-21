@@ -214,6 +214,10 @@ export interface Clip {
   keys?: Keys;
   /** speed ramp: speed over the clip (replaces `speed`) */
   ramp?: Ramp;
+  /** the ramp follows the music: slow on each beat, fast between (a velocity edit) */
+  rampBeat?: boolean;
+  /** motion blur on its keyframed moves (zoom, position, turn): as if the shutter were open half the frame */
+  motionBlur?: boolean;
   /** chroma key (upper video tracks) */
   key?: ChromaKey;
   /** tracked objects: [source seconds, centre x 0..1, centre y 0..1] of the source picture, and the box's size (shares of it) */

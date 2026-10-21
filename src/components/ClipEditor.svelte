@@ -15,7 +15,7 @@ import { store } from '../lib/store.svelte';
   import { VIDEO_TRACK, clipOn, gradeOf, transformOf, isIdentityGrade, isIdentityTransform, type Clip, type Grade, type Transform, type TransitionType } from '../engine/types';
   import { layersOnBeat } from '../lib/graphicsops.svelte';
   import { setTransition, stepPrintTrack, detach, splitAtPlayhead, deleteSelected, toggleEnabled, freezeAtPlayhead, groupSelected, ungroupSelected, EMOJI } from '../lib/edit';
-  import { revealOnBeats, hitsOnBeats } from '../lib/graphicsops.svelte';
+  import { revealOnBeats, hitsOnBeats, rampOnBeats } from '../lib/graphicsops.svelte';
   import { hasKeys, keyedValue, withKeyAt, RAMP_PRESETS, type KeyPoint, type KeyProp } from '../engine/keys';
   import { importLuts } from '../lib/luts.svelte';
   import { openCompound, setMoshInside } from '../lib/compound.svelte';
@@ -126,13 +126,15 @@ import { store } from '../lib/store.svelte';
   // ---- speed ramp
   // a ramp's slow and fast speeds are read back from the ramp itself
   const rampSpeeds = $derived<[number, number]>(c?.ramp?.length ? [Math.min(...c.ramp.map((p) => p[1])), Math.max(...c.ramp.map((p) => p[1]))] : [0.3, 2.5]);
-  const rampPreset = $derived(c?.ramp?.length ? (RAMP_PRESETS.find((r) => JSON.stringify(r.make(rampSpeeds[0], rampSpeeds[1])) === JSON.stringify(c.ramp))?.id ?? 'custom') : 'none');
+  const rampPreset = $derived(c?.rampBeat && c.ramp?.length ? 'beats' : c?.ramp?.length ? (RAMP_PRESETS.find((r) => JSON.stringify(r.make(rampSpeeds[0], rampSpeeds[1])) === JSON.stringify(c.ramp))?.id ?? 'custom') : 'none');
   function setRamp(id: string, slow = rampSpeeds[0], fast = rampSpeeds[1]) {
     const pr = RAMP_PRESETS.find((r) => r.id === id);
     const cid = c!.id;
+    if (id === 'beats') return void rampOnBeats(cid, slow, fast);
     store.editTimeline((p) => {
       const x = p.clips.find((y) => y.id === cid);
       if (!x) return;
+      delete x.rampBeat;
       if (pr) x.ramp = pr.make(Math.min(slow, fast), Math.max(slow, fast));
       else delete x.ramp;
     }, 'ramp' + cid);
@@ -338,8 +340,8 @@ import { store } from '../lib/store.svelte';
           type="select"
           label="Speed ramp"
           value={rampPreset}
-          options={[{ value: 'none', label: 'None (steady speed)' }, ...RAMP_PRESETS.map((r) => ({ value: r.id, label: r.name })), ...(rampPreset === 'custom' ? [{ value: 'custom', label: 'Custom' }] : [])]}
-          help="Changes speed during the clip, from Slow to Fast. The clip's length follows. Slow parts give small, smeary motion vectors; fast parts give big, wild ones."
+          options={[{ value: 'none', label: 'None (steady speed)' }, { value: 'beats', label: 'On the beat (velocity edit)' }, ...RAMP_PRESETS.map((r) => ({ value: r.id, label: r.name })), ...(rampPreset === 'custom' ? [{ value: 'custom', label: 'Custom' }] : [])]}
+          help="Changes speed during the clip, from Slow to Fast. The clip's length follows. On the beat: slow on every beat of the music, rushing between, and the clip keeps its length. Slow parts give small, smeary motion vectors; fast parts give big, wild ones."
           onchange={(v: string) => setRamp(v)}
         />
         {#if c.ramp}
@@ -407,6 +409,9 @@ import { store } from '../lib/store.svelte';
       <Field label="Position X" min={-1} max={1} step={0.005} value={kv('x')} help="Moves the picture left (−) or right (+), as a share of the frame width." onchange={setKeyed('x')}>{@render kf('x')}</Field>
       <Field label="Position Y" min={-1} max={1} step={0.005} value={kv('y')} help="Moves the picture up (−) or down (+), as a share of the frame height." onchange={setKeyed('y')}>{@render kf('y')}</Field>
       <Field label="Rotation" unit="°" min={-180} max={180} step={0.5} value={kv('rotate')} help="Turns the picture clockwise (+) or anticlockwise (−)." onchange={setKeyed('rotate')}>{@render kf('rotate')}</Field>
+      {#if hasKeys(c.keys, ['zoom', 'rotate', 'x', 'y'])}
+        <Field type="bool" label="Motion blur" value={!!c.motionBlur} help="Smears the picture along its keyframed moves (zoom punches, shakes, slides), like a camera's shutter: fast moves look smooth instead of jumping. Shown in the Mosh view and the export (not the Edit view); rendering this clip takes longer." onchange={(v: boolean) => editKeys((x) => (v ? (x.motionBlur = true) : delete x.motionBlur), 'mb' + c!.id)} />
+      {/if}
       {#if c.track === VIDEO_TRACK}
         <div class="row" style="flex-wrap: wrap" role="group" aria-label="Hits on the beat">
           <span class="small muted grow" title="Keyframes on every beat of the music, on the selected clips of the main track. They replace this clip's zoom and position keys.">On the beat</span>

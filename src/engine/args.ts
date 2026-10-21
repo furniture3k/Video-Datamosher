@@ -185,10 +185,11 @@ function keyFilters(k: ChromaKey): string[] {
  * every frame the source point that lands on each corner. A 2px border of the background is
  * added first so whatever comes into view from outside the picture is background.
  */
-function keyedTransform(keys: Keys, T: { zoom: number; x: number; y: number; rotate: number }, w: number, h: number, fps: number, offset: number, bg: string): string[] {
+function keyedTransform(keys: Keys, T: { zoom: number; x: number; y: number; rotate: number }, w: number, h: number, fps: number, offset: number, bg: string, sub = 1): string[] {
   const W = w + 4;
   const H = h + 4;
-  const t = `(in/${fps}+${r3(offset)})`;
+  // with `sub` pictures a frame (motion blur), picture k of frame i is at i - (sub-1-k)/(2 sub) frames: half a frame, ending on the frame
+  const t = sub > 1 ? `((floor(in/${sub})+(mod(in,${sub})-${sub - 1})/${2 * sub})/${fps}+${r3(offset)})` : `(in/${fps}+${r3(offset)})`;
   const val = (k: 'zoom' | 'x' | 'y' | 'rotate', fallback: number) => (keys[k]?.length ? `(${keysExpr(keys[k]!, t)})` : `(${r3(fallback)})`);
   const z = `max(0.01,${val('zoom', T.zoom)})`;
   const dx = `${val('x', T.x)}*${w}`;
@@ -204,6 +205,12 @@ function keyedTransform(keys: Keys, T: { zoom: number; x: number; y: number; rot
   const opts = c.flatMap(([x, y], i) => [`x${i}='${x}'`, `y${i}='${y}'`]);
   return [`pad=${W}:${H}:2:2:color=${bg}`, `perspective=${opts.join(':')}:interpolation=linear:sense=source:eval=frame`, `crop=${w}:${h}:2:2`];
 }
+
+/** Transitions that are a fast pan: blurred sideways through the middle. */
+const WHIPS = new Set(['whip', 'whipleft', 'whipright']);
+
+/** Pictures a frame is averaged from for motion blur. */
+const MB_SUB = 4;
 
 /** A clip cut down to part of itself: local seconds a..b of it. */
 export function windowClip(c: Clip, a: number, b: number): Clip {
@@ -238,7 +245,9 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   // a picture put on a tracked surface is placed by the surface, not by its own position, zoom and turn
   const screen = layer && c.screen ? c.screen : null;
   // zoom / rotation keys need the full perspective transform; position alone moves with overlay
-  const moving = !screen && hasKeys(c.keys, ['zoom', 'rotate']);
+  // (motion blur needs the moves worked out between frames: position keys go that way too)
+  const blur = !screen && !!c.motionBlur && hasKeys(c.keys, ['zoom', 'rotate', 'x', 'y']);
+  const moving = !screen && (hasKeys(c.keys, ['zoom', 'rotate']) || blur);
   const sliding = !screen && !moving && hasKeys(c.keys, ['x', 'y']);
   const fading = hasKeys(c.keys, ['opacity']);
   const ramp = !c.freeze && c.ramp?.length ? c.ramp : null;
@@ -300,6 +309,10 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   let cur = `${tag}p`;
   if (screen) {
     f.push(...screenFilters(screen, w, h, fps, offset, bg));
+    stmts.push(`[${src}]${chain()}[${cur}]`);
+  } else if (moving && blur) {
+    // the move at MB_SUB moments across half a frame, averaged (a 180° shutter)
+    f.push(`fps=${fps * MB_SUB}`, ...keyedTransform(c.keys!, T, w, h, fps, offset, bg, MB_SUB), `format=${layer ? 'gbrap' : 'gbrp'}`, `tmix=frames=${MB_SUB}`, `select='eq(mod(n,${MB_SUB}),${MB_SUB - 1})'`, `setpts=N/${fps}/TB`, `fps=${fps}`, 'format=rgba');
     stmts.push(`[${src}]${chain()}[${cur}]`);
   } else if (moving) {
     f.push(...keyedTransform(c.keys!, T, w, h, fps, offset, bg));
@@ -385,8 +398,17 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
       const k = i + 1;
       const o = `${tag}x${k}`;
       if (pl.overlap > 0) {
-        const tr = xfadeOf(pl.clip.transition!.type, vis[k - 1].clip, pl.clip);
-        filter.push(`[${cur}][${tag}c${k}]xfade=transition=${tr}:duration=${r3(pl.overlap)}:offset=${r3(pl.start - seg.start)}[${o}]`);
+        const type = pl.clip.transition!.type;
+        const tr = xfadeOf(type, vis[k - 1].clip, pl.clip);
+        const at = pl.start - seg.start;
+        if (WHIPS.has(type)) {
+          // a whip pan smears sideways through its middle (blurred only for those frames)
+          const a = r3(at + pl.overlap * 0.15);
+          const b = r3(at + pl.overlap * 0.85);
+          filter.push(`[${cur}][${tag}c${k}]xfade=transition=${tr}:duration=${r3(pl.overlap)}:offset=${r3(at)},split[${o}a][${o}b]`);
+          filter.push(`[${o}b]trim=start=${a}:end=${b},gblur=sigma=${r3(Math.max(2, w * 0.02))}:sigmaV=0.01[${o}c]`);
+          filter.push(`[${o}a][${o}c]overlay=0:0:eof_action=pass:format=auto[${o}]`);
+        } else filter.push(`[${cur}][${tag}c${k}]xfade=transition=${tr}:duration=${r3(pl.overlap)}:offset=${r3(at)}[${o}]`);
       } else filter.push(`[${cur}][${tag}c${k}]concat=n=2:v=1:a=0[${o}]`);
       cur = o;
     });
@@ -641,13 +663,15 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
   const t1 = seg.f1 / fps;
   const { previewWidth: _p, width: _w, keyMarkers: _k, ...enc } = project.encoder;
   return JSON.stringify({
+    // (pieces prepared before colours were kept BT.709 throughout are made again)
+    cm: 709,
     enc,
     size: outputSize(project, width),
     n: seg.f1 - seg.f0,
     keys: keyTimes(project).filter((t) => t > t0 + 0.001 && t < t1 - 0.001).map((t) => r3(t - t0)),
     texts: (project.layers ?? []).filter((t) => t.moshed && t.start < t1 && t.start + t.duration > t0),
-    clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '', ...clipLook(pl.clip) })),
-    layers: seg.layers.map((l) => ({ m: path(l.media) || JSON.stringify(l.media.source), w: l.media.width, h: l.media.height, i: l.clip.in, o: l.clip.out, s: l.clip.speed, r: l.clip.reverse, f: l.clip.fit, st: r3(l.start - t0), tr: l.track, ...clipLook(l.clip) })),
+    clips: seg.clips.map((pl) => ({ m: path(pl.media) || JSON.stringify(pl.media.source), w: pl.media.width, h: pl.media.height, co: pl.media.color, i: pl.clip.in, o: pl.clip.out, s: pl.clip.speed, r: pl.clip.reverse, f: pl.clip.fit, ov: r3(pl.overlap), st: r3(pl.start - seg.start), t: pl.overlap > 0 ? pl.clip.transition?.type : '', ...clipLook(pl.clip) })),
+    layers: seg.layers.map((l) => ({ m: path(l.media) || JSON.stringify(l.media.source), w: l.media.width, h: l.media.height, co: l.media.color, i: l.clip.in, o: l.clip.out, s: l.clip.speed, r: l.clip.reverse, f: l.clip.fit, st: r3(l.start - t0), tr: l.track, ...clipLook(l.clip) })),
     hb: seg.hideBase,
     // (layers behind the subject are cut by the mattes: a new matte draws them again)
     mt: project.layers.some((l) => l.moshed && l.depth && l.depth !== 'front') || project.clips.some((c) => c.depth === 'behind') ? project.media.flatMap((m) => (m.mattes ?? []).map((x) => `${x.id}@${x.version}`)) : undefined,
@@ -658,7 +682,7 @@ export function segmentKey(project: Project, seg: Segment, width: number, path: 
 /** Everything about a clip's picture besides its timing. */
 function clipLook(c: Clip) {
   // everything clipGraph draws from, so a change re-prepares the segment
-  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab, sp: c.stepFps, sc: c.screen, dp: c.depth, cd: c.card, mk: c.mask };
+  return { e: clipOn(c), fz: !!c.freeze, op: c.opacity ?? 1, bl: c.blend ?? 'normal', tf: transformOf(c), gr: gradeOf(c), vi: c.vfadeIn ?? 0, vo: c.vfadeOut ?? 0, k: c.keys, ra: c.ramp, ck: c.key, sb: c.stab, sp: c.stepFps, sc: c.screen, dp: c.depth, cd: c.card, mk: c.mask, mb: c.motionBlur };
 }
 
 /**

@@ -5,7 +5,7 @@ import { beatPoints } from '../engine/wordbeats';
 import { revealOrder, revealPlan, revealPoints } from '../engine/reveal';
 import { popKeys, type Keys, type PopOptions } from '../engine/keys';
 import { transformOf, VIDEO_TRACK, type Clip } from '../engine/types';
-import { swapKeys, beatHitKeys } from '../engine/keys';
+import { swapKeys, beatHitKeys, beatRamp, rampForLength } from '../engine/keys';
 import { layoutVideo, layers as upperLayers, clipLen } from '../engine/timeline';
 import { mediaOf } from '../engine/timeline';
 import { flashLayers } from '../engine/flash';
@@ -168,5 +168,52 @@ export function hitsOnBeats(kind: 'punch' | 'shake' | 'both', on: 'beat' | 'bar'
   });
   if (!hits) return store.toast('No beats fall on those clips.', 'info');
   const what = kind === 'punch' ? 'Zoom punch' : kind === 'shake' ? 'Shake' : 'Zoom punch and shake';
-  store.toast(`${what} on ${hits} ${on === 'bar' ? 'bars' : 'beats'} across ${targets.length} clip${targets.length > 1 ? 's' : ''}. They are keyframes: change them in the Clip tab, or undo.`, 'ok', 6000);
+  store.toast(`${what} on ${hits} ${on === 'bar' ? 'bars' : 'beats'} across ${targets.length} clip${targets.length > 1 ? 's' : ''}. They are keyframes: change them in the Clip tab (Motion blur there smooths them), or undo.`, 'ok', 6000);
+}
+
+/**
+ * A velocity edit: the clip slows to `slow` on each beat of the music and rushes at `fast` between
+ * them, keeping its length on the timeline (it plays more of its footage to do it, or as much as
+ * there is). On a clip of the main track or a track above.
+ */
+export function rampOnBeats(clipId: string, slow = 0.35, fast = 2.5): boolean {
+  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) {
+    store.toast('No beat found yet: put music on an audio track first.', 'info');
+    return false;
+  }
+  const p = store.project;
+  const c = p.clips.find((x) => x.id === clipId);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !m || c.freeze) return false;
+  const start = c.track === VIDEO_TRACK ? layoutVideo(p).find((pl) => pl.clip.id === c.id)?.start ?? 0 : c.start;
+  const len = clipLen(c);
+  const ramp = beatRamp(beatInfo.beats.map((b) => (b - start) / len), Math.min(slow, fast), Math.max(slow, fast));
+  if (!ramp) {
+    store.toast('No beat falls on this clip.', 'info');
+    return false;
+  }
+  const available = c.reverse ? c.out : Math.max(0.04, m.duration - c.in);
+  const fit = rampForLength(ramp, len, available);
+  store.editTimeline((q) => {
+    const x = q.clips.find((y) => y.id === clipId);
+    if (!x) return;
+    x.ramp = fit.ramp;
+    x.rampBeat = true;
+    if (x.reverse) x.in = Math.max(0, x.out - fit.span);
+    else x.out = x.in + fit.span;
+  }, 'ramp' + clipId);
+  if (fit.ramp !== ramp) store.toast('The clip is too short to rush that fast between the beats: the ramp is slower so it keeps its length.', 'info', 6000);
+  return true;
+}
+
+/** The velocity edit on every selected clip with a picture (or the one under the playhead on the main track). */
+export function rampSelectedOnBeats() {
+  const p = store.project;
+  const t = store.ui.time;
+  const sel = store.ui.selectedClips.filter((id) => p.clips.some((c) => c.id === id && mediaOf(p, c.mediaId)?.hasVideo));
+  const ids = sel.length ? sel : layoutVideo(p).filter((pl) => t >= pl.start && t < pl.end).map((pl) => pl.clip.id);
+  if (!ids.length) return store.toast('Select a clip first.', 'info');
+  let n = 0;
+  for (const id of ids) if (rampOnBeats(id)) n++;
+  if (n) store.toast(`${n} clip${n > 1 ? 's' : ''} slow on the beats and rush between them. Change Slow and Fast in the Clip tab.`, 'ok', 5000);
 }

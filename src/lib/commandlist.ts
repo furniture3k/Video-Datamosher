@@ -109,6 +109,7 @@ export const COMMANDS: CommandInfo[] = [
   { id: 'punch-beats', title: 'Zoom punch on every beat', group: 'Edit', keys: [], words: 'zoom in bounce pulse hit beat reel velocity edit camera' },
   { id: 'punch-bars', title: 'Zoom punch on every bar', group: 'Edit', keys: [], words: 'zoom in bounce pulse hit downbeat bar reel camera' },
   { id: 'shake-beats', title: 'Shake on every beat', group: 'Edit', keys: [], words: 'camera shake jolt hit beat impact reel velocity edit' },
+  { id: 'ramp-beats', title: 'Speed ramp on the beat (velocity edit) for the selected clips', group: 'Edit', keys: [], words: 'velocity edit slow motion speed up beat ramp reel' },
   { id: 'punch-shake-beats', title: 'Zoom punch and shake on every beat', group: 'Edit', keys: [], words: 'camera shake zoom bounce hit impact beat reel' },
   { id: 'group', title: 'Group the selected titles and shapes', group: 'Edit', keys: [], words: 'link together move copy delete mark' },
   { id: 'ungroup', title: 'Ungroup the selected titles and shapes', group: 'Edit', keys: [], words: 'unlink separate' },

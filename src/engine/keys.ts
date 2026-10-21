@@ -153,6 +153,37 @@ export const RAMP_PRESETS: { id: string; name: string; make: (a: number, b: numb
   { id: 'montage', name: 'Montage (bursts)', make: (a, b) => [[0, a], [0.2, a], [0.25, b], [0.45, b], [0.5, a], [0.7, a], [0.75, b], [1, b]] },
 ];
 
+/**
+ * A velocity-edit ramp: `slow` on each beat (positions in the clip, 0..1) and `fast` halfway
+ * between, straight lines in between. Before the first beat and after the last it runs fast into
+ * it and out of it. Null when no beat falls inside the clip.
+ */
+export function beatRamp(beats: number[], slow: number, fast: number): Ramp | null {
+  const xs = [...new Set(beats.filter((x) => x >= 0 && x <= 1).map((x) => Math.round(x * 1e4) / 1e4))].sort((a, b) => a - b);
+  if (!xs.length) return null;
+  const r: Ramp = [];
+  if (xs[0] > 0) r.push([0, fast]);
+  xs.forEach((x, i) => {
+    r.push([x, slow]);
+    const next = xs[i + 1];
+    if (next !== undefined) r.push([(x + next) / 2, fast]);
+  });
+  if (xs[xs.length - 1] < 1) r.push([1, fast]);
+  return r;
+}
+
+/**
+ * How much source a clip `len` seconds long needs to play `ramp` and keep its length, and the
+ * ramp made slower if there isn't that much (`available` seconds of source from the in point).
+ */
+export function rampForLength(ramp: Ramp, len: number, available: number): { ramp: Ramp; span: number } {
+  const need = len * rampIntegral(ramp, 1);
+  if (need <= available || need <= 0) return { ramp, span: need };
+  const k = available / need;
+  const slower = ramp.map(([x, s]) => [x, Math.max(MIN_SPEED, s * k)] as [number, number]);
+  return { ramp: slower, span: len * rampIntegral(slower, 1) };
+}
+
 // ---------- pop in on the beat ----------
 
 export type PopMode = 'snap' | 'pop' | 'slide';
