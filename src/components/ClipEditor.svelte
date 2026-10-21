@@ -413,10 +413,10 @@ import { store } from '../lib/store.svelte';
         <Field type="bool" label="Motion blur" value={!!c.motionBlur} help="Smears the picture along its keyframed moves (zoom punches, shakes, slides), like a camera's shutter: fast moves look smooth instead of jumping. Shown in the Mosh view and the export (not the Edit view); rendering this clip takes longer." onchange={(v: boolean) => editKeys((x) => (v ? (x.motionBlur = true) : delete x.motionBlur), 'mb' + c!.id)} />
       {/if}
       {#if c.track === VIDEO_TRACK}
-        <div class="row" style="flex-wrap: wrap" role="group" aria-label="Hits on the beat">
-          <span class="small muted grow" title="Keyframes on every beat of the music, on the selected clips of the main track. They replace this clip's zoom and position keys.">On the beat</span>
-          <button class="small" title="The picture jumps in a little on every beat and eases back" onclick={() => hitsOnBeats('punch', 'beat')}>Zoom punch</button>
-          <button class="small" title="The picture is knocked sideways on every beat and settles" onclick={() => hitsOnBeats('shake', 'beat')}>Shake</button>
+        <div class="small muted beat-label" title="Keyframes on every beat of the music, on the selected clips of the main track. They replace the clips' zoom and position keys.">On the beat</div>
+        <div class="row beat-hits" role="group" aria-label="Hits on the beat">
+          <button class="small" title="The picture jumps in a little on every beat and eases back (Z)" onclick={() => hitsOnBeats('punch', 'beat')}>Zoom punch</button>
+          <button class="small" title="The picture is knocked sideways on every beat and settles (H)" onclick={() => hitsOnBeats('shake', 'beat')}>Shake</button>
           <button class="small" title="A zoom punch on the first beat of every bar" onclick={() => hitsOnBeats('punch', 'bar')}>Punch on bars</button>
         </div>
         <Field label="Hit strength" unit="×" min={0.25} max={3} step={0.05} value={hitPrefs.strength} help="How hard the next zoom punch or shake hits: 1 is a punch of 8 % and a shake of about 2 % of the frame. Press Z (punch) or H (shake) to put them on." onchange={setHitStrength} />
@@ -687,6 +687,16 @@ import { store } from '../lib/store.svelte';
     color: var(--accent);
   }
   .keyc,
+  .beat-label {
+    margin-top: 4px;
+  }
+  .beat-hits {
+    flex-wrap: wrap;
+  }
+  .beat-hits button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
   .ramp {
     gap: 8px;
   }

@@ -23,11 +23,14 @@
 <Modal title="Generate a clip">
   <p class="small muted">Footage made on your device: scenes drawn like camera footage, and patterns from the video engine.</p>
   <label class="row small len">Length <input type="number" min="1" max="30" bind:value={seconds} /> seconds</label>
-  <div class="grid">
-    {#each [...SCENES, ...GENERATORS] as g}
-      <button disabled={busy} onclick={() => add(g.id)}>{g.name}</button>
-    {/each}
-  </div>
+  {#each [['Scenes', SCENES], ['Patterns', GENERATORS]] as [label, list]}
+    <div class="label group">{label}</div>
+    <div class="grid">
+      {#each list as { id: string; name: string }[] as g}
+        <button disabled={busy} onclick={() => add(g.id)}>{g.name}</button>
+      {/each}
+    </div>
+  {/each}
   {#if busy}<p class="small muted">Generating…</p>{/if}
 </Modal>
 
@@ -39,7 +42,10 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
-    margin-top: 12px;
+    margin-top: 6px;
+  }
+  .group {
+    margin-top: 14px;
   }
   .grid button {
     height: 34px;
