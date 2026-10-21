@@ -98,12 +98,12 @@ if (process.argv.includes('--site')) {
   fs.mkdirSync(site, { recursive: true });
   fs.copyFileSync(path.resolve('docs/studio.png'), path.join(site, 'studio.png'));
   const videos = !process.argv.includes('--gallery-only');
-  // three generated shots (no burnt-in timecode) melting into each other
+  // three drawn shots melting into each other
   if (videos) await page.evaluate(async () => {
     const m = window.__moshpit;
     await m.starters.openExample({
       id: 'site', name: 'moshpit', description: '', thumb: '',
-      sample: [['mandelbrot', 2.5], ['gradients', 2.5], ['life', 2.5]],
+      sample: [['nightdrive', 2.5], ['citylights', 2.5], ['sunset', 2.5]],
       build: () => m.store.edit((p) => {
         const v = p.clips.filter((c) => c.track === 'v1');
         if (v[1]) v[1].transition = { type: 'melt', duration: 1.2, intensity: 0.6 };

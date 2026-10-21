@@ -1227,7 +1227,7 @@
         {#if mosh}<span class="faint" title="Output frame">{n ? store.ui.playhead + 1 : 0}/{n}</span>{/if}
         {#if cur}
           <span class="ftype" class:i={cur.type === 'I'} title="Frame type: I = full picture, P = motion only">{cur.type}</span>
-          <span class="faint">{TAG_LABEL[cur.tag]}</span>
+          <span class="faint tag">{TAG_LABEL[cur.tag]}</span>
         {/if}
       </div>
     </div>
@@ -1634,6 +1634,8 @@
     align-items: baseline;
     gap: 6px;
     min-width: 0;
+    /* what doesn't fit is cut short here, never drawn under the buttons */
+    overflow: hidden;
   }
   .tc {
     font-size: 17px;
@@ -1664,6 +1666,13 @@
     gap: 6px;
     align-items: center;
     margin-left: 6px;
+    min-width: 0;
+    white-space: nowrap;
+  }
+  .frameinfo .tag {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
   .ftype {
     padding: 0 4px;
@@ -1744,6 +1753,12 @@
   /* by the player's own width (the side panels decide it, not the window), so the time never runs under the buttons */
   @container (max-width: 800px) {
     .frameinfo {
+      display: none;
+    }
+  }
+  /* (what happened to the frame, in words, only where there's room for it) */
+  @container (max-width: 1000px) {
+    .frameinfo .tag {
       display: none;
     }
   }

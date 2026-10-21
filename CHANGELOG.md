@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.16.1
+
+- **Drawn sample footage on older iPhones and Macs**: the city lights, sunset, night drive and dancer
+  are drawn on an ordinary canvas, so templates, examples and **Generate** work on Safari before 16.4
+  too (it has no OffscreenCanvas).
+- **Load example** in an empty project uses the drawn footage instead of the test pattern.
+- **The player's frame label** (frame number, type and what happened to it) no longer runs under the
+  play buttons when the player is narrow; the description is left out when there's no room for it.
+- **The website and docs** describe sizes for Reels, TikTok and Shorts, 4K vertical, 60 fps, colours,
+  HDR and the beat tools, with new screenshots, demo and videos.
+
 ## 1.16.0
 
 - **Hits on the beat**: **Zoom punch** (Z) and **Shake** (H) (Clip tab › On the

@@ -1,13 +1,13 @@
 <img src="docs/banner.svg" alt="moshpit" width="100%">
 
-**moshpit** is a video editor with a datamosher built in, running in the browser. Cut your clips, music and titles together on a multi-track timeline, then mosh the result: it edits the compressed frames directly (removing keyframes, repeating motion frames, borrowing motion from other shots, corrupting bytes) with an effect stack and mosh transitions to control all of it. Exports go up to 1080p and beyond.
+**moshpit** is a video editor with a datamosher built in, running in the browser. Cut your clips, music and titles together on a multi-track timeline, then mosh the result: it edits the compressed frames directly (removing keyframes, repeating motion frames, borrowing motion from other shots, corrupting bytes) with an effect stack and mosh transitions to control all of it. Exports go up to 4K and 60 fps, sized for Reels, TikTok and Shorts.
 
 Nothing is uploaded. Decoding and encoding happen locally with [ffmpeg.wasm](https://github.com/ffmpegwasm/ffmpeg.wasm); the picture effects run on WebGL.
 
 **[Open moshpit →](https://furniture3k.github.io/Video-Datamosher/app/)**&emsp;[Website](https://furniture3k.github.io/Video-Datamosher/) · [Docs](https://furniture3k.github.io/Video-Datamosher/docs/)&emsp;[![CI](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml/badge.svg)](https://github.com/furniture3k/Video-Datamosher/actions/workflows/ci.yml)
 
 <p align="center">
-  <img src="docs/demo.gif" alt="A title over a test pattern that melts into a Mandelbrot zoom, then blooms into the next shot" width="420"><br>
+  <img src="docs/demo.gif" alt="A title over a night drive; a dancer melts into the road, then the sunset's waves bloom over it" width="420"><br>
   <sub>Three clips cut together in moshpit with a title, a <b>Melt</b> and a <b>Bloom melt</b> transition, exported as a GIF from the app.</sub>
 </p>
 
@@ -15,7 +15,7 @@ Nothing is uploaded. Decoding and encoding happen locally with [ffmpeg.wasm](htt
 
 ## Getting started
 
-Open the site and you're on the home screen: start a **New project**, import some clips, or start from a **template** (pick your clips and the mosh is set up for you) or an **example** (generated footage, nothing to import). Clips dropped into an empty project are melted straight away so there's something to see; cut them together on the timeline, change the mosh, and press <kbd>Space</kbd>.
+Open the site and you're on the home screen: start a **New project**, import some clips, or start from a **template** (pick your clips and the mosh is set up for you) or an **example** (footage drawn on your device, nothing to import). Clips dropped into an empty project are melted straight away so there's something to see; cut them together on the timeline, change the mosh, and press <kbd>Space</kbd>.
 
 Every project is saved on this device by itself and listed on the home screen with a picture of where you left off; the logo takes you back there.
 
@@ -201,13 +201,13 @@ Phones get their own editor, laid out like the mobile editors you already know r
 - **Storage** (⋯ menu) shows what your media, preview copies and snapshots take, and cleans up what nothing uses. If moshpit closes in the middle of a render (usually out of memory), it starts with auto-render paused instead of crashing again.
 - **Report a problem** (⋯ menu) opens a GitHub bug report with the version, browser and the engine's last messages filled in, without your media or file names.
 
-![Presets: 16 starting points, each showing the effects it uses](docs/presets.png)
+![Presets: starting points, each showing the effects it uses](docs/presets.png)
 
 ## Exporting
 
 MP4 (H.264) and WebM (VP9 or VP8) with sound, GIF, a zip of PNG frames, or the raw moshed AVI. **Shape** exports another aspect than the project (9:16 from 16:9…) with the crop following the action, and **Loop** makes seamless loops: a crossfade, or a melt where the start grows out of the end picture. **Made for** sets everything up for TikTok / Reels / Shorts (1080×1920, or 2160×3840 4K for Shorts and TikTok), the Instagram feed, square posts, YouTube (1080p and 4K), X, Discord (aimed under 10 MB) or chat GIFs. It warns when the video is too long or the wrong shape, and can show the apps' safe zones in the player. Sizes are named by what they make in the project's shape: on a 9:16 project 1080p is 1080×1920 and 4K is 2160×3840. The **mosh resolution** (Encode tab) and the **output size** are separate: mosh at 720p for chunky smears and save at 1080p or 4K, or mosh at full resolution. 1080p exports work well in the browser; 1440p and 4K are fine for short videos. Where the browser has its own video encoder (WebCodecs), MP4 and WebM are encoded with it, several times faster; **Add to queue** exports in the background while you keep editing. **Full quality** moshes at the saved size (4K moshed at 4K, not scaled up), and **Frame rate** makes 60 fps from a 24 fps project with blended in-between frames. Colours are kept in BT.709 from the footage to the file, and HDR clips from phones (HLG, HDR10) are tone-mapped to normal range.
 
-![The export dialog, set to save a 720p mosh at 1080p](docs/export.png)
+![The export dialog made for TikTok, Reels and Shorts: a 720×1280 mosh saved at 1080×1920](docs/export.png)
 
 ## How it works
 

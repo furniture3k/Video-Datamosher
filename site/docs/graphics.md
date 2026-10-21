@@ -40,7 +40,7 @@ In the **Clip** tab, **Cut out a subject**, then tap the thing on the player. It
 
 ## Beats
 
-When the music has a beat, the Start and Duration of titles and shapes can be shown and typed in **beats** (press the unit button beside the number): it follows the real beats, so a tempo change is followed too. **Start on the beat** moves a layer onto the nearest beat. **Reveal one per beat** brings selected layers in one at a time, particles can **burst on the beats**, **Flash a colour on every beat** (in the command palette) puts a few frames of colour on each one, and a **Flipbook** swaps pictures on the beat, even behind the subject.
+When the music has a beat, the Start and Duration of titles and shapes can be shown and typed in **beats** (press the unit button beside the number): it follows the real beats, so a tempo change is followed too. **Start on the beat** moves a layer onto the nearest beat. **Zoom punch** (<kbd>Z</kbd>) and **Shake** (<kbd>H</kbd>) in the Clip tab jump the picture in or knock it sideways on every beat (or bar) and ease it back, as keyframes you can change; **Hit strength** sets how hard, and **Motion blur** smooths them like a camera shutter. Speed ramp › **On the beat** (<kbd>Shift</kbd> <kbd>V</kbd>) is a velocity edit: slow on each beat, rushing between, and the clip keeps its length. **Reveal one per beat** brings selected layers in one at a time, particles can **burst on the beats**, **Flash a colour on every beat** (in the command palette) puts a few frames of colour on each one, and a **Flipbook** swaps pictures on the beat, even behind the subject.
 
 ## Looks
 
