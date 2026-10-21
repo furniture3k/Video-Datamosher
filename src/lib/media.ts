@@ -10,6 +10,7 @@ import { probeFile, renderGenerator, makeProxy, extractPcm, proxyKey } from './r
 import { mediaState, rt, PEAKS_PER_SEC } from './mediastate.svelte';
 import { keepMattes } from './mattes.svelte';
 import { GENERATORS, even, outputSize } from '../engine/args';
+import { generatorName } from '../engine/scenes';
 import { widthForShape } from '../engine/social';
 import { uid, makeClip, insertVideo, nearestCut, freeClips, clipLen, videoEnd, isOverlayTrack, isVideoTrack } from '../engine/timeline';
 import { VIDEO_TRACK, type MediaItem, type Project } from '../engine/types';
@@ -163,13 +164,13 @@ export function endOfTrack(p: Project, track: string): number {
 }
 
 export async function addGenerator(genId: string, seconds = 4, place: Place = 'auto') {
-  const g = GENERATORS.find((x) => x.id === genId)!;
+  const name = generatorName(genId, GENERATORS);
   const w = 640;
   const h = even(w / (16 / 9));
-  store.status.engine = `Generating ${g.name}…`;
+  store.status.engine = `Generating ${name}…`;
   try {
-    const blob = await renderGenerator(g.id, seconds, w, h, 24);
-    const file = new File([blob], `${g.name}.mp4`, { type: 'video/mp4' });
+    const blob = await renderGenerator(genId, seconds, w, h, 24);
+    const file = new File([blob], `${name}.mp4`, { type: 'video/mp4' });
     return await addFiles([file], place === 'auto' ? { track: VIDEO_TRACK, index: Infinity } : place, seconds);
   } finally {
     store.status.engine = '';

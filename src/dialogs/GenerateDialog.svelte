@@ -3,6 +3,7 @@
   import { store } from '../lib/store.svelte';
   import { addGenerator } from '../lib/media';
   import { GENERATORS } from '../engine/args';
+  import { SCENES } from '../engine/scenes';
   let seconds = $state(4);
   let busy = $state(false);
   async function add(id: string) {
@@ -20,10 +21,10 @@
 </script>
 
 <Modal title="Generate a clip">
-  <p class="small muted">Procedural footage rendered by the video engine.</p>
+  <p class="small muted">Footage made on your device: scenes drawn like camera footage, and patterns from the video engine.</p>
   <label class="row small len">Length <input type="number" min="1" max="30" bind:value={seconds} /> seconds</label>
   <div class="grid">
-    {#each GENERATORS as g}
+    {#each [...SCENES, ...GENERATORS] as g}
       <button disabled={busy} onclick={() => add(g.id)}>{g.name}</button>
     {/each}
   </div>

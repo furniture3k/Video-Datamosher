@@ -9,7 +9,8 @@ import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
 import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, encodeArgs, metadataArgs, moshWidthFor, rateFilter, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
-import { JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, hdrLutFile, hdrOf, hdrRgba, sourceMatrix } from '../engine/colour';
+import { SCENES, type Scene } from '../engine/scenes';
+import { FROM_BROWSER_JPEG, JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, hdrLutFile, hdrOf, hdrRgba, sourceMatrix } from '../engine/colour';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
@@ -749,8 +750,33 @@ export async function generatorThumb(spec: string[]): Promise<string> {
 
 /** Render a procedural generator to a real video file, so it behaves like any other footage. */
 export async function renderGenerator(genId: string, seconds: number, w: number, h: number, fps = 24): Promise<Blob> {
+  const scene = SCENES.find((s) => s.id === genId);
+  if (scene) return renderScene(scene, seconds, w, h, fps);
   const g = GENERATORS.find((x) => x.id === genId) ?? GENERATORS[0];
   const r = await ffmpeg.run(['-f', 'lavfi', '-t', String(seconds), '-i', g.spec(w, h, fps), '-vf', YUV_FROM_RGB, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-g', String(fps), ...TAG_709, '-movflags', '+faststart', 'gen.mp4'], { outputs: ['gen.mp4'] });
+  return new Blob([r.out['gen.mp4'] as BlobPart], { type: 'video/mp4' });
+}
+
+/** A drawn scene (engine/scenes.ts) as a video file: drawn frame by frame on a canvas, then encoded. */
+async function renderScene(scene: Scene, seconds: number, w: number, h: number, fps: number): Promise<Blob> {
+  const c = new OffscreenCanvas(w, h);
+  const g = c.getContext('2d')!;
+  const parts: Uint8Array[] = [];
+  const n = Math.max(1, Math.round(seconds * fps));
+  for (let i = 0; i < n; i++) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    scene.draw(g, w, h, i / fps);
+    parts.push(new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg', quality: 0.93 })).arrayBuffer()));
+  }
+  const cat = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
+  let off = 0;
+  for (const p of parts) (cat.set(p, off), (off += p.length));
+  const r = await ffmpeg.run(['-framerate', String(fps), '-f', 'image2pipe', '-c:v', 'mjpeg', '-i', 'frames.mjpeg', '-vf', `scale=${FROM_BROWSER_JPEG},format=yuv420p`, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '16', '-g', String(fps), ...TAG_709, '-movflags', '+faststart', 'gen.mp4'], {
+    inputs: { 'frames.mjpeg': async () => cat },
+    outputs: ['gen.mp4'],
+  });
   return new Blob([r.out['gen.mp4'] as BlobPart], { type: 'video/mp4' });
 }
 

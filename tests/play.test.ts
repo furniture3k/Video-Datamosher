@@ -6,7 +6,7 @@ import { withChaos, chaosValue } from '../src/engine/chaos';
 import { EFFECTS, type ParamDef } from '../src/engine/effects';
 import { makeEffect, breed, chaos } from '../src/engine/presets';
 import { encodeRecipe, decodeRecipe, applyRecipe, findRecipe, gifWithComment, gifComments } from '../src/engine/recipe';
-import { defaultExport, even, exportArgs, moshWidthFor, rateFilter } from '../src/engine/args';
+import { even, moshWidthFor, rateFilter } from '../src/engine/args';
 import { bitrateFor, aspectSize, sizeChoices, widthForShape, SOCIAL_PRESETS } from '../src/engine/social';
 import { exportArgs, defaultExport, parseProbe, metadataArgs } from '../src/engine/args';
 import { newProject, type Project } from '../src/engine/types';
