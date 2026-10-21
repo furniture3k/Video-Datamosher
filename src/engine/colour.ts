@@ -58,6 +58,8 @@ export const passesAsIs = (m: Pick<MediaItem, 'color' | 'height' | 'source' | 'w
 
 /** A source's picture to RGBA, read with its own matrix. */
 export function rgbaFrom(m: Pick<MediaItem, 'color' | 'height' | 'source' | 'width'>): string {
+  const hdr = hdrRgba(m);
+  if (hdr) return hdr;
   const mat = sourceMatrix(m);
   const range = m.color?.range ? `:in_range=${m.color.range}` : '';
   return mat === 'auto' ? `scale=in_color_matrix=auto${range},format=rgba` : `scale=in_color_matrix=${mat}${range},format=rgba`;
@@ -75,3 +77,75 @@ export const JPEG_FOR_BROWSER = 'in_color_matrix=bt709:in_range=tv:out_color_mat
 export const FROM_BROWSER_JPEG = 'in_color_matrix=bt601:in_range=pc:out_color_matrix=bt709:out_range=tv';
 /** What MP4 and WebM exports say about their colours. */
 export const TAG_709 = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv'];
+
+// ---------- HDR to SDR ----------
+
+/** The .cube file name the render reads a tone-map from. */
+export const hdrLutFile = (kind: 'hlg' | 'pq') => `hdr_${kind}.cube`;
+
+/** HLG signal to scene light (0..1), BT.2100. */
+function hlgToScene(v: number): number {
+  const a = 0.17883277;
+  const b = 1 - 4 * a;
+  const c = 0.5 - a * Math.log(4 * a);
+  return v <= 0.5 ? (v * v) / 3 : (Math.exp((v - c) / a) + b) / 12;
+}
+
+/** PQ signal to light in nits, SMPTE ST 2084. */
+function pqToNits(v: number): number {
+  const m1 = 0.1593017578125;
+  const m2 = 78.84375;
+  const c1 = 0.8359375;
+  const c2 = 18.8515625;
+  const c3 = 18.6875;
+  const p = Math.pow(Math.max(0, v), 1 / m2);
+  return 10000 * Math.pow(Math.max(p - c1, 0) / (c2 - c3 * p), 1 / m1);
+}
+
+/** HDR reference white (BT.2408): the light SDR's 100 % stands for. */
+const REF_WHITE = 203;
+/** where the highlights start to roll off, as a share of SDR white */
+const KNEE = 0.75;
+
+/**
+ * The tone-map from HDR (BT.2020 primaries, HLG or PQ, as RGB 0..1 read with the BT.2020 matrix)
+ * to SDR BT.709 RGB, as a function: light relative to reference white, BT.2020 to BT.709
+ * primaries, highlights above the knee rolled off towards white (keeping their hue), then
+ * encoded for a BT.1886 display.
+ */
+export function hdrToSdr(kind: 'hlg' | 'pq', rgb: [number, number, number]): [number, number, number] {
+  let lin: number[];
+  if (kind === 'hlg') {
+    // scene light, then the display light of a 1000-nit HLG display (system gamma 1.2)
+    const e = rgb.map(hlgToScene);
+    const ys = 0.2627 * e[0] + 0.678 * e[1] + 0.0593 * e[2];
+    const k = 1000 * Math.pow(Math.max(ys, 1e-6), 0.2);
+    lin = e.map((x) => (k * x) / REF_WHITE);
+  } else lin = rgb.map((x) => pqToNits(x) / REF_WHITE);
+  // BT.2020 primaries to BT.709 (out-of-gamut colours clipped)
+  const [r, g, b] = lin;
+  let out = [1.6605 * r - 0.5876 * g - 0.0728 * b, -0.1246 * r + 1.1329 * g - 0.0083 * b, -0.0182 * r - 0.1006 * g + 1.1187 * b].map((x) => Math.max(0, x));
+  const m = Math.max(...out);
+  if (m > KNEE) {
+    const to = KNEE + (1 - KNEE) * (1 - Math.exp(-(m - KNEE) / (1 - KNEE)));
+    out = out.map((x) => (x * to) / m);
+  }
+  return out.map((x) => Math.pow(Math.min(1, x), 1 / 2.4)) as [number, number, number];
+}
+
+/** The tone-map as a .cube 3D LUT (red fastest). */
+export function hdrCube(kind: 'hlg' | 'pq', n = 33): string {
+  const lines = [`TITLE "${kind.toUpperCase()} to SDR"`, `LUT_3D_SIZE ${n}`];
+  for (let b = 0; b < n; b++)
+    for (let g = 0; g < n; g++)
+      for (let r = 0; r < n; r++) lines.push(hdrToSdr(kind, [r / (n - 1), g / (n - 1), b / (n - 1)]).map((v) => v.toFixed(5)).join(' '));
+  return lines.join('\n') + '\n';
+}
+
+/** HDR footage's picture to (SDR) RGBA: read with its matrix at 16 bits, tone-mapped by its LUT. */
+export function hdrRgba(m: Pick<MediaItem, 'color'>): string | null {
+  const kind = hdrOf(m);
+  if (!kind) return null;
+  const mat = m.color?.matrix === 'bt709' ? 'bt709' : 'bt2020';
+  return `scale=in_color_matrix=${mat}:in_range=${m.color?.range ?? 'tv'},format=rgb48le,lut3d=file=${hdrLutFile(kind)}:interp=tetrahedral,format=rgba`;
+}

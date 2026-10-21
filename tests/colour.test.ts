@@ -8,7 +8,7 @@ import { ff, hasFfmpeg, tmpdir, fileMedia, clipOf, place } from './helpers';
 import { decodeToMjpegArgs, defaultExport, exportArgs, segmentArgs } from '../src/engine/args';
 import { segments } from '../src/engine/timeline';
 import { newProject, type Clip, type MediaItem, type Project } from '../src/engine/types';
-import { parseColour, sourceMatrix } from '../src/engine/colour';
+import { hdrCube, hdrToSdr, parseColour, sourceMatrix } from '../src/engine/colour';
 
 const d = hasFfmpeg ? describe : describe.skip;
 const W = 1280;
@@ -120,6 +120,22 @@ d('colours through the pipeline', () => {
     expectColours(r.mp4, 'photo export');
   });
 
+  it('HDR footage (HLG) is tone-mapped: its reference white comes out near white, not grey', () => {
+    // HLG at 75 % is HDR's reference white; 38 % a mid-dark grey
+    const hlg = fileMedia('hlg', 'mp4', { hasAudio: false, width: W, height: H, fps: 24, color: { pix: 'yuv420p10le', range: 'tv', matrix: 'bt2020nc', primaries: 'bt2020', transfer: 'arib-std-b67' } } as Partial<MediaItem>);
+    const v = (x: number) => Math.round(64 + x * 876);
+    ff(dir, ['-f', 'lavfi', '-i', `color=c=black:s=${W}x${H}:r=24:d=1,format=yuv420p10le,geq=lum='if(lt(X,${W / 2}),${v(0.75)},${v(0.38)})':cb=512:cr=512`, '-frames:v', '24', '-c:v', 'libx264', '-qp', '0', '-pix_fmt', 'yuv420p10le', '-colorspace', 'bt2020nc', '-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', 'hlgsrc.mp4']);
+    place(dir, 'hlgsrc.mp4', hlg);
+    fs.writeFileSync(path.join(dir, 'hdr_hlg.cube'), hdrCube('hlg'));
+    const r = run(project([clipOf(hlg, { out: 1 })], [hlg]), 'hlg').mp4;
+    const white = Math.round(255 * hdrToSdr('hlg', [0.75, 0.75, 0.75])[0]);
+    const grey = Math.round(255 * hdrToSdr('hlg', [0.38, 0.38, 0.38])[0]);
+    for (const c of r[0]) expect(Math.abs(c - white)).toBeLessThanOrEqual(TOL);
+    for (const c of r[3]) expect(Math.abs(c - grey)).toBeLessThanOrEqual(TOL);
+    // (without it, the 75 % grey stays a 75 % grey)
+    expect(white).toBeGreaterThan(235);
+  });
+
   it('exports say which colours they are in', () => {
     const log = (() => {
       try {
@@ -149,5 +165,29 @@ describe('reading colours from FFmpeg', () => {
     expect(sourceMatrix({ source: file, width: 640, height: 480 })).toBe('bt601');
     expect(sourceMatrix({ source: file, width: 640, height: 480, color: { matrix: 'bt709' } })).toBe('bt709');
     expect(sourceMatrix({ source: file, width: 1920, height: 1080, color: { matrix: 'smpte170m' } })).toBe('bt601');
+  });
+});
+
+describe('HDR to SDR', () => {
+  it('maps black to black, reference white near white, and stays in order', () => {
+    expect(hdrToSdr('hlg', [0, 0, 0])).toEqual([0, 0, 0]);
+    expect(hdrToSdr('pq', [0, 0, 0])[0]).toBeCloseTo(0, 3);
+    expect(hdrToSdr('hlg', [0.75, 0.75, 0.75])[0]).toBeGreaterThan(0.93);
+    // PQ code 0.58 is 203 nits
+    expect(hdrToSdr('pq', [0.58, 0.58, 0.58])[0]).toBeGreaterThan(0.93);
+    let last = -1;
+    for (let x = 0; x <= 1; x += 0.05) {
+      const y = hdrToSdr('hlg', [x, x, x])[0];
+      expect(y).toBeGreaterThanOrEqual(last);
+      expect(y).toBeLessThanOrEqual(1);
+      last = y;
+    }
+    // greys stay grey
+    const g = hdrToSdr('pq', [0.5, 0.5, 0.5]);
+    expect(Math.abs(g[0] - g[2])).toBeLessThan(0.01);
+  });
+  it('writes a cube FFmpeg can read', () => {
+    const t = hdrCube('hlg', 5);
+    expect(t.split('\n').filter((l) => /^[\d.]+ [\d.]+ [\d.]+$/.test(l)).length).toBe(125);
   });
 });

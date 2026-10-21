@@ -3,13 +3,13 @@ import { ffmpeg, ffmpegBg, Cancelled, MOUNT, type RunOptions, type Engine } from
 import { fileSize, framesFromDisk, loadFrames, assembleAvi, removeEngineFile, moveEngineFile, writeEngineFile } from './ffmpeg-native';
 import { isDesktop, lowMemory } from './platform';
 import { getFile } from './storage';
-import { lutInputs } from './luts.svelte';
+import { hdrCubeCached, lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
 import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
-import { JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, sourceMatrix } from '../engine/colour';
+import { JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, hdrLutFile, hdrOf, hdrRgba, sourceMatrix } from '../engine/colour';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
@@ -727,8 +727,10 @@ export async function probeFile(blob: Blob, ext: string): Promise<{ info: Return
     try {
       // a JPEG the browser reads right (BT.601, full range), whatever the file's colours
       const mat = sourceMatrix({ source: { kind: 'file', fileId: '', name, mime: '', isImage: false, ext }, width: info.width, height: info.height, color: info.color });
-      const vf = `scale=192:-2${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt601:out_range=pc`;
-      const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', MOUNT + name, '-frames:v', '1', '-vf', vf, '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { mounts, outputs: ['thumb.jpg'] });
+      const hdr = info.color && hdrOf({ color: info.color });
+      const vf = hdr ? `scale=192:-2,${hdrRgba({ color: info.color })},scale=out_color_matrix=bt601:out_range=pc` : `scale=192:-2${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt601:out_range=pc`;
+      const inputs = hdr ? { [hdrLutFile(hdr)]: async () => new TextEncoder().encode(hdrCubeCached(hdr)) } : {};
+      const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', MOUNT + name, '-frames:v', '1', '-vf', vf, '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { mounts, inputs, outputs: ['thumb.jpg'] });
       thumb = URL.createObjectURL(new Blob([t.out['thumb.jpg'] as BlobPart], { type: 'image/jpeg' }));
     } catch {
       /* thumbnail optional */
@@ -759,20 +761,23 @@ export async function renderGenerator(genId: string, seconds: number, w: number,
  */
 export async function makeProxy(m: MediaItem, blob: Blob, onProgress?: (p: number) => void, webm = false): Promise<{ blob: Blob; hardware: boolean }> {
   if (m.source.kind !== 'file') throw new Error('no file');
-  const hw = await hardwareProxy(blob, m.width, m.fps, onProgress);
+  // (HDR footage is tone-mapped by FFmpeg, as the render does it)
+  const hdr = hdrOf(m);
+  const hw = hdr ? null : await hardwareProxy(blob, m.width, m.fps, onProgress);
   if (hw) return { blob: hw, hardware: true };
   const name = inputName(m);
   const w = Math.min(960, even(m.width || 960));
   // in BT.709 and saying so, as the browser shows the timeline
   const mat = sourceMatrix(m);
-  const vf = [`scale=${w}:-2:flags=bicubic${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt709:out_range=tv`, m.fps > 30 ? 'fps=30' : '', 'format=yuv420p'].filter(Boolean).join(',');
+  const vf = (hdr ? [`scale=${w}:-2:flags=bicubic`, hdrRgba(m)!, YUV_FROM_RGB] : [`scale=${w}:-2:flags=bicubic${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt709:out_range=tv`, 'format=yuv420p']).join(',') + (m.fps > 30 ? ',fps=30' : '');
   const total = Math.max(1, m.duration * Math.min(30, m.fps || 30));
   const out = webm ? 'proxy.webm' : 'proxy.mp4';
   const codec = webm
     ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2500k', '-g', '12', '-auto-alt-ref', '0', ...TAG_709, '-c:a', 'libvorbis', '-q:a', '4']
     : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-g', '12', ...TAG_709, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'];
   const args = ['-i', MOUNT + name, '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, ...codec, '-ac', '2', out];
-  const r = await ffmpegBg.run(args, { mounts: { [name]: blob }, outputs: [out], onFrame: (n) => onProgress?.(Math.min(1, n / total)) });
+  const inputs = hdr ? { [hdrLutFile(hdr)]: async () => new TextEncoder().encode(hdrCubeCached(hdr)) } : {};
+  const r = await ffmpegBg.run(args, { mounts: { [name]: blob }, inputs, outputs: [out], onFrame: (n) => onProgress?.(Math.min(1, n / total)) });
   return { blob: new Blob([r.out[out] as BlobPart], { type: webm ? 'video/webm' : 'video/mp4' }), hardware: false };
 }
 
