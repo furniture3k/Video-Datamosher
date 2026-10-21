@@ -197,7 +197,7 @@ case $TARGET in
     ;;
   *linux*)
     LIBS=$(ldd "$DEST" | awk '{print $1}')
-    BAD=$(grep -v -E '^(linux-vdso\.so|/lib64/ld-linux|libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so)' <<<"$LIBS" || true)
+    BAD=$(grep -v -E '^(linux-vdso\.so|/lib64/ld-linux|libc\.so|libm\.so|libmvec\.so|libpthread\.so|libdl\.so|librt\.so)' <<<"$LIBS" || true)
     ;;
   *windows*)
     LIBS=$(${CROSS}objdump -p "$DEST" | awk '/DLL Name/ {print $3}')
