@@ -975,7 +975,7 @@
   const shortTime = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
   let pmenu = $state(false);
   const RES_LABEL = { full: 'Full', half: '1/2', quarter: '1/4' } as const;
-  const RES_TIP = { full: 'full, exactly as it will export', half: 'half resolution, faster', quarter: 'quarter resolution, fastest' } as const;
+  const RES_TIP = { full: 'full, exactly as it will export', half: 'half resolution, faster', quarter: 'draft: quarter resolution, fastest (the export is still full quality)' } as const;
   function cycleRes() {
     const order = ['full', 'half', 'quarter'] as const;
     store.setPref('previewRes', order[(order.indexOf(store.ui.previewRes) + 1) % 3]);
@@ -1196,6 +1196,7 @@
         <Icon name={store.ui.playing ? 'pause' : 'play'} size={18} />
       </button>
       <div class="right">
+        <button class="ghost qual mono" title="Preview quality: {RES_TIP[store.ui.previewRes]}. Tap to change." aria-label="Preview quality" onclick={cycleRes}>{store.ui.previewRes === 'quarter' ? 'Draft' : RES_LABEL[store.ui.previewRes]}</button>
         <button class="icon ghost" aria-label="Undo" disabled={!store.historySize.undo} onclick={() => store.undo()}><Icon name="undo" size={18} /></button>
         <button class="icon ghost" aria-label="Redo" disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" size={18} /></button>
         <button class="icon ghost" aria-label="Full screen" disabled={!hasTimeline} onclick={fullscreen}><Icon name="fullscreen" size={18} /></button>

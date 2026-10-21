@@ -8,7 +8,7 @@ import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
-import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, metadataArgs, moshWidthFor, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, encodeArgs, metadataArgs, moshWidthFor, rateFilter, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, hdrLutFile, hdrOf, hdrRgba, sourceMatrix } from '../engine/colour';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
@@ -927,6 +927,9 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     const audioIn: Record<string, () => Promise<Uint8Array>> = pcm && !disk ? { 'a.wav': async () => wav(pcm) } : {};
     check(signal);
     if (looping === 'crossfade') o = { ...o, crossfade: { frames: hi - lo, overlap: Math.min(seam, Math.floor((hi - lo) / 3)) } };
+    // another frame rate (MP4 / WebM): not with a crossfade loop, whose seam is counted in the project's frames
+    const newRate = (o.format === 'mp4' || o.format === 'webm') && !o.crossfade && !!o.fps && o.fps !== project.encoder.fps;
+    if (!newRate) o = { ...o, fps: undefined };
     // another shape than the project: find where the action is and let the crop follow it
     const shape = outputSize(project, width);
     if (o.reframeTo && o.format !== 'avi' && Math.abs(aspectRatio(o.reframeTo) - shape.w / shape.h) > 0.01) {
@@ -959,7 +962,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     const n = hi - lo;
     const { w, h } = outputSize(project, width);
     // the browser's hardware encoder (a crossfade loop needs ffmpeg's filters)
-    const enc = o.hardware && !disk && (o.format === 'mp4' || o.format === 'webm') && !o.crossfade ? encodedSize({ srcW: w, srcH: h, width: o.width, reframe: o.reframe }) : null;
+    const enc = o.hardware && !disk && (o.format === 'mp4' || o.format === 'webm') && !o.crossfade && !newRate ? encodedSize({ srcW: w, srcH: h, width: o.width, reframe: o.reframe }) : null;
     const hwCodec = enc ? await hardwareCodec(o.format, enc.w, enc.h) : null;
 
     // No pixel effects (and the whole timeline): encode straight from the moshed file in one pass.
@@ -1023,8 +1026,10 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
         } else {
           const cat = concatBytes(done);
           const out = `p${k}.${o.format}`;
-          // pieces never loop on their own; the crop's clock carries on from piece to piece
-          const r = await eng.run(exportArgs({ ...o, crossfade: undefined, timeOffset: (a - lo) / fps }, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, out), {
+          // pieces never loop on their own; the crop's clock carries on from piece to piece; a new
+          // frame rate is made over the whole video when they're joined (pieces near-lossless till then)
+          const piece: ExportOptions = { ...o, crossfade: undefined, timeOffset: (a - lo) / fps, ...(newRate ? { fps: undefined, crf: Math.min(o.crf, 10), videoKbps: undefined } : {}) };
+          const r = await eng.run(exportArgs(piece, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, out), {
             inputs: { 'frames.mjpeg': async () => cat },
             ...(isDesktop ? { leave: [out] } : { outputs: [out] }),
             onFrame: (x) => progress(`Encoding ${o.format.toUpperCase()} ${a - lo + 1}–${b - lo} of ${n}`, span(Math.min(1, x / (b - a)))),
@@ -1082,8 +1087,10 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     Object.assign(inputs, audioIn);
     const out = `out.${o.format}`;
     const args = ['-f', 'concat', '-safe', '0', '-i', 'list.txt'];
-    if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', ...audioCodecArgs(o), '-shortest');
-    else args.push('-c', 'copy');
+    // the new frame rate, over the whole video (one more encode); else the pieces are copied as they are
+    const video = newRate ? ['-vf', `${rateFilter(fps, o.fps)},format=yuv420p`, '-r', String(o.fps), ...encodeArgs(o, false)] : ['-c:v', 'copy'];
+    if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', ...video, ...audioCodecArgs(o), '-shortest');
+    else args.push(...(newRate ? video : ['-c', 'copy']));
     try {
       if (o.crossfade) {
         // a crossfade loop needs the whole video: join, then one more encode that loops it

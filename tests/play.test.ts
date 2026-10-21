@@ -6,11 +6,12 @@ import { withChaos, chaosValue } from '../src/engine/chaos';
 import { EFFECTS, type ParamDef } from '../src/engine/effects';
 import { makeEffect, breed, chaos } from '../src/engine/presets';
 import { encodeRecipe, decodeRecipe, applyRecipe, findRecipe, gifWithComment, gifComments } from '../src/engine/recipe';
-import { even, moshWidthFor } from '../src/engine/args';
+import { defaultExport, even, exportArgs, moshWidthFor, rateFilter } from '../src/engine/args';
 import { bitrateFor, aspectSize, sizeChoices, widthForShape, SOCIAL_PRESETS } from '../src/engine/social';
 import { exportArgs, defaultExport, parseProbe, metadataArgs } from '../src/engine/args';
 import { newProject, type Project } from '../src/engine/types';
 import { hasFfmpeg, tmpdir, ff, ffLog } from './helpers';
+import { execFileSync } from 'node:child_process';
 
 type NumDef = Extract<ParamDef, { type: 'number' | 'int' }>;
 const def = (type: string, key: string) => EFFECTS[type].params.find((d) => d.key === key) as NumDef;
@@ -185,5 +186,21 @@ d('recipes in exported files (native ffmpeg)', () => {
     fs.writeFileSync(path.join(dir, 'b.gif'), gifWithComment(new Uint8Array(fs.readFileSync(path.join(dir, 'a.gif'))), code));
     expect(gifComments(new Uint8Array(fs.readFileSync(path.join(dir, 'b.gif'))))).toEqual([code]);
     ff(dir, ['-i', 'b.gif', '-f', 'null', '-']);
+  });
+});
+
+d('frame rate on export (native ffmpeg)', () => {
+  it('60 fps from a 24 fps mosh: two and a half times the frames, the same length', () => {
+    const dir = tmpdir();
+    ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=320x240:r=24:d=1', '-c:v', 'mpeg4', '-q:v', '2', '-f', 'avi', 'm.avi']);
+    const o = { ...defaultExport(), preset: 'ultrafast' as const, fps: 60 };
+    ff(dir, exportArgs(o, newProject().decoder, 24, { file: 'm.avi', mjpeg: false }, null, 'o.mp4'));
+    const [rate, frames, dur] = execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-select_streams', 'v', '-show_entries', 'stream=r_frame_rate,nb_read_frames:format=duration', '-of', 'csv=p=0:s=,', path.join(dir, 'o.mp4')]).toString().trim().split(/[,\n]/);
+    expect(rate).toBe('60/1');
+    expect(Math.abs(+frames - 60)).toBeLessThanOrEqual(1);
+    expect(Math.abs(+dur - 1)).toBeLessThan(0.05);
+    expect(rateFilter(24, 60)).toBe('framerate=fps=60');
+    expect(rateFilter(60, 30)).toBe('fps=30');
+    expect(rateFilter(24, 24)).toBe('');
   });
 });

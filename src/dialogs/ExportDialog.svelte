@@ -250,6 +250,15 @@
       {/if}
     {/if}
     {#if o.format === 'mp4' || o.format === 'webm'}
+      {@const pf = store.project.encoder.fps}
+      <Field
+        type="select"
+        label="Frame rate"
+        value={o.fps && o.fps !== pf ? o.fps : 0}
+        options={[{ value: 0, label: `${pf} fps, as the project` }, ...[24, 25, 30, 50, 60].filter((r) => r !== pf).map((r) => ({ value: r, label: r > pf ? `${r} fps (in-between frames blended)` : `${r} fps` }))]}
+        help={o.loopMode === 'crossfade' ? 'A crossfade loop keeps the project’s frame rate.' : 'Higher than the project: the frames in between are blended from their neighbours, so motion looks smoother on phones that play at 60. The mosh itself keeps its own rhythm.'}
+        onchange={(v: number) => (o.fps = v || undefined)}
+      />
       {#if !o.maxMB}
         <Field label="Quality (CRF)" min={0} max={40} step={1} value={o.crf} help="Lower = better quality and bigger file. 18 is visually lossless." onchange={(v: number) => (o.crf = v)} />
       {/if}

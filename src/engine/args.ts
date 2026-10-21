@@ -809,6 +809,14 @@ export interface ExportOptions {
   hardware?: boolean;
   /** mosh at the output size instead of scaling the mosh up to it (sharpest, slower) */
   moshAtSize?: boolean;
+  /** MP4 / WebM frame rate when it isn't the project's: higher ones are made by blending neighbouring frames */
+  fps?: number;
+}
+
+/** The filter that changes a video's frame rate from `from` to `to`: in-between frames blended, or frames dropped. */
+export function rateFilter(from: number, to?: number): string {
+  if (!to || to === from) return '';
+  return to > from ? `framerate=fps=${to}` : `fps=${to}`;
 }
 
 /**
@@ -872,7 +880,8 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
     a.push('-fps_mode', 'passthrough', '-f', 'image2', out);
     return a;
   }
-  const chain = [crop, colour, 'format=yuv420p'].filter(Boolean).join(',');
+  const rate = o.format === 'mp4' || o.format === 'webm' ? rateFilter(fps, o.fps) : '';
+  const chain = [crop, colour, 'format=yuv420p', rate].filter(Boolean).join(',');
   if (xf) {
     // the end crossfades into the start, so the file loops without a jump
     const g = [`${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')}`, `[lv]${chain}[v]`];
@@ -884,7 +893,7 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
     if (withAudio) a.push('-map', '1:a');
     a.push('-vf', chain);
   }
-  a.push('-r', String(fps));
+  a.push('-r', String(rate ? o.fps : fps));
   a.push(...encodeArgs(o, withAudio));
   if (withAudio) a.push('-shortest');
   a.push(...commentArgs(o.comment), out);
@@ -892,7 +901,7 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
 }
 
 /** Codec arguments of an MP4 / WebM export. */
-function encodeArgs(o: ExportOptions, withAudio: boolean): string[] {
+export function encodeArgs(o: ExportOptions, withAudio: boolean): string[] {
   const a: string[] = [];
   const sized = o.videoKbps && o.videoKbps > 0 ? ['-b:v', `${o.videoKbps}k`, '-maxrate', `${Math.round(o.videoKbps * 1.1)}k`, '-bufsize', `${o.videoKbps * 2}k`] : null;
   const abr = sized ? '128k' : '192k';
