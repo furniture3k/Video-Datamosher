@@ -3,6 +3,7 @@ import { type ChromaKey, clipOn, gradeOf, isIdentityGrade, isIdentityTransform, 
 import { layerEnd, type Layer } from './layers';
 import { blurRadius, canvasZoomKeys, cardRect, hasCanvas, hasChrome, type Canvas } from './canvas';
 import { findRecipe } from './recipe';
+import { FROM_BROWSER_JPEG, JPEG_FOR_BROWSER, RGBA_FROM_YUV, TAG_709, YUVA_FROM_RGBA, YUV_FROM_RGB, parseColour, passesAsIs, rgbaFrom, type MediaColour } from './colour';
 import { hasKeys, keysExpr, rampSetpts, splitRamp, type Keys } from './keys';
 import { lutFile } from './lut';
 import { reframeFilter, type ReframePath } from './reframe';
@@ -241,7 +242,8 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   const sliding = !screen && !moving && hasKeys(c.keys, ['x', 'y']);
   const fading = hasKeys(c.keys, ['opacity']);
   const ramp = !c.freeze && c.ramp?.length ? c.ramp : null;
-  const rgba = layer || (!screen && !isIdentityTransform(T)) || !isIdentityGrade(G) || moving || sliding || fading;
+  // (footage in other colours than the pipeline's goes through RGB to be converted)
+  const rgba = layer || (!screen && !isIdentityTransform(T)) || !isIdentityGrade(G) || moving || sliding || fading || !passesAsIs(m);
   const bg = layer ? 'black@0' : 'black';
   const f: string[] = [];
   if (m.source.kind === 'generator') f.push(`trim=start=${r3(c.in)}:end=${r3(Math.max(c.in + 0.04, c.out))}`);
@@ -254,7 +256,7 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   // step print: drop to a few pictures a second, each held until the next
   if (c.stepFps && c.stepFps < fps && !c.freeze) f.push(`fps=${c.stepFps}`);
   f.push(`fps=${fps}`);
-  if (rgba) f.push('format=rgba');
+  if (rgba) f.push(rgbaFrom(m));
   if (layer && c.key) f.push(...keyFilters(c.key));
   // grade the picture itself (not the letterbox bars added next)
   f.push(...gradeFilters(G));
@@ -326,7 +328,7 @@ export function clipGraph(c: Clip, m: MediaItem, fps: number, w: number, h: numb
   if (fi > 0.01 && offset < fi) g.push(`fade=t=in:st=0:d=${r3(fi - offset)}${alpha}`);
   const foSt = fullLen - fo - offset;
   if (fo > 0.01 && foSt < len) g.push(`fade=t=out:st=${r3(Math.max(0, foSt))}:d=${r3(Math.min(fo, len - Math.max(0, foSt)))}${alpha}`);
-  if (rgba && !layer) g.push('format=yuv420p');
+  if (rgba && !layer) g.push(YUV_FROM_RGB);
   stmts.push(`[${cur}]${g.length ? g.join(',') : 'null'}[${out}]`);
   return stmts;
 }
@@ -412,13 +414,14 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
       const ga = r3(a - t0);
       const gb = r3(b - t0);
       const op = Math.max(0, Math.min(1, l.clip.opacity ?? 1));
-      const fx = ['format=rgba', ...gradeFilters(G)];
+      const fx = [RGBA_FROM_YUV, ...gradeFilters(G)];
       if (op < 1) fx.push(`colorchannelmixer=aa=${r3(op)}`);
       const len = clipLen(l.clip);
       const fi = Math.min(l.clip.vfadeIn ?? 0, len / 2);
       const fo = Math.min(l.clip.vfadeOut ?? 0, len / 2);
       if (fi > 0.01) fx.push(`fade=t=in:st=${r3(l.start - t0)}:d=${r3(fi)}:alpha=1`);
       if (fo > 0.01) fx.push(`fade=t=out:st=${r3(l.start + len - fo - t0)}:d=${r3(fo)}:alpha=1`);
+      fx.push(YUVA_FROM_RGBA);
       filter.push(`[${acc}]split[${lay}a][${lay}b]`);
       filter.push(`[${lay}b]${fx.join(',')}[${lay}c]`);
       filter.push(`[${lay}a][${lay}c]overlay=0:0:enable='between(t,${ga},${gb})':format=auto,format=yuv420p[${next}]`);
@@ -445,12 +448,15 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     filter.push(`[${lay}r]setpts=PTS+${at}/TB[${lay}]`);
     const next = `${tag}y${k}`;
     const bm = BLEND[l.clip.blend ?? 'normal'];
-    if (!bm) filter.push(`[${acc}][${lay}]overlay=0:0:eof_action=pass:format=auto,format=yuv420p[${next}]`);
+    if (!bm) {
+      filter.push(`[${lay}]${YUVA_FROM_RGBA}[${lay}v]`);
+      filter.push(`[${acc}][${lay}v]overlay=0:0:eof_action=pass:format=auto,format=yuv420p[${next}]`);
+    }
     else {
       filter.push(`color=c=${bm.neutral}:s=${w}x${h}:r=${fps}:d=${dur},format=rgba[${lay}n]`);
       filter.push(`[${lay}n][${lay}]overlay=0:0:eof_action=pass:format=auto,format=gbrp[${lay}f]`);
-      filter.push(`[${acc}]format=gbrp[${lay}b]`);
-      filter.push(`[${lay}b][${lay}f]blend=all_mode=${bm.mode}:shortest=1,format=yuv420p[${next}]`);
+      filter.push(`[${acc}]${RGBA_FROM_YUV.replace('rgba', 'gbrp')}[${lay}b]`);
+      filter.push(`[${lay}b][${lay}f]blend=all_mode=${bm.mode}:shortest=1,${YUV_FROM_RGB}[${next}]`);
     }
     acc = next;
     // behind the subject: the main track's subject (a copy cut by the matte pictures) goes back on top
@@ -485,7 +491,7 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
       pic = `${tag}cva`;
       filter.push(`[${tag}cvb]boxblur=${Math.min(blurRadius(c, h), Math.floor(Math.min(w, h) / 2) - 1)}:2[${back}]`);
     } else filter.push(`color=c=black:s=${w}x${h}:r=${fps}:d=${r3(dur + 1)},format=yuv420p[${back}]`);
-    filter.push(`[${still(plates.bg)}]format=rgba[${tag}cvp]`);
+    filter.push(`[${still(plates.bg)}]format=rgba,${YUVA_FROM_RGBA}[${tag}cvp]`);
     filter.push(`[${back}][${tag}cvp]overlay=0:0:shortest=1:format=auto[${tag}cvg]`);
     filter.push(`[${pic}]crop=${R.crop.w}:${R.crop.h}:${R.crop.x}:${R.crop.y},scale=${R.w}:${R.h},setsar=1[${tag}cvi]`);
     let card = `${tag}cvi`;
@@ -498,7 +504,7 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
     filter.push(`[${tag}cvg][${card}]overlay=${R.x}:${R.y}:format=auto,format=yuv420p[${tag}cvc]`);
     acc = `${tag}cvc`;
     if (hasChrome(c) && plates.border) {
-      filter.push(`[${still(plates.border)}]format=rgba[${tag}cvo]`);
+      filter.push(`[${still(plates.border)}]format=rgba,${YUVA_FROM_RGBA}[${tag}cvo]`);
       filter.push(`[${acc}][${tag}cvo]overlay=0:0:shortest=1:format=auto,format=yuv420p[${tag}cvd]`);
       acc = `${tag}cvd`;
     }
@@ -525,7 +531,7 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
       const delay = r3(Math.max(0, o.frames.first - seg.f0) / fps);
       inputs.push('-f', 'image2pipe', '-c:v', 'png', '-framerate', String(fps), '-i', o.path);
       const pad = delay > 0 ? `,tpad=start_duration=${delay}:color=black@0` : '';
-      filter.push(`[${idx}:v]trim=start_frame=${skip},setpts=PTS-STARTPTS,format=rgba,scale=${w}:${h}${pad}[${tag}t${k}]`);
+      filter.push(`[${idx}:v]trim=start_frame=${skip},setpts=PTS-STARTPTS,format=rgba,scale=${w}:${h}${pad},${YUVA_FROM_RGBA}[${tag}t${k}]`);
       filter.push(`[${acc}][${tag}t${k}]overlay=0:0:eof_action=pass:format=auto,format=yuv420p[${next}]`);
     } else {
       const f = Math.min(l.fade, l.duration / 2);
@@ -534,7 +540,7 @@ function segmentGraph(seg: Segment, fps: number, w: number, h: number, first: nu
       const fi = r3(l.start - t0);
       const fo = r3(layerEnd(l) - f - t0);
       const fades = f > 0.01 ? (fi >= 0 ? `,fade=t=in:st=${fi}:d=${r3(f)}:alpha=1` : '') + (fo >= 0 ? `,fade=t=out:st=${fo}:d=${r3(f)}:alpha=1` : '') : '';
-      filter.push(`[${idx}:v]format=rgba,scale=${w}:${h}${fades}[${tag}t${k}]`);
+      filter.push(`[${idx}:v]format=rgba,scale=${w}:${h}${fades},${YUVA_FROM_RGBA}[${tag}t${k}]`);
       filter.push(`[${acc}][${tag}t${k}]overlay=0:0:enable='between(t,${a},${b})':format=auto:shortest=1,format=yuv420p[${next}]`);
     }
     acc = next;
@@ -676,7 +682,7 @@ export function decodeToMjpegArgs(d: DecoderSettings, input: string, out: string
     ...decoderInputArgs(d),
     '-i', input,
     '-fps_mode', 'passthrough',
-    ...(scaleW ? ['-vf', `scale=${even(scaleW)}:-2`] : []),
+    '-vf', scaleW ? `scale=${even(scaleW)}:-2:${JPEG_FOR_BROWSER}` : `scale=${JPEG_FOR_BROWSER}`,
     '-c:v', 'mjpeg', '-huffman', '0', '-pix_fmt', 'yuvj420p', '-q:v', String(quality),
     '-f', 'image2pipe', out,
   ];
@@ -813,6 +819,8 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
   const withAudio = !!audioWav && o.audio && o.format !== 'gif';
   if (withAudio) a.push('-i', audioWav!);
   const scale = o.width > 0 ? `scale=${even(o.width)}:-2:flags=${o.scaler}` : '';
+  // the browser's JPEGs (picture effects) are BT.601, full range: back to the pipeline's colours
+  const colour = videoIn.mjpeg ? (scale ? `${scale}:${FROM_BROWSER_JPEG}` : `scale=${FROM_BROWSER_JPEG}`) : scale;
   // auto-reframe crop (its clock continues across chunks), then the output size
   const crop = o.reframe ? reframeFilter(o.reframe, o.timeOffset ?? 0) : '';
   const xf = o.crossfade && o.crossfade.overlap > 0 && o.crossfade.frames > o.crossfade.overlap * 2 ? o.crossfade : null;
@@ -830,7 +838,7 @@ export function exportArgs(o: ExportOptions, d: DecoderSettings, fps: number, vi
     a.push('-fps_mode', 'passthrough', '-f', 'image2', out);
     return a;
   }
-  const chain = [crop, scale, 'format=yuv420p'].filter(Boolean).join(',');
+  const chain = [crop, colour, 'format=yuv420p'].filter(Boolean).join(',');
   if (xf) {
     // the end crossfades into the start, so the file loops without a jump
     const g = [`${loopFilter('[0:v]', xf.frames, xf.overlap, fps, '[lv]')}`, `[lv]${chain}[v]`];
@@ -855,14 +863,14 @@ function encodeArgs(o: ExportOptions, withAudio: boolean): string[] {
   const sized = o.videoKbps && o.videoKbps > 0 ? ['-b:v', `${o.videoKbps}k`, '-maxrate', `${Math.round(o.videoKbps * 1.1)}k`, '-bufsize', `${o.videoKbps * 2}k`] : null;
   const abr = sized ? '128k' : '192k';
   if (o.format === 'mp4') {
-    a.push('-c:v', 'libx264', '-preset', o.preset, ...(sized ?? ['-crf', String(o.crf)]), '-movflags', '+faststart');
+    a.push('-c:v', 'libx264', '-preset', o.preset, ...(sized ?? ['-crf', String(o.crf)]), ...TAG_709, '-movflags', '+faststart');
     if (withAudio) a.push('-c:a', 'aac', '-b:a', abr);
   } else if (sized) {
-    a.push('-c:v', 'libvpx', ...sized, '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
+    a.push('-c:v', 'libvpx', ...sized, ...TAG_709, '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
     if (withAudio) a.push('-c:a', 'libvorbis', '-b:a', abr);
   } else {
     // VP8: the VP9 encoder in ffmpeg.wasm crashes, VP8 is solid
-    a.push('-c:v', 'libvpx', '-crf', String(Math.min(63, Math.max(4, o.crf - 4))), '-b:v', '12M', '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
+    a.push('-c:v', 'libvpx', '-crf', String(Math.min(63, Math.max(4, o.crf - 4))), '-b:v', '12M', ...TAG_709, '-deadline', 'good', '-cpu-used', '4', '-auto-alt-ref', '0');
     if (withAudio) a.push('-c:a', 'libvorbis', '-q:a', '6');
   }
   return a;
@@ -897,7 +905,7 @@ export function loopPassArgs(o: ExportOptions, input: string, frames: number, ov
 }
 
 /** Parse "ffmpeg -i" log output into basic media info. */
-export function parseProbe(log: string): { duration: number; width: number; height: number; fps: number; hasAudio: boolean; hasVideo: boolean; recipe: string | null } {
+export function parseProbe(log: string): { duration: number; width: number; height: number; fps: number; hasAudio: boolean; hasVideo: boolean; recipe: string | null; color?: MediaColour } {
   const dur = /Duration: (\d+):(\d+):([\d.]+)/.exec(log);
   const duration = dur ? +dur[1] * 3600 + +dur[2] * 60 + +dur[3] : 0;
   const vid = /Stream #.*Video: .*?(\d{2,5})x(\d{2,5})/.exec(log);
@@ -915,6 +923,7 @@ export function parseProbe(log: string): { duration: number; width: number; heig
     hasAudio: /Stream #.*Audio:/.test(log),
     hasVideo: !!vid,
     recipe: findRecipe(log),
+    color: vid ? parseColour(log) : undefined,
   };
 }
 

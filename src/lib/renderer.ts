@@ -9,6 +9,7 @@ import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
 import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, sourceMatrix } from '../engine/colour';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
@@ -373,12 +374,13 @@ async function decode(project: Project, avi: Uint8Array | Blob | string, quality
   const blob = onDisk ? null : avi instanceof Blob ? avi : new Blob([avi as BlobPart]);
   const vf: string[] = [];
   if (opts.from || opts.to !== undefined) vf.push(`select='between(n,${opts.from ?? 0},${(opts.to ?? 1e9) - 1})'`);
-  if (opts.scaleW) vf.push(`scale=${even(opts.scaleW)}:-2`);
+  // (the browser reads JPEGs as BT.601, full range)
+  vf.push(opts.scaleW ? `scale=${even(opts.scaleW)}:-2:${JPEG_FOR_BROWSER}` : `scale=${JPEG_FOR_BROWSER}`);
   const args = [
     ...decoderInputArgs(project.decoder),
     '-i', onDisk ? avi : MOUNT + 'mosh.avi',
     '-fps_mode', 'passthrough',
-    ...(vf.length ? ['-vf', vf.join(',')] : []),
+    '-vf', vf.join(','),
     ...(opts.to !== undefined ? ['-frames:v', String(opts.to - (opts.from ?? 0))] : []),
     '-c:v', 'mjpeg', '-huffman', '0', '-pix_fmt', 'yuvj420p', '-q:v', String(quality),
     '-f', 'image2pipe', 'out.mjpeg',
@@ -723,7 +725,10 @@ export async function probeFile(blob: Blob, ext: string): Promise<{ info: Return
   let thumb = '';
   if (info.hasVideo)
     try {
-      const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', MOUNT + name, '-frames:v', '1', '-vf', 'scale=192:-2', '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { mounts, outputs: ['thumb.jpg'] });
+      // a JPEG the browser reads right (BT.601, full range), whatever the file's colours
+      const mat = sourceMatrix({ source: { kind: 'file', fileId: '', name, mime: '', isImage: false, ext }, width: info.width, height: info.height, color: info.color });
+      const vf = `scale=192:-2${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt601:out_range=pc`;
+      const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', MOUNT + name, '-frames:v', '1', '-vf', vf, '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { mounts, outputs: ['thumb.jpg'] });
       thumb = URL.createObjectURL(new Blob([t.out['thumb.jpg'] as BlobPart], { type: 'image/jpeg' }));
     } catch {
       /* thumbnail optional */
@@ -743,7 +748,7 @@ export async function generatorThumb(spec: string[]): Promise<string> {
 /** Render a procedural generator to a real video file, so it behaves like any other footage. */
 export async function renderGenerator(genId: string, seconds: number, w: number, h: number, fps = 24): Promise<Blob> {
   const g = GENERATORS.find((x) => x.id === genId) ?? GENERATORS[0];
-  const r = await ffmpeg.run(['-f', 'lavfi', '-t', String(seconds), '-i', g.spec(w, h, fps), '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-g', String(fps), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'gen.mp4'], { outputs: ['gen.mp4'] });
+  const r = await ffmpeg.run(['-f', 'lavfi', '-t', String(seconds), '-i', g.spec(w, h, fps), '-vf', YUV_FROM_RGB, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-g', String(fps), ...TAG_709, '-movflags', '+faststart', 'gen.mp4'], { outputs: ['gen.mp4'] });
   return new Blob([r.out['gen.mp4'] as BlobPart], { type: 'video/mp4' });
 }
 
@@ -758,12 +763,14 @@ export async function makeProxy(m: MediaItem, blob: Blob, onProgress?: (p: numbe
   if (hw) return { blob: hw, hardware: true };
   const name = inputName(m);
   const w = Math.min(960, even(m.width || 960));
-  const vf = [`scale=${w}:-2:flags=bicubic`, m.fps > 30 ? 'fps=30' : '', 'format=yuv420p'].filter(Boolean).join(',');
+  // in BT.709 and saying so, as the browser shows the timeline
+  const mat = sourceMatrix(m);
+  const vf = [`scale=${w}:-2:flags=bicubic${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt709:out_range=tv`, m.fps > 30 ? 'fps=30' : '', 'format=yuv420p'].filter(Boolean).join(',');
   const total = Math.max(1, m.duration * Math.min(30, m.fps || 30));
   const out = webm ? 'proxy.webm' : 'proxy.mp4';
   const codec = webm
-    ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2500k', '-g', '12', '-auto-alt-ref', '0', '-c:a', 'libvorbis', '-q:a', '4']
-    : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-g', '12', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'];
+    ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2500k', '-g', '12', '-auto-alt-ref', '0', ...TAG_709, '-c:a', 'libvorbis', '-q:a', '4']
+    : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-g', '12', ...TAG_709, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'];
   const args = ['-i', MOUNT + name, '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, ...codec, '-ac', '2', out];
   const r = await ffmpegBg.run(args, { mounts: { [name]: blob }, outputs: [out], onFrame: (n) => onProgress?.(Math.min(1, n / total)) });
   return { blob: new Blob([r.out[out] as BlobPart], { type: webm ? 'video/webm' : 'video/mp4' }), hardware: false };

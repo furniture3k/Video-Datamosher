@@ -122,6 +122,8 @@ export interface MediaItem {
   hasAudio: boolean;
   hasVideo: boolean;
   thumb?: string;
+  /** its colours (matrix, range, transfer), as FFmpeg read them; missing on media added before 1.16 */
+  color?: import('./colour').MediaColour;
   /** subjects cut out of this footage: a grey picture per frame, kept as the stored file `matte:<id>`, in source time */
   mattes?: import('./matte').MatteRef[];
 }

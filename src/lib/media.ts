@@ -59,6 +59,7 @@ export async function readMedia(file: File, knownDuration?: number): Promise<{ m
     hasAudio: info.hasAudio && !isImage,
     hasVideo: info.hasVideo && !(AUDIO_EXT.test(ext) && !info.width),
     thumb: await blobToDataUrl(thumb),
+    ...(info.color ? { color: info.color } : {}),
   };
   return { m, recipe: info.recipe ?? null };
 }
