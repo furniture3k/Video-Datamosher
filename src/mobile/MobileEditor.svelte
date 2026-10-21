@@ -283,6 +283,7 @@
     <div class="scroll" bind:this={toolRow}>
       {#if mode === 'root'}
         <button class="tool" onclick={() => (sheet = 'media')}><Icon name="add" size={22} /><span>Media</span></button>
+        <button class="tool hot" data-tour="looks" onclick={() => (store.ui.dialog = 'looks')}><Icon name="sparkle" size={22} /><span>Templates</span></button>
         <button class="tool hot" disabled={!store.project.clips.length} onclick={() => (store.ui.dialog = 'addEffect')}><Icon name="melt" size={22} /><span>Mosh</span></button>
         <button class="tool" onclick={() => (store.ui.dialog = 'presets')}><Icon name="list" size={22} /><span>Presets</span></button>
         <button class="tool" disabled={!hasClips} onclick={onchaos}><Icon name="dice" size={22} /><span>Randomize</span></button>

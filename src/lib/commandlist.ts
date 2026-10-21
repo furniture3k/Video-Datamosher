@@ -78,6 +78,7 @@ export const COMMANDS: CommandInfo[] = [
   // mosh
   { id: 'render', title: 'Render the mosh now', group: 'Mosh', keys: ['Enter'] },
   { id: 'add-effect', title: 'Add an effect…', group: 'Mosh', keys: ['Shift+A'], words: 'fx' },
+  { id: 'looks', title: 'Templates… (make it look like an edit you\'ve seen)', group: 'Mosh', keys: ['Shift+L'], words: 'template style kinetic lyrics collage poster red notes behind subject' },
   { id: 'presets', title: 'Presets…', group: 'Mosh', keys: ['P'] },
   { id: 'randomize-graphics', title: 'Randomize the titles, shapes and canvas', group: 'Mosh', keys: [], words: 'chaos roll dice titles graphics look style layout' },
   { id: 'randomize', title: 'Randomize the effects', group: 'Mosh', keys: ['R'], words: 'chaos roll dice' },

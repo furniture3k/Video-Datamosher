@@ -30,7 +30,9 @@ npm run dev            # http://localhost:5173
 
 `npm run build` writes a static copy to `dist/` that can be hosted anywhere: the website at the root (`index.html`, `docs/`) and the editor in `app/`. The ~30 MB video engine is bundled, so it works offline. The dev server serves both too: the website at http://localhost:5173 and the editor at http://localhost:5173/app/.
 
-A quick first video:
+The quickest start: under **Make a video like this**, pick a look (**Behind the subject**, **Kinetic lyrics**, **Pop-up collage**, **Tour poster** or **Red notes**), choose your clips and a song, type your words, and the titles, cut-outs, tracked marks and timing are made for you. **Templates** in the editor does the same for clips already on the timeline, and one Undo takes it off.
+
+A quick first video by hand:
 
 1. **Import** clips, photos and music. Drag them from the Media panel onto the timeline: footage on the video track, sound on an audio track.
 2. Edit like any editor. Drag clips to reorder, drag edges to trim, <kbd>S</kbd> splits at the playhead, right-click a clip for more (detach audio, reverse, duplicate).

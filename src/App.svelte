@@ -11,6 +11,7 @@
   import Toasts from './components/Toasts.svelte';
   import ExportQueue from './components/ExportQueue.svelte';
   import PresetsDialog from './dialogs/PresetsDialog.svelte';
+  import LooksDialog from './dialogs/LooksDialog.svelte';
   import SnapshotsDialog from './dialogs/SnapshotsDialog.svelte';
   import BeatEditDialog from './dialogs/BeatEditDialog.svelte';
   import WordBeatsDialog from './dialogs/WordBeatsDialog.svelte';
@@ -231,7 +232,7 @@
       <div class="colsize cl" title="Drag to resize the media panel" onpointerdown={(e) => panelDown(e, 'left')}>
         <button class="fold" aria-label={layout.leftOpen ? 'Fold away the media panel' : 'Show the media panel'} aria-expanded={layout.leftOpen} title={layout.leftOpen ? 'Fold away the media panel' : 'Show the media panel'} onclick={() => togglePanel('left')}>{layout.leftOpen ? '‹' : '›'}</button>
       </div>
-      <section class="center"><Player /></section>
+      <section class="center" data-tour="preview"><Player /></section>
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div class="colsize cr" title="Drag to resize the inspector" onpointerdown={(e) => panelDown(e, 'right')}>
         <button class="fold" aria-label={layout.rightOpen ? 'Fold away the inspector' : 'Show the inspector'} aria-expanded={layout.rightOpen} title={layout.rightOpen ? 'Fold away the inspector' : 'Show the inspector'} onclick={() => togglePanel('right')}>{layout.rightOpen ? '›' : '‹'}</button>
@@ -248,6 +249,7 @@
   {/if}
 </div>
 
+{#if store.ui.dialog === 'looks'}<LooksDialog />{/if}
 {#if store.ui.dialog === 'presets'}<PresetsDialog />{/if}
 {#if store.ui.dialog === 'snapshots'}<SnapshotsDialog />{/if}
 {#if store.ui.dialog === 'beatEdit'}<BeatEditDialog />{/if}

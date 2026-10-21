@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.15.0
+
+- **Make a video like this**: five templates made from edits people post, at the top of the home
+  screen with previews of what you get. **Behind the subject** cuts the subject out of each clip by
+  itself and puts handwritten words and drawn rings between it and the background. **Kinetic
+  lyrics** slams your words in one per beat. **Pop-up collage** pops your clips up on the beat as
+  white-bordered cards that leave stepped copies behind. **Tour poster** frames them on off-white
+  paper with blue type that types itself in. **Red notes** finds things in your footage, follows
+  them, and boxes, arrows and labels them, one more on every beat.
+- **Your words, first**: templates with titles ask for your words before they are made.
+- **Templates in the editor**: the new **Templates** button (and the phone's tool row) puts any of them
+  on the clips already on your timeline. The whole template is one undo step, in the editor and from
+  the home screen.
+- **Sample footage, then yours**: after trying a template with sample footage, **Use my clips** on
+  the note makes it again with your own (it used to say to drop them in, which only added them).
+- **Easier to find**: a tip on the player says it has a right-click (or hold) menu for titles, boxes,
+  arrows and cut-outs, with an **Add…** button; the first-run tour shows Templates and that menu, and
+  the empty editor mentions Templates. The add-here menu no longer runs off the bottom of a short player.
+- **Bold titles on phones**: titles in the Impact style fall back to a condensed black typeface on
+  iPhones and Android phones (which have no Impact) instead of a thin one.
+- **Your projects are safer**: if the browser fails to read the project list, saving no longer
+  writes a list with only the open project in it, and the start-up clean-up no longer takes such a
+  failure as "nothing to keep" (which could have deleted other projects' media). Snapshots that
+  can't be read are no longer written over. Changes are saved straight away when you switch apps
+  or close the tab, not a second later.
+- **Less memory over a long session**: the decoded sound, cut-outs, tracking frames, preview videos
+  and pictures of projects you have left are let go; preview copies and cut-outs no longer stay in
+  memory once they are saved; the undo history keeps to a memory budget; phones and tablets keep
+  smaller caches of decoded frames.
+- **Smoother playback**: the live preview draws from a plain copy of the project that is made
+  again only when something changes (several times less work every frame), and the project's
+  picture on the home screen is only saved when it has changed.
+
 ## 1.14.1
 
 - **Smoother playback with lots of titles**: titles and shapes that aren't on screen no longer cost

@@ -8,7 +8,7 @@
   import Icon from './Icon.svelte';
 
   /** x, y: where the menu opens (stage pixels); u, v: the point in the frame (shares of it) */
-  let { x, y, u, v, onclose }: { x: number; y: number; u: number; v: number; onclose: () => void } = $props();
+  let { x, y, u, v, maxh = 0, onclose }: { x: number; y: number; u: number; v: number; maxh?: number; onclose: () => void } = $props();
 
   const clip = $derived(trackableAt(store.ui.time));
   /** put the new layer on the point (its middle there) */
@@ -66,7 +66,7 @@
 
 <svelte:window onpointerdown={(e) => !(e.target as HTMLElement).closest?.('.quick') && onclose()} onkeydown={(e) => e.key === 'Escape' && onclose()} />
 <!-- (clicks in here aren't taps on the picture) -->
-<div class="quick" role="menu" tabindex="-1" style="left:{x}px;top:{y}px" aria-label="Add here" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation())}>
+<div class="quick" role="menu" tabindex="-1" style="left:{x}px;top:{y}px;{maxh > 0 ? `max-height:${maxh}px` : ''}" aria-label="Add here" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()} oncontextmenu={(e) => (e.preventDefault(), e.stopPropagation())}>
   <button class="ghost mitem" role="menuitem" onclick={title}><Icon name="text" />Title here</button>
   <button class="ghost mitem" role="menuitem" onclick={box}><Icon name="shape" />Box it</button>
   <button class="ghost mitem" role="menuitem" onclick={arrow}><Icon name="pointer" />Arrow to here</button>

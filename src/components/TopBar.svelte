@@ -48,6 +48,7 @@
   <button class="icon ghost" title="Redo  Ctrl+Shift+Z" aria-label={t('Redo')} disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" /></button>
   <div class="sep"></div>
 
+  <button class="looks" data-tour="looks" onclick={() => (store.ui.dialog = 'looks')} title="Templates: make it look like an edit you've seen (words behind the subject, lyrics on the beat, pop-up collage, red notes…) from the clips you have  Shift+L"><Icon name="sparkle" /><span class="lbl">{t('Templates')}</span></button>
   <nav class="tools" data-tour="mosh">
     <button class="ghost" onclick={() => (store.ui.dialog = 'presets')} title="Presets  P"><Icon name="list" /><span class="lbl">{t('Presets')}</span></button>
     <div class="roll">
@@ -249,6 +250,18 @@
     display: flex;
     align-items: center;
     gap: 2px;
+  }
+  /* the way in for someone new: the whole look of an edit in one go */
+  .looks {
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    color: var(--accent);
+    margin-right: 4px;
+  }
+  .looks:hover {
+    border-color: var(--accent);
+  }
+  header.nested .looks .lbl {
+    display: none;
   }
   .roll {
     display: flex;

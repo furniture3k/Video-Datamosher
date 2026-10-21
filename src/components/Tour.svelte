@@ -14,12 +14,15 @@
   }
   const DESKTOP: Step[] = [
     { at: 'media', title: 'Your clips', text: 'Import or drop videos, photos and music here, then drag them onto the timeline (or press + on one).' },
+    { at: 'looks', title: 'Templates', text: 'Seen an edit you like? Templates make yours like it in one go, from your clips: words behind a cut-out subject, lyrics on the beat, a pop-up collage, a tour poster, red notes. Type your words and it does the rest.' },
+    { at: 'preview', title: 'Add things right on the picture', text: 'Right-click the picture for a title, a box, an arrow, a cut-out or a sticker exactly there. Drag anything on it to move it.' },
     { at: 'timeline', title: 'Cut it together', text: 'Drag to reorder, drag edges to trim, S splits. The + on a cut adds a Melt: the next shot drags the last picture around.' },
     { at: 'mosh', title: 'Mosh it', text: 'Not sure where to start? Pick a preset, or press Randomize until something good happens. Undo is always there.' },
     { at: 'export', title: 'Export', text: 'MP4, WebM, GIF, PNG frames or the raw broken AVI, sized for wherever it\'s going.' },
   ];
   const PHONE: Step[] = [
-    { at: 'preview', title: 'Preview', text: 'Tap the picture to play or pause.' },
+    { at: 'preview', title: 'Preview', text: 'Tap the picture to play or pause. Hold it to add a title, a box, an arrow or a cut-out right there.' },
+    { at: 'looks', title: 'Templates', text: 'Make it look like an edit you have seen, from your clips: lyrics on the beat, words behind the subject, a collage, red notes. Type your words and it does the rest.' },
     { at: 'timeline', title: 'Timeline', text: 'Swipe to scrub, pinch to zoom, hold a clip to move it. Tap the little squares on cuts to Melt them.' },
     { at: 'tools', title: 'Tools', text: 'They change with what you select. Mosh, Presets and Randomize are here when nothing is selected.' },
     { at: 'export', title: 'Export', text: 'Save it as a video or GIF when it looks right.' },

@@ -8,6 +8,7 @@ import { takeSnapshot } from './snapshots.svelte';
 import { putFile, getFile, kvGet, kvSet, askPersistOnce } from './storage';
 import { probeFile, renderGenerator, makeProxy, extractPcm, proxyKey } from './renderer';
 import { mediaState, rt, PEAKS_PER_SEC } from './mediastate.svelte';
+import { keepMattes } from './mattes.svelte';
 import { GENERATORS, even } from '../engine/args';
 import { uid, makeClip, insertVideo, nearestCut, freeClips, clipLen, videoEnd, isOverlayTrack, isVideoTrack } from '../engine/timeline';
 import { VIDEO_TRACK, type MediaItem, type Project } from '../engine/types';
@@ -295,6 +296,10 @@ function peaksOf(data: Int16Array): Uint8Array {
 
 /** After loading a project: restore waveforms / proxies and redo any missing preparation. */
 export function prepareAll(media: MediaItem[]) {
+  // decoded sound of media the open project doesn't use (another project's) is let go: it's big (about 10 MB a minute)
+  const used = new Set(media.map((m) => m.id));
+  for (const id of [...pcm.keys()]) if (!used.has(id)) pcm.delete(id);
+  keepMattes(media);
   for (const m of media) prepareMedia(m);
 }
 

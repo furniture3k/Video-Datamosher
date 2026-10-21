@@ -13,15 +13,23 @@ export async function refreshProjects() {
   projects.loaded = true;
 }
 
+let lastThumb = { id: '', thumb: '' };
+
 /** Keep the open project's card picture up to date (called when leaving it, and now and then). */
 export async function refreshThumb() {
   const id = store.projectId;
   if (!id) return;
   const thumb = grabFrame();
-  if (!thumb) return;
+  // (the same picture as last time: nothing to write)
+  if (!thumb || (id === lastThumb.id && thumb === lastThumb.thumb)) return;
+  lastThumb = { id, thumb };
   await updateIndex((list) => {
     const m = list.find((x) => x.id === id);
     if (m) m.thumb = thumb;
+  }).catch((e) => {
+    // (tried again next time)
+    lastThumb = { id: '', thumb: '' };
+    console.warn('project picture not saved', e);
   });
 }
 

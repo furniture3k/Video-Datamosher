@@ -135,6 +135,7 @@ const ACTIONS: Record<string, Action> = {
 
   render: { run: () => store.doRender(true), when: hasClips },
   'add-effect': { run: dialog('addEffect') },
+  looks: { run: dialog('looks') },
   presets: { run: dialog('presets') },
   randomize: { run: runChaos, when: () => store.project.clips.length > 0 },
   'randomize-graphics': { run: runChaosGraphics, when: hasClips },

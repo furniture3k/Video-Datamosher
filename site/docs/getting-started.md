@@ -10,7 +10,19 @@ order: 1
 
 ## The quickest way
 
-Pick a **template**, choose a few clips (and a song for the beat one), and press **Use my clips**. The cuts, transitions and mosh are set up for you. Not sure yet? **Try with sample footage** shows what it does first.
+Seen an edit you'd like to make? Under **Make a video like this** on the home screen, pick a look:
+
+- **Behind the subject**: each clip's subject is cut out by itself, with handwritten words and drawn rings between it and the background.
+- **Kinetic lyrics**: big words slam in one per beat over quick cuts.
+- **Pop-up collage**: your clips pop up on the beat as white-bordered cards, each leaving stepped copies behind it.
+- **Tour poster**: a magazine layout on off-white paper, blue type that types itself in, outline type and choppy 16 fps.
+- **Red notes**: hand-drawn red boxes, arrows and notes find things in your footage and follow them, one more on every beat.
+
+Choose your clips (and a song, so things land on the beat), type your words, and press **Use my clips**. Not sure yet? **Try with sample footage** shows what it does first, and **Use my clips** on the note that follows makes it again with yours.
+
+Already have clips on the timeline? **Templates** (top bar, or the bottom tools on a phone) puts any of these on them in one go, and one **Undo** takes it off. Everything a look adds is ordinary titles, shapes and clips you can change.
+
+The other **templates** set up cuts, transitions and a mosh the same way.
 
 Or open an **example**. They're made from generated footage, so there's nothing to import: open one and take it apart.
 
@@ -20,7 +32,8 @@ Or open an **example**. They're made from generated footage, so there's nothing 
 2. **Cut them together.** Drag clips to reorder, drag their edges to trim, <kbd>S</kbd> splits at the playhead, right-click a clip for more.
 3. **Melt a cut.** Click the **+** on a cut and pick **Melt**: the next shot's movement drags the last picture around until it resolves.
 4. **Mosh it more.** **Presets** has ready-made stacks; **Randomize** rolls a new one; **Add effect** puts a single effect on the timeline as a bar you can move and resize. The [effects page](../effects/) explains each one.
-5. **Export** when it looks right: MP4, WebM, GIF, PNG frames or the raw broken AVI.
+5. **Add things right on the picture.** Right-click it (hold it on a phone) for a title, a box, an arrow, a callout or a sticker exactly there, or to cut out what's there, mark it (it is followed), or put words behind it.
+6. **Export** when it looks right: MP4, WebM, GIF, PNG frames or the raw broken AVI.
 
 ## Tips
 

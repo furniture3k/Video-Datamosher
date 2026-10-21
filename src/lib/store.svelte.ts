@@ -6,13 +6,13 @@ import { migrate } from '../engine/migrate';
 import { rootWithInner } from '../engine/compound';
 import { renderPreview, renderKey, proxyKey, Cancelled, type RenderResult } from './renderer';
 import { outputSize } from '../engine/args';
-import { isDesktop } from './platform';
+import { isDesktop, lowMemory } from './platform';
 import { kvGet, kvSet, localGet, localSet, pruneFiles } from './storage';
 import { makeEffect, uid } from '../engine/presets';
 import { EFFECTS } from '../engine/effects';
 import { busy } from './recovery';
 import { Eta, overallProgress } from '../engine/eta';
-import { saveProject, loadProject, migrateAutosave, currentProjectId, setCurrentProjectId, newProjectId, hasContent, loadIndex } from './projectindex';
+import { saveProject, loadProject, migrateAutosave, currentProjectId, setCurrentProjectId, newProjectId, hasContent, loadIndexStrict } from './projectindex';
 
 /** deep copy of plain JSON data (structuredClone needs iOS 15.4+) */
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -21,7 +21,9 @@ export type CompareMode = 'off' | 'split' | 'side' | 'hold';
 export type PreviewRes = 'full' | 'half' | 'quarter';
 export const PREVIEW_RES: Record<PreviewRes, number> = { full: 1, half: 0.5, quarter: 0.25 };
 /** decoded preview frames are kept in memory as JPEGs: stay around this many bytes */
-const PREVIEW_BUDGET = 450e6;
+const PREVIEW_BUDGET = lowMemory ? 200e6 : 450e6;
+/** undo history: stay around this many characters of saved project JSON */
+const UNDO_BUDGET = 60e6;
 
 export interface Toast {
   id: number;
@@ -103,7 +105,7 @@ class Store {
     /** playback resolution of the mosh preview, as a share of the mosh resolution (like an NLE's Full / ½ / ¼) */
     // full in the desktop app (native FFmpeg is fast); half in the browser, where the engine is wasm
     previewRes: localGet<PreviewRes>('previewRes', isDesktop ? 'full' : 'half'),
-    dialog: null as null | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'wordBeats' | 'script' | 'steal' | 'flipbook' | 'fonts' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history' | 'batch',
+    dialog: null as null | 'looks' | 'snapshots' | 'beatEdit' | 'bake' | 'compound' | 'captions' | 'wordBeats' | 'script' | 'steal' | 'flipbook' | 'fonts' | 'presets' | 'export' | 'variations' | 'help' | 'share' | 'live' | 'addEffect' | 'generate' | 'record' | 'whatsnew' | 'storage' | 'palette' | 'history' | 'batch',
     theme: localGet<'dark' | 'light'>('theme', 'dark'),
     chaosIntensity: 0.5,
     welcome: false,
@@ -125,6 +127,8 @@ class Store {
   private eta = new Eta();
   toasts = $state<Toast[]>([]);
   private undoStack: string[] = [];
+  /** characters held by the undo stack */
+  private undoBytes = 0;
   private redoStack: string[] = [];
   private last = JSON.stringify(newProject());
   private coalesceKey: string | null = null;
@@ -277,7 +281,9 @@ class Store {
     if (now === this.last) return;
     if (!(key && key === this.coalesceKey)) {
       this.undoStack.push(this.last);
-      if (this.undoStack.length > 200) this.undoStack.shift();
+      this.undoBytes += this.last.length;
+      // at most 200 steps, and no more than the memory budget (big projects have big steps), keeping a few at least
+      while (this.undoStack.length > 200 || (this.undoBytes > UNDO_BUDGET && this.undoStack.length > 20)) this.undoBytes -= this.undoStack.shift()!.length;
       this.redoStack = [];
     }
     this.coalesceKey = key;
@@ -286,6 +292,31 @@ class Store {
     this.last = now;
     this.historySize = { undo: this.undoStack.length, redo: 0 };
     this.changed();
+  }
+
+  /**
+   * Run many edits as one undo step (a template or a look put on in one go): whatever `fn` commits
+   * is undone together.
+   */
+  async group<T>(fn: () => Promise<T> | T): Promise<T> {
+    const before = this.last;
+    const depth = this.undoStack.length;
+    try {
+      return await fn();
+    } finally {
+      // the steps taken inside, folded into the one before them (found by content: old steps may have been dropped)
+      if (this.undoStack.length > depth) {
+        const i = this.undoStack.lastIndexOf(before);
+        const from = i >= 0 ? i + 1 : Math.max(0, depth);
+        for (const dropped of this.undoStack.splice(from)) this.undoBytes -= dropped.length;
+        if (i < 0) {
+          this.undoStack.push(before);
+          this.undoBytes += before.length;
+        }
+        this.coalesceKey = null;
+        this.historySize = { undo: this.undoStack.length, redo: this.redoStack.length };
+      }
+    }
   }
 
   /** Apply a mutation then commit. */
@@ -306,6 +337,7 @@ class Store {
   /** Forget undo / redo (entering or leaving a compound: its history doesn't mix with the parent's). */
   resetHistory() {
     this.undoStack = [];
+    this.undoBytes = 0;
     this.redoStack = [];
     this.last = this.snapshot();
     this.historySize = { undo: 0, redo: 0 };
@@ -351,6 +383,7 @@ class Store {
   undo() {
     const prev = this.undoStack.pop();
     if (!prev) return;
+    this.undoBytes -= prev.length;
     this.redoStack.push(this.last);
     this.project = JSON.parse(prev);
     this.last = prev;
@@ -363,6 +396,7 @@ class Store {
     const next = this.redoStack.pop();
     if (next === undefined) return;
     this.undoStack.push(this.last);
+    this.undoBytes += this.last.length;
     this.project = JSON.parse(next);
     this.last = next;
     this.historySize = { undo: this.undoStack.length, redo: this.redoStack.length };
@@ -511,9 +545,17 @@ class Store {
   private saveTimer = 0;
   /** saving failed (storage full): said once, until a save works again */
   private saveFailed = false;
+  /** a change is waiting for the autosave */
+  private savePending = false;
   autosave() {
     clearTimeout(this.saveTimer);
+    this.savePending = true;
     this.saveTimer = window.setTimeout(() => this.flush(), 1000);
+  }
+
+  /** Save now if a change is waiting (the page is being hidden or closed: a phone may not bring it back). */
+  flushPending() {
+    if (this.savePending) this.flush().catch((e) => console.warn('save on leaving failed', e));
   }
 
   /** The whole project as saved: inside a compound, with the open edits folded back in. */
@@ -525,6 +567,7 @@ class Store {
   /** Save the open project now (before switching to another one or going home). */
   async flush() {
     clearTimeout(this.saveTimer);
+    this.savePending = false;
     const p = this.rootProject();
     if (!this.projectId) {
       // a new project joins the list once there's something in it
@@ -576,7 +619,9 @@ class Store {
     // Media no longer in the saved project is removed on startup only, so undo
     // within a session can always bring a deleted clip back.
     // (media used by snapshots is kept so they can still be restored)
-    pruneFiles(await this.keepFiles());
+    // (if what to keep can't be worked out, nothing is deleted)
+    const keep = await this.keepFiles().catch((e) => (console.warn('not cleaning up stored files', e), null));
+    if (keep) pruneFiles(keep);
     const { prepareAll } = await import('./media');
     prepareAll(this.project.media);
     // compounds edited when the app last closed are rendered again
@@ -587,12 +632,13 @@ class Store {
   /** Stored files still needed: this project's media, preview copies and LUTs, and what snapshots use. */
   async keepFiles(): Promise<string[]> {
     const { snapshotFileIds, snapshots } = await import('./snapshots.svelte');
-    const snapFiles = await snapshotFileIds().catch(() => [] as string[]);
+    // (a list that can't be read throws: guessing it empty would delete what it uses)
+    const snapFiles = await snapshotFileIds();
     // preview copies are kept under the media item's id, not its file's
     const snapProxies = snapshots.list.flatMap((s) => s.project.media.filter((m) => m.source.kind === 'file').map((m) => proxyKey(m.id)));
     const lutFiles = [...(this.project.luts ?? []).map((l) => 'lut:' + l.id), ...(this.project.fonts ?? []).map((f) => 'font:' + f.id), ...this.project.media.flatMap((m) => (m.mattes ?? []).map((x) => x.fileId))];
     // every saved project's media too, not just the open one's
-    const others = (await loadIndex().catch(() => [])).flatMap((m) => m.files);
+    const others = (await loadIndexStrict()).flatMap((m) => m.files);
     return [...others, ...lutFiles, ...this.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId, proxyKey(m.id)] : [])), ...snapFiles, ...snapProxies];
   }
 
@@ -605,3 +651,9 @@ class Store {
 }
 
 export const store = new Store();
+
+// switching apps or closing the tab: save what the autosave hasn't yet
+if (typeof window !== 'undefined') {
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && store.flushPending());
+  window.addEventListener('pagehide', () => store.flushPending());
+}

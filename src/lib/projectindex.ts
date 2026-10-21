@@ -1,7 +1,7 @@
 // Saved projects: each project is kept under `project:<id>` in IndexedDB, with a small index
 // (name, thumbnail, length, which stored files it uses) under `projects` for the home screen.
 // Storage only: no app state here, so the store can use it without an import cycle.
-import { kvGet, kvSet, kvDelete, localGet, localSet } from './storage';
+import { kvGet, kvRead, kvSet, kvDelete, localGet, localSet } from './storage';
 import { migrate } from '../engine/migrate';
 import { timelineDuration } from '../engine/timeline';
 import { proxyKey } from './renderer';
@@ -70,10 +70,16 @@ export async function loadIndex(): Promise<ProjectMeta[]> {
   return (await kvGet<ProjectMeta[]>(INDEX)) ?? [];
 }
 
+/** The index, or an error if it can't be read (for clean-ups, which must not take a failed read as "no projects"). */
+export async function loadIndexStrict(): Promise<ProjectMeta[]> {
+  return (await kvRead<ProjectMeta[]>(INDEX)) ?? [];
+}
+
 /** Change the index (load, edit, save, in order with every other change). */
 export function updateIndex(fn: (list: ProjectMeta[]) => ProjectMeta[] | void): Promise<ProjectMeta[]> {
   return queue(async () => {
-    const list = await loadIndex();
+    // (a list that can't be read throws: writing back an empty one would lose every other project)
+    const list = await loadIndexStrict();
     const next = fn(list) ?? list;
     next.sort((a, b) => b.updated - a.updated);
     await kvSet(INDEX, next);
@@ -84,12 +90,17 @@ export function updateIndex(fn: (list: ProjectMeta[]) => ProjectMeta[] | void): 
 /** Save a project body and refresh its entry in the index. Resolves false when it could not be saved. */
 export async function saveProject(id: string, p: Project): Promise<boolean> {
   const ok = await kvSet(projectKey(id), p);
-  await updateIndex((list) => {
-    const i = list.findIndex((m) => m.id === id);
-    const meta = metaOf(p, id, list[i]);
-    if (i >= 0) list[i] = meta;
-    else list.push(meta);
-  });
+  try {
+    await updateIndex((list) => {
+      const i = list.findIndex((m) => m.id === id);
+      const meta = metaOf(p, id, list[i]);
+      if (i >= 0) list[i] = meta;
+      else list.push(meta);
+    });
+  } catch (e) {
+    console.warn('project list not updated', e);
+    return false;
+  }
   return ok;
 }
 

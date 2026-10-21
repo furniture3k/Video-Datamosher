@@ -118,6 +118,9 @@ export async function putFile(id: string, blob: Blob) {
   if (dir && (await writeDisk(dir, id, blob))) {
     // a copy from before is no longer needed
     tx('files', 'readwrite', (s) => s.delete(id)).catch(() => {});
+    // the file on disk stands in for the one in memory (a made proxy or matte would otherwise stay in memory for good)
+    const onDisk = await readDisk(dir, id);
+    if (onDisk && files.get(id) === blob) files.set(id, onDisk);
     return;
   }
   try {
@@ -240,6 +243,11 @@ export async function kvGet<T>(key: string): Promise<T | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/** Like kvGet, but a database that can't be read throws (undefined only means there's nothing saved under the key). */
+export function kvRead<T>(key: string): Promise<T | undefined> {
+  return tx<T | undefined>('kv', 'readonly', (s) => s.get(key));
 }
 
 /** Resolves false when it could not be saved (storage full, or no IndexedDB). */

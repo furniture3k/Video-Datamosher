@@ -6,6 +6,21 @@ import type { Gray } from '../engine/track';
 import type { Clip, MediaItem } from '../engine/types';
 
 const cache = new Map<string, Promise<Gray>>();
+/** bytes of frames each finished entry holds */
+const sizes = new Map<string, number>();
+const BUDGET = 96e6;
+
+/** Let the oldest entries go (never `keep`, the one just made) until there are at most 6 and they fit the budget. */
+async function trim(keep: string) {
+  const g = await cache.get(keep)?.catch(() => null);
+  if (g) sizes.set(keep, g.w * g.h * g.frames.length);
+  const total = () => [...cache.keys()].reduce((n, k) => n + (sizes.get(k) ?? 0), 0);
+  for (const k of [...cache.keys()]) {
+    if (k === keep || (cache.size <= 6 && total() <= BUDGET)) continue;
+    cache.delete(k);
+    sizes.delete(k);
+  }
+}
 
 /**
  * A clip's source between its in and out points at `fps`, as `w`-pixel-wide gray frames.
@@ -27,7 +42,8 @@ export function clipFrames(c: Pick<Clip, 'in' | 'out'>, m: MediaItem, fps: numbe
     })();
     hit.catch(() => cache.delete(key));
     cache.set(key, hit);
-    if (cache.size > 6) cache.delete(cache.keys().next().value!);
+    // the oldest go once there are more than a few, or more than the memory budget (long clips are big)
+    hit.then(() => trim(key), () => {});
   }
   return hit;
 }

@@ -1,7 +1,7 @@
 // Orchestrates prep -> mosh -> decode -> post for previews and exports.
 import { ffmpeg, ffmpegBg, Cancelled, MOUNT, type RunOptions, type Engine } from './ffmpeg';
 import { fileSize, framesFromDisk, loadFrames, assembleAvi, removeEngineFile, moveEngineFile, writeEngineFile } from './ffmpeg-native';
-import { isDesktop } from './platform';
+import { isDesktop, lowMemory } from './platform';
 import { getFile } from './storage';
 import { lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
@@ -111,7 +111,7 @@ class LRU<V> {
 
 const prepBytes = (p: Prepared) => p.frames.reduce((s, f) => s + f.data.length, 0);
 /** Prepared segments for previews, so editing one clip only re-prepares its own piece. */
-const segCache = new LRU<Prepared>(256, 400e6);
+const segCache = new LRU<Prepared>(256, lowMemory ? 150e6 : 400e6);
 const origCache = new LRU<Uint8Array[]>(2);
 const audioCache = new LRU<Buses>(2);
 let renderId = 0;
@@ -120,7 +120,7 @@ let renderId = 0;
 
 const pngCache = new Map<string, Blob>();
 /** pictures of moving layers, one per frame (see layerOverlays) */
-const seqCache = new LRU<Blob>(32, 300e6);
+const seqCache = new LRU<Blob>(32, lowMemory ? 100e6 : 300e6);
 
 /**
  * Layers that melt with the video, drawn as transparent full-frame pictures for the prep graph:
