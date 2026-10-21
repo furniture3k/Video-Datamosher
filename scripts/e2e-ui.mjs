@@ -3435,7 +3435,8 @@ await step('template: melt transitions with sample footage', async () => {
 await step('templates for each reference style build with sample footage and render', async () => {
   const checks = {
     'Kinetic lyrics': (p) => p.layers.filter((l) => l.kind === 'text' && l.fit === 'width').length >= 2,
-    Scrapbook: (p) => !!p.canvas && p.layers.some((l) => l.trail) && p.effects.some((e) => e.type === 'hold'),
+    // a caption in the cream above the card
+    Scrapbook: (p) => !!p.canvas?.shift && p.layers.some((l) => l.kind === 'text' && l.y < 0.15) && p.effects.some((e) => e.type === 'hold'),
     'Product demo': (p) => p.canvas?.device === 'browser' && p.layers.some((l) => l.shape === 'cursor'),
     // things in the footage found and followed: boxes and arrows that move, with the notes typed in
     'Red notes': (p) => p.layers.some((l) => l.shape === 'rect' && l.follow?.length > 1) && p.layers.some((l) => l.shape === 'arrow') && p.layers.some((l) => l.kind === 'text' && l.text === 'everything feels connected'),
