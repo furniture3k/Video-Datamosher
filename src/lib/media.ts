@@ -179,8 +179,8 @@ export async function addGenerator(genId: string, seconds = 4, place: Place = 'a
 
 /** Two generated clips with a melt between them: something to look at in one click. */
 export async function loadExample() {
-  await addGenerator('testsrc2', 3);
-  await addGenerator('mandelbrot', 4);
+  await addGenerator('nightdrive', 3);
+  await addGenerator('citylights', 4);
   const vids = store.project.clips.filter((c) => c.track === VIDEO_TRACK);
   if (vids.length >= 2) store.edit(() => (vids[vids.length - 1].transition = { type: 'melt', duration: 1, intensity: 0.5 }));
 }

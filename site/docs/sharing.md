@@ -18,7 +18,15 @@ order: 5
 
 **Hardware encoding** (on by default) uses your device's own video encoder for MP4 and WebM where the browser has one: several times faster. **Add to queue** exports in the background while you keep editing; the queue in the corner shows how far each export is and saves it when it's done.
 
-**Made for** sets up the size and shape for TikTok, Reels and Shorts, the Instagram feed, square posts, YouTube or a Discord size limit. **Shape** exports a different aspect (9:16 from 16:9…) with the crop following the action, and **Loop** makes seamless loops. On phones and tablets, **Share…** sends the export straight to another app.
+**Made for** sets up the size and shape for TikTok, Reels and Shorts (1080×1920, or 2160×3840 in 4K for Shorts and TikTok), the Instagram feed, square posts, YouTube or a Discord size limit, and can show the apps' safe zones in the player so your text stays clear of their buttons. **Shape** exports a different aspect (9:16 from 16:9…) with the crop following the action, and **Loop** makes seamless loops. On phones and tablets, **Share…** sends the export straight to another app.
+
+## Size, quality and frame rate
+
+- **Output size** is named by what it makes in your project's shape: on a 9:16 project **1080p** is 1080×1920 and **4K** is 2160×3840.
+- The **mosh resolution** (Encode tab) is separate: a smaller mosh gives bigger, chunkier smears and is scaled up to the output size. **Full quality: mosh at this size** moshes at the output size instead: the sharpest picture, for 4K uploads, and several times slower.
+- **Frame rate** makes 30, 50 or 60 fps from a 24 fps project, the frames in between blended from their neighbours, for smoother motion on phones that play at 60.
+- **Colours** stay as they were from your clips to the file, and the file says which colours it is in (BT.709), so phones and Instagram show it the way you saw it. **HDR** clips from phones (iPhone HDR, HDR10) are brought down to normal range so they don't look grey and washed out.
+- Instagram shows Reels at 1080×1920 whatever you upload; Shorts and TikTok keep more of a 4K upload.
 
 ## Recipes
 

@@ -759,7 +759,10 @@ export async function renderGenerator(genId: string, seconds: number, w: number,
 
 /** A drawn scene (engine/scenes.ts) as a video file: drawn frame by frame on a canvas, then encoded. */
 async function renderScene(scene: Scene, seconds: number, w: number, h: number, fps: number): Promise<Blob> {
-  const c = new OffscreenCanvas(w, h);
+  // (a page canvas: OffscreenCanvas is missing from older Safari and some WebKit builds)
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
   const g = c.getContext('2d')!;
   const parts: Uint8Array[] = [];
   const n = Math.max(1, Math.round(seconds * fps));
@@ -768,7 +771,8 @@ async function renderScene(scene: Scene, seconds: number, w: number, h: number, 
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
     scene.draw(g, w, h, i / fps);
-    parts.push(new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg', quality: 0.93 })).arrayBuffer()));
+    const jpeg = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('drawing the scene failed'))), 'image/jpeg', 0.93));
+    parts.push(new Uint8Array(await jpeg.arrayBuffer()));
   }
   const cat = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
   let off = 0;

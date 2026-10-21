@@ -24,7 +24,7 @@ Already have clips on the timeline? **Templates** (top bar, or the bottom tools 
 
 The other **templates** set up cuts, transitions and a mosh the same way.
 
-Or open an **example**. They're made from generated footage, so there's nothing to import: open one and take it apart.
+Or open an **example**. They're made from footage drawn on your device, so there's nothing to import: open one and take it apart.
 
 ## From scratch
 
@@ -33,11 +33,12 @@ Or open an **example**. They're made from generated footage, so there's nothing 
 3. **Melt a cut.** Click the **+** on a cut and pick **Melt**: the next shot's movement drags the last picture around until it resolves.
 4. **Mosh it more.** **Presets** has ready-made stacks; **Randomize** rolls a new one; **Add effect** puts a single effect on the timeline as a bar you can move and resize. The [effects page](../effects/) explains each one.
 5. **Add things right on the picture.** Right-click it (hold it on a phone) for a title, a box, an arrow, a callout or a sticker exactly there, or to cut out what's there, mark it (it is followed), or put words behind it.
-6. **Export** when it looks right: MP4, WebM, GIF, PNG frames or the raw broken AVI.
+6. **Export** when it looks right: MP4, WebM, GIF, PNG frames or the raw broken AVI. **Made for** sets everything up for Reels, TikTok and Shorts (or YouTube, X, Discord…), up to 4K and 60 fps.
 
 ## Tips
 
 - Moshes are strongest when the second clip has lots of movement and the first has strong colours.
+- For fast-paced edits, put a song on the timeline, then press <kbd>Z</kbd> for a zoom punch or <kbd>H</kbd> for a shake on every beat, and **Speed ramp › On the beat** for a velocity edit.
 - The **Chaos** dial makes everything calmer or wilder without changing your settings.
 - **Snapshots** keep versions you like; one is taken automatically before Randomize or a preset replaces your stack.
 - Everything is saved on this device as you go. The logo takes you back to your projects.

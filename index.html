@@ -19,7 +19,7 @@
     <meta property="og:image" content="https://furniture3k.github.io/Video-Datamosher/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="The moshpit logo next to a frame of colour bars melting into each other" />
+    <meta property="og:image:alt" content="The moshpit logo next to a frame of a night drive from a moshed video" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="theme-color" content="#0b0b0d" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23121214'/><path transform='translate(16 16) scale(0.95) translate(-16 -16)' d='M6 8a3 3 0 0 1 3-3h14a3 3 0 0 1 3 3v14h-4v3h-4v-5h-4v7h-4v-4H6zM13.5 9v7l6-3.5z' fill='%23c8f031' fill-rule='evenodd'/></svg>" />
@@ -66,7 +66,7 @@
             <h1>Break your videos <em>beautifully.</em></h1>
           </div>
           <div class="hero-side">
-            <p class="lead">moshpit is a video editor with a datamosher built in. Cut your clips together, then melt, bloom and glitch them by editing the compressed video itself.</p>
+            <p class="lead">moshpit is a video editor with a datamosher built in. Cut your clips together, then melt, bloom and glitch them by editing the compressed video itself. Ready for Reels, TikTok and Shorts, up to 4K.</p>
             <div class="cta">
               <a class="btn primary" href="./app/">Open in your browser<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" /></svg></a>
               <a class="btn" id="dl-main" href="#download">Get the desktop app</a>
@@ -169,21 +169,21 @@
               <button type="button" class="spot" style="--x: 94%; --y: 6%" data-spot="6" aria-label="7: Export">7</button>
             </div>
             <ol class="tour-list">
-              <li data-spot="0"><b>Media</b> Import video, photos, GIFs and music, record your camera or screen, or generate test footage.</li>
+              <li data-spot="0"><b>Media</b> Import video, photos, GIFs and music, record your camera or screen, or generate footage to try things on (city lights, a sunset, a night drive).</li>
               <li data-spot="1"><b>Player</b> Plays your cut straight away from the source files, and the rendered mosh as soon as it's ready.</li>
               <li data-spot="2"><b>Presets, Randomize, Variations</b> <!-- site:preset-count --> presets, a chaos dial and a grid of variations to breed from. Every result has a seed, so you can get it back.</li>
               <li data-spot="3"><b>Inspector</b> Every setting comes with a line explaining what it does.</li>
               <li data-spot="4"><b>Mosh FX lanes</b> Effects are bars on the timeline: drag, resize and stack them, or let them fire on the beat.</li>
               <li data-spot="5"><b>Transitions</b> Melt, Bloom melt, Glitch cut and more on any cut, next to dissolves, wipes, circle and box crops, and a whip that goes the way the picture moves.</li>
-              <li data-spot="6"><b>Export</b> MP4, WebM, GIF, PNG frames or the raw broken AVI, up to 4K.</li>
+              <li data-spot="6"><b>Export</b> MP4, WebM, GIF, PNG frames or the raw broken AVI, up to 4K and 60 fps, with sizes made for Reels, TikTok and Shorts.</li>
             </ol>
           </div>
 
           <dl class="specs">
             <div><dt>Timeline</dt><dd>Video and audio tracks, as many as you like. Magnetic main track, ripple trims, blade, slip and roll.</dd></div>
-            <div><dt>Clips</dt><dd>Speed 0.05–16×, speed ramps, reverse, freeze frames, keyframed position, zoom, rotation and opacity.</dd></div>
-            <div><dt>Colour</dt><dd>.cube LUTs, chroma key, adjustment layers, waveform, parade, vectorscope and histogram.</dd></div>
-            <div><dt>Music</dt><dd>Effects that fire on every beat or bar or swell with the bass, and an edit cut to the song for you.</dd></div>
+            <div><dt>Clips</dt><dd>Speed 0.05–16×, speed ramps, reverse, freeze frames, keyframed position, zoom, rotation and opacity, with motion blur on the moves.</dd></div>
+            <div><dt>Colour</dt><dd>Colours kept true from your clip to the file, HDR phone footage brought to normal range, .cube LUTs, chroma key, adjustment layers and scopes.</dd></div>
+            <div><dt>Music</dt><dd>Zoom punches, shakes and speed ramps on the beat, effects that fire on every beat or bar or swell with the bass, and an edit cut to the song for you.</dd></div>
             <div><dt>Tracking</dt><dd>Follow an object, a face or a flat surface through the shot and pin a title, a shape or a clip to it. One-click stabilize.</dd></div>
             <div><dt>Cut-outs</dt><dd>Tap a subject and it's followed through the clip, so titles, shapes and other clips can sit behind it. Models run on your device.</dd></div>
             <div><dt>Type and shapes</dt><dd>Gradient and per-word type, callouts, leader lines, tape, paper and stickers, with shadows and outlines on anything.</dd></div>
@@ -191,7 +191,7 @@
             <div><dt>Steal this edit</dt><dd>Pick a video you like and your clips are cut the same way: its rhythm, frame rate, colours and frame.</dd></div>
             <div><dt>Captions</dt><dd>Whisper, running on your device. Clean, karaoke, or melting with the mosh. Export .srt or .vtt.</dd></div>
             <div><dt>Live</dt><dd>Play effects from MIDI knobs and pads, or over OSC in the desktop app, and record the take.</dd></div>
-            <div><dt>Output</dt><dd>Up to 4K. 10 minutes in the browser, 30 in the desktop app. Vertical crops that follow the action, seamless loops.</dd></div>
+            <div><dt>Output</dt><dd>Up to 4K (2160×3840 for vertical video) and 60 fps. 10 minutes in the browser, 30 in the desktop app. Vertical crops that follow the action, seamless loops.</dd></div>
           </dl>
         </div>
       </section>
@@ -249,6 +249,7 @@
             <details><summary>What is datamoshing?</summary><p>Video files mostly store changes, not pictures: a full picture now and then (a keyframe) and in between only how blocks of it move. Remove a keyframe and the movement of the next shot gets applied to the old picture, so it melts. Repeat a movement and the picture smears and blooms. <a href="./docs/what-is-datamoshing/">Read more</a>.</p></details>
             <details><summary>Is it really free? Are my videos uploaded?</summary><p>Yes, and no. moshpit is free software (GPL-3.0). Your videos never leave your device: decoding, moshing and encoding all happen in your browser or in the desktop app.</p></details>
             <details><summary>Does it work on my phone?</summary><p>Yes. Phones get their own editor with a big preview, a swipe-to-scrub timeline and tools that follow what you select. Add it to your home screen to use it like an app.</p></details>
+            <details><summary>Can I make Reels, TikToks and Shorts with it?</summary><p>Yes: that is what most people make. Start from a template, or set the project to 9:16. <b>Made for</b> in Export sets the size (1080×1920, or 2160×3840 for 4K) and shows the apps’ safe zones in the player, zoom punches and shakes land on the beat of your song, and colours and HDR phone footage come out the way they looked.</p></details>
             <details><summary>How long and how big can videos be?</summary><p>In the browser, up to 10 minutes and comfortably 1080p; 1440p and 4K work for short videos. The desktop app goes to 30 minutes and is much faster at 4K.</p></details>
             <details><summary>Why does the exported AVI look different in every player?</summary><p>Because a moshed AVI is broken on purpose and every player hides the damage in its own way. MP4, WebM and GIF exports contain exactly what the preview shows.</p></details>
             <details><summary>Can I help?</summary><p>Please do. Report bugs, suggest features or send code on <a href="https://github.com/furniture3k/Video-Datamosher">GitHub</a>, improve a translation, and share what you make in the gallery.</p></details>
