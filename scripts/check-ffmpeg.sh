@@ -8,10 +8,10 @@ ENC=$("$FF" -hide_banner -encoders)
 FIL=$("$FF" -hide_banner -filters)
 missing=
 for e in libx264 libvpx libvorbis aac mpeg4 mpeg2video mpeg1video mjpeg png gif rawvideo pcm_s16le; do
-  grep -qE "^ [A-Z.]{6} $e " <<<"$ENC" || missing="$missing encoder:$e"
+  grep -qE "^ [A-Z.]+ $e " <<<"$ENC" || missing="$missing encoder:$e"
 done
 for f in scale crop pad fps setpts trim concat format fade hue despill lut3d perspective geq colorkey lumakey palettegen paletteuse overlay blend xfade gblur boxblur lutrgb colorchannelmixer atempo amix afade aresample mandelbrot life cellauto testsrc2 gradients; do
-  grep -qE "^ [A-Z.]{3} $f " <<<"$FIL" || missing="$missing filter:$f"
+  grep -qE "^ [A-Z.]+ $f " <<<"$FIL" || missing="$missing filter:$f"
 done
 if [[ -n $missing ]]; then
   echo "this FFmpeg lacks what the app needs:$missing" >&2
