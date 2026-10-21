@@ -82,9 +82,9 @@ checkout libvpx "$LIBVPX_URL" "$LIBVPX_TAG" "$LIBVPX_COMMIT"
 FF=$SRC/ffmpeg-$FFMPEG_VERSION.tar.xz
 [[ -f $FF ]] || curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$FF" "$FFMPEG_URL"
 curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$FF.asc" "$FFMPEG_URL.asc"
-export GNUPGHOME=$WORK/gnupg
-rm -rf "$GNUPGHOME"
-mkdir -p -m 700 "$GNUPGHOME"
+# (a short path: gpg's agent socket lives in it, and macOS limits socket paths to ~100 characters)
+export GNUPGHOME=$(mktemp -d /tmp/mp-gpg.XXXXXX)
+trap 'gpgconf --kill all >/dev/null 2>&1 || true; rm -rf "$GNUPGHOME"' EXIT
 curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors https://ffmpeg.org/ffmpeg-devel.asc | gpg --batch --quiet --import
 # (read whole first: grep -q stopping early would fail the pipe)
 SIG=$(gpg --batch --status-fd 1 --verify "$FF.asc" "$FF" 2>/dev/null || true)

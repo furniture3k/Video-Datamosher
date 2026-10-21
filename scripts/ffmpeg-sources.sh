@@ -20,13 +20,13 @@ X264_COMMIT=31e19f92f00c7003fa115047ce50978bc98c3a0d
 
 LIBVPX_URL=https://chromium.googlesource.com/webm/libvpx
 LIBVPX_TAG=v1.15.0
-LIBVPX_COMMIT=
+LIBVPX_COMMIT=9f9b7e9ba2eb9d01640a9e69a3d655866265cf7f
 
 OGG_URL=https://downloads.xiph.org/releases/ogg/libogg-1.3.5.tar.xz
-OGG_SHA256=
+OGG_SHA256=c4d91be36fc8e54deae7575241e03f4211eb102afb3fc0775fbbc1b740016705
 
 VORBIS_URL=https://downloads.xiph.org/releases/vorbis/libvorbis-1.3.7.tar.xz
-VORBIS_SHA256=
+VORBIS_SHA256=b33cc4934322bcbf6efcbacf49e3ca01aadbea4114ec9589d1b1e9d20f72954b
 
 ZLIB_URL=https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.xz
-ZLIB_SHA256=
+ZLIB_SHA256=38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32
