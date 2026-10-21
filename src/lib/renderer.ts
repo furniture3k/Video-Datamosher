@@ -8,7 +8,7 @@ import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
-import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, metadataArgs, moshWidthFor, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
 import { JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, hdrLutFile, hdrOf, hdrRgba, sourceMatrix } from '../engine/colour';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
@@ -863,6 +863,16 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
 }
 
 async function exportWith(project: Project, o: ExportOptions, progress: Progress, signal: Signal, eng: Engine): Promise<Exported> {
+  // full quality: mosh at the size that is saved (no scaling up afterwards)
+  if (o.moshAtSize && o.width > 0 && o.format !== 'avi') {
+    const shape = outputSize(project, project.encoder.width);
+    const dst = o.reframeTo ? aspectRatio(o.reframeTo) : undefined;
+    const mw = moshWidthFor(o.width, shape.w / shape.h, dst);
+    if (mw > project.encoder.width) {
+      project = { ...project, encoder: { ...project.encoder, width: mw } };
+      o = { ...o, width: 0 };
+    }
+  }
   const width = project.encoder.width;
   // Desktop: frame payloads stay on disk and the moshed AVI is assembled there, so memory use
   // doesn't grow with the length of the video.

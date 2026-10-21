@@ -807,6 +807,16 @@ export interface ExportOptions {
   crossfade?: { frames: number; overlap: number };
   /** MP4 / WebM: encode with the browser's own (hardware) encoder where it can, see webcodecs.ts */
   hardware?: boolean;
+  /** mosh at the output size instead of scaling the mosh up to it (sharpest, slower) */
+  moshAtSize?: boolean;
+}
+
+/**
+ * The mosh resolution (width) that makes a video `outW` wide without scaling: the output width
+ * itself, or more when a reframe to `dstAr` crops the sides off a `srcAr` frame.
+ */
+export function moshWidthFor(outW: number, srcAr: number, dstAr?: number): number {
+  return even(dstAr && dstAr < srcAr - 0.01 ? (outW * srcAr) / dstAr : outW);
 }
 
 /**

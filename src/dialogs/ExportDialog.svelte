@@ -25,7 +25,7 @@
   import { onDestroy } from 'svelte';
   import { isDesktop, isAndroidApp } from '../lib/platform';
   import { blobToDisk, saveFromDisk, revealFile } from '../lib/ffmpeg-native';
-  import { defaultExport, outputSize, even, type ExportOptions } from '../engine/args';
+  import { defaultExport, moshWidthFor, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
   import { SOCIAL_PRESETS, bitrateFor, sizeChoices, widthForShape } from '../engine/social';
@@ -53,7 +53,11 @@
   const outW = $derived(o.width && o.format !== 'avi' ? even(o.width) : outAr < mosh.w / mosh.h ? even(mosh.h * outAr) : mosh.w);
   const outH = $derived(even(outW / outAr));
   const duration = $derived(store.duration);
-  const pixels = $derived(mosh.w * mosh.h * duration * store.project.encoder.fps);
+  // full quality: the mosh made at the saved size, not scaled up to it
+  const fullW = $derived(o.width && o.format !== 'avi' ? moshWidthFor(o.width, mosh.w / mosh.h, o.reframeTo ? aspectRatio(o.reframeTo) : undefined) : 0);
+  const canFull = $derived(fullW > store.project.encoder.width);
+  const moshed = $derived(canFull && o.moshAtSize ? outputSize(store.project, fullW) : mosh);
+  const pixels = $derived(moshed.w * moshed.h * duration * store.project.encoder.fps);
   const heavy = $derived(pixels > 1920 * 1080 * 24 * 90 || (outW * outH >= 2560 * 1440 && duration > 20));
   let social = $state(localGet<string>('exportSocial', ''));
   const sp = $derived(SOCIAL_PRESETS.find((p) => p.id === social) ?? null);
@@ -206,7 +210,7 @@
     </div>
 
     <div class="small muted">
-      Moshed at {mosh.w}×{mosh.h} (Encode → Mosh resolution){#if (o.width || outAr !== mosh.w / mosh.h) && o.format !== 'avi'}, saved at {outW}×{outH}{outH > (outAr < mosh.w / mosh.h ? mosh.h : mosh.w / outAr) + 2 ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Picture effects (Vector Warp, Chroma, Pixel Sort, Raw Bend) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
+      Moshed at {moshed.w}×{moshed.h}{moshed === mosh ? ' (Encode → Mosh resolution)' : ' (full quality)'}{#if (o.width || outAr !== mosh.w / mosh.h) && o.format !== 'avi'}, saved at {outW}×{outH}{outH > (outAr < moshed.w / moshed.h ? moshed.h : moshed.w / outAr) + 2 ? ' (upscaled)' : ''}{/if} · {fmt(duration)} at {store.project.encoder.fps} fps{#if hasPixel}{#if o.format === 'avi'}. Picture effects (Vector Warp, Chroma, Pixel Sort, Raw Bend) can't live inside the raw broken file, so the AVI holds only the bitstream mosh{:else}, including pixel effects{/if}{/if}.
     </div>
     {#if heavy && !isDesktop}
       <div class="small warn">This is a big render for a browser ({Math.round(pixels / 1e6)} megapixel-frames). Expect it to take a while; keep this tab in front. Lower the mosh resolution or use "Ultra fast" to speed it up.</div>
@@ -221,7 +225,16 @@
         help="Rescale the final video. Use 'Nearest' scaling for crisp, chunky pixel-art upscales of a low-res mosh."
         onchange={(v: number) => (o.width = v)}
       />
-      {#if o.width}
+      {#if canFull}
+        <Field
+          type="bool"
+          label="Full quality: mosh at this size"
+          value={!!o.moshAtSize}
+          help={`Mosh at ${outW}×${outH} instead of ${mosh.w}×${mosh.h} scaled up: the sharpest picture, for 4K uploads. The smears look finer (the codec's blocks are the same size in pixels, so they're smaller in the frame), and it takes several times longer.`}
+          onchange={(v: boolean) => (o.moshAtSize = v || undefined)}
+        />
+      {/if}
+      {#if o.width && !(canFull && o.moshAtSize)}
         <Field
           type="select"
           label="Scaling"

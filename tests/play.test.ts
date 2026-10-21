@@ -6,6 +6,7 @@ import { withChaos, chaosValue } from '../src/engine/chaos';
 import { EFFECTS, type ParamDef } from '../src/engine/effects';
 import { makeEffect, breed, chaos } from '../src/engine/presets';
 import { encodeRecipe, decodeRecipe, applyRecipe, findRecipe, gifWithComment, gifComments } from '../src/engine/recipe';
+import { even, moshWidthFor } from '../src/engine/args';
 import { bitrateFor, aspectSize, sizeChoices, widthForShape, SOCIAL_PRESETS } from '../src/engine/social';
 import { exportArgs, defaultExport, parseProbe, metadataArgs } from '../src/engine/args';
 import { newProject, type Project } from '../src/engine/types';
@@ -143,6 +144,13 @@ describe('social presets', () => {
     // a width that isn't a class stays choosable, with its real size
     expect(sizeChoices(9 / 16, 0, 1280).find((c) => c.value === 1280)!.label).toBe('1280×2276');
     expect(SOCIAL_PRESETS.find((p) => p.id === 'vertical4k')!.opts.width).toBe(2160);
+  });
+  it('full quality moshes at the size that is saved', () => {
+    expect(moshWidthFor(3840, 16 / 9)).toBe(3840);
+    // 9:16 cut out of a 16:9 mosh: the mosh must be wide enough for a 2160-wide crop
+    expect(moshWidthFor(2160, 16 / 9, 9 / 16)).toBe(even((2160 * 16) / 9 / (9 / 16)));
+    // a wider shape crops the top and bottom: the width is the output's
+    expect(moshWidthFor(1920, 9 / 16, 16 / 9)).toBe(1920);
   });
   it('a new shape keeps the resolution class', () => {
     expect(widthForShape(1280, 16 / 9, 9 / 16)).toBe(720);
