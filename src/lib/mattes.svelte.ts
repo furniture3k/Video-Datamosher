@@ -55,6 +55,14 @@ export async function ensureMattes(p: Pick<Project, 'media'>) {
   await Promise.all(p.media.flatMap((m) => (m.mattes ?? []).map((x) => loadMatte(x).catch(() => {}))));
 }
 
+/** Let go of the frames of mattes that none of `media` has (another project's: a minute of matte is about 25 MB). */
+export function keepMattes(media: Pick<Project['media'][number], 'mattes'>[]) {
+  const ids = new Set(media.flatMap((m) => (m.mattes ?? []).map((x) => x.id)));
+  const id = (key: string) => key.slice(0, key.lastIndexOf('@'));
+  for (const key of [...frames.keys()]) if (!ids.has(id(key))) frames.delete(key);
+  for (const key of [...missing]) if (!ids.has(id(key))) missing.delete(key);
+}
+
 /** Forget what is in memory (a matte was deleted, or the project changed). */
 export function forgetMattes() {
   frames.clear();

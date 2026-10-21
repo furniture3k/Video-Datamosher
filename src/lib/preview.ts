@@ -145,6 +145,8 @@ export class EditPreview {
       })();
       this.urls.set(key, p);
       p.then((s) => {
+        // (let go of while it was looked up: its URL has been given back)
+        if (this.urls.get(key) !== p) return;
         this.resolved.set(key, s);
         this.onDirty();
       });
@@ -208,8 +210,34 @@ export class EditPreview {
     return outputSize(p, Math.max(480, Math.min(1920, p.encoder.width, this.targetWidth)));
   }
 
+  /** the media list last drawn from: when it changes, what belongs to media no longer in it is let go */
+  private lastMedia: MediaItem[] | null = null;
+  private prune(media: MediaItem[]) {
+    if (media === this.lastMedia) return;
+    this.lastMedia = media;
+    const ids = new Set(media.map((m) => m.id));
+    const gone = (key: string) => !ids.has(key.split(/[:#]/)[0]);
+    for (const [key, v] of this.videos) {
+      if (!gone(key)) continue;
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+      this.videos.delete(key);
+      this.usedAt.delete(v);
+    }
+    for (const key of [...this.images.keys()]) if (gone(key)) this.images.delete(key);
+    for (const key of [...this.thumbs.keys()]) if (gone(key)) this.thumbs.delete(key);
+    for (const [key, u] of this.urls) {
+      if (!gone(key)) continue;
+      u.then((s) => s && URL.revokeObjectURL(s.url));
+      this.urls.delete(key);
+      this.resolved.delete(key);
+    }
+  }
+
   /** Draw the timeline at time t. While playing, video elements run on their own and are kept in sync. */
   draw(p: Project, t: number, playing: boolean, speed = 1) {
+    this.prune(p.media);
     const { w, h } = this.size(p);
     // Scrubbing (quick redraws at new times while paused) uses the fast-seeking preview copies;
     // once it settles the frame is drawn again from the original files, at full quality.
@@ -806,6 +834,9 @@ export class EditAudio {
   /** Start playing the mix from timeline time t. Clips whose sound is still decoding stay silent. */
   async start(p: Project, t: number, muted: boolean) {
     this.stop();
+    // the sound of media no longer in the project is let go (a few minutes of it is a hundred MB)
+    const ids = new Set(p.media.map((m) => m.id));
+    for (const key of [...this.buffers.keys()]) if (!ids.has(key.split(':')[0])) this.buffers.delete(key);
     if (muted) return;
     this.ctx ??= audioCtx();
     const ctx = this.ctx;

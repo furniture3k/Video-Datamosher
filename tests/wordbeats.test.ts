@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { beatPoints, splitWords, wordSlots, wordTitles } from '../src/engine/wordbeats';
+import { beatPoints, phrases, splitWords, wordSlots, wordTitles } from '../src/engine/wordbeats';
 import type { TextLayer } from '../src/engine/layers';
 
 describe('words on the beat', () => {
@@ -30,5 +30,15 @@ describe('words on the beat', () => {
       ['w0', 'EVERYTHING', 1, 0.25, 'g3', 'width', true],
       ['w1', 'WORKS', 1.25, 0.25, 'g3', 'width', true],
     ]);
+  });
+});
+
+describe('phrases', () => {
+  it('splits what was typed into lines, or one line into its phrases', () => {
+    expect(phrases('I am both wound and knife\nconsume me\n\n  my life  ')).toEqual(['I am both wound and knife', 'consume me', 'my life']);
+    expect(phrases('everything feels connected, hope!! find a way back home. where is the void?')).toEqual(['everything feels connected', 'hope!!', 'find a way back home', 'where is the void?']);
+    expect(phrases('you / me')).toEqual(['you', 'me']);
+    expect(phrases('   ')).toEqual(['your words']);
+    expect(phrases('', 'TITLE')).toEqual(['TITLE']);
   });
 });

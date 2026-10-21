@@ -46,7 +46,7 @@ export async function frameAt(c: Clip, p: Project, t: number, w = MODEL_W): Prom
  * Follow the subject marked by `points` (shares of the picture; 1 = it, 0 = not it) on the frame at
  * source time `srcT` through the clip, and keep the matte with the footage. Returns the matte's id.
  */
-export async function cutOutThroughClip(clipId: string, points: [number, number, 0 | 1][], srcT: number): Promise<string | void> {
+export async function cutOutThroughClip(clipId: string, points: [number, number, 0 | 1][], srcT: number, quiet = false): Promise<string | void> {
   const p = $state.snapshot(store.project) as Project;
   const c = p.clips.find((x) => x.id === clipId);
   const m = c && mediaOf(p, c.mediaId);
@@ -116,7 +116,7 @@ export async function cutOutThroughClip(clipId: string, points: [number, number,
       return { masks, mw, mh, from, to };
     });
     if (cutoutJob.cancel) {
-      store.toast('Cut-out cancelled.', 'info');
+      if (!quiet) store.toast('Cut-out cancelled.', 'info');
       return;
     }
     const id = uid();
@@ -130,7 +130,7 @@ export async function cutOutThroughClip(clipId: string, points: [number, number,
       if (x) x.mattes = [...(x.mattes ?? []), ref];
     });
     const seen = result.masks.filter((f) => f.some((v) => v >= 128)).length;
-    store.toast(`${ref.name}: the subject was found in ${seen} of ${matteFrames(ref)} frames. Put a title behind it from the title's settings (Depth).`, 'ok', 6000);
+    if (!quiet) store.toast(`${ref.name}: the subject was found in ${seen} of ${matteFrames(ref)} frames. Put a title behind it from the title's settings (Depth).`, 'ok', 6000);
     return id;
   } finally {
     cutoutJob.running = false;

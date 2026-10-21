@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { chromium } from 'playwright-core';
 
-const dist = path.resolve('dist');
+const dist = path.resolve(process.env.DIST || 'dist');
 const out = path.resolve('public/app/examples');
 fs.mkdirSync(out, { recursive: true });
 const types = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.html': 'text/html', '.css': 'text/css' };
@@ -22,7 +22,6 @@ const server = http
 const exe = process.env.CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 const browser = await chromium.launch({ executablePath: fs.existsSync(exe) ? exe : undefined, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
 await ctx.addInitScript(() => {
   for (const [k, v] of Object.entries({ startHome: false, seenWelcome: true, autoMosh: false })) localStorage.setItem('moshpit:' + k, JSON.stringify(v));
 });
@@ -30,6 +29,37 @@ const page = await ctx.newPage();
 page.on('pageerror', (e) => console.error('page error:', e.message));
 await page.goto(`http://localhost:${server.address().port}/app/`);
 await page.waitForFunction(() => window.__moshpit?.starters);
+// titles in the Impact style look the same on every machine (Linux has no Impact): a condensed font of the same weight under its name
+await page.evaluate(async () => {
+  try {
+    const css = await (await fetch('https://fonts.googleapis.com/css2?family=Anton')).text();
+    // the Latin letters' file (the CSS lists one file per alphabet)
+    const url = /\/\* latin \*\/[^}]*?url\((https:[^)]+)\)/.exec(css)?.[1];
+    if (!url) return;
+    const face = new FontFace('Impact', await (await fetch(url)).arrayBuffer());
+    await face.load();
+    document.fonts.add(face);
+  } catch {
+    /* the thin fallback, then */
+  }
+});
+// cut-outs without downloading a model: the subject is whatever differs from the colour in the
+// corners (the sample footage's subjects sit on a plain background)
+await page.evaluate(() =>
+  window.__moshpit.objectseg.setObjectSegmenter(async (img) => {
+    const w = 96;
+    const h = Math.max(2, Math.round((w * img.height) / img.width));
+    const c = new OffscreenCanvas(w, h);
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data;
+    const at = (x, y) => [d[(y * w + x) * 4], d[(y * w + x) * 4 + 1], d[(y * w + x) * 4 + 2]];
+    const bg = [at(1, 1), at(w - 2, 1), at(1, h - 2), at(w - 2, h - 2)].reduce((a, q) => a.map((v, i) => v + q[i] / 4), [0, 0, 0]);
+    const data = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) data[i] = Math.hypot(d[i * 4] - bg[0], d[i * 4 + 1] - bg[1], d[i * 4 + 2] - bg[2]) > 150 ? 255 : 0;
+    return { w, h, data };
+  }),
+);
 
 /** In the page: export the open project as WebM, with a poster frame. */
 const EXPORT = async ({ width, crf, seconds }) => {

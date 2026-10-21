@@ -1,0 +1,64 @@
+name: FFmpeg for the desktop app
+
+# The FFmpeg the desktop app bundles, built here from source (scripts/build-ffmpeg.sh) rather than
+# downloaded prebuilt: every source is checked against the hashes and commits pinned in
+# scripts/ffmpeg-sources.sh, and FFmpeg's against its release signature too. A build is kept in the
+# cache until the build script or the pins change, so it is only rebuilt then.
+# Each target is uploaded as the artifact ffmpeg-<target> for the jobs that need it.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-22.04 }
+          - { target: x86_64-pc-windows-msvc, os: ubuntu-22.04 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: src-tauri/binaries
+          key: ffmpeg-${{ matrix.target }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'scripts/ffmpeg-sources.sh', 'scripts/check-ffmpeg.sh') }}
+      - name: Build tools (macOS)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        run: |
+          brew install nasm pkgconf gnupg
+          # the Intel build runs under Rosetta
+          softwareupdate --install-rosetta --agree-to-license || true
+      - name: Build tools (Linux)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm pkg-config gnupg ${{ contains(matrix.target, 'windows') && 'mingw-w64' || '' }}
+      - name: Build FFmpeg from source
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: scripts/build-ffmpeg.sh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: src-tauri/binaries/
+          if-no-files-found: error
+
+  # the Windows build is made on Linux: run it on Windows to check it works and has everything
+  check-windows:
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-x86_64-pc-windows-msvc
+          path: src-tauri/binaries
+      - shell: bash
+        run: scripts/check-ffmpeg.sh src-tauri/binaries/moshpit-ffmpeg-x86_64-pc-windows-msvc.exe

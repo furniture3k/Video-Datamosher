@@ -50,7 +50,10 @@ export function paintedMask(id: string, strokes: MaskStroke[], w: number, h: num
   c.width = w;
   c.height = h;
   drawMask(c.getContext('2d')!, strokes, w, h);
+  painted.delete(id);
   painted.set(id, { key, c });
+  // (deleted effects leave theirs behind: keep the newest few)
+  if (painted.size > 12) painted.delete(painted.keys().next().value!);
   return c;
 }
 
@@ -103,6 +106,12 @@ function imageMap(m: MediaItem): Promise<ImageBitmap | null> {
     })();
     p.catch(() => imageMaps.delete(m.id));
     imageMaps.set(m.id, p);
+    // pictures are kept at full size: only the last few, and the pixels of the rest are let go
+    if (imageMaps.size > 6) {
+      const old = imageMaps.keys().next().value!;
+      imageMaps.get(old)!.then((b) => b?.close(), () => {});
+      imageMaps.delete(old);
+    }
   }
   return p;
 }

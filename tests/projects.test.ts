@@ -4,8 +4,14 @@ import { newProject, type Project, type MediaItem } from '../src/engine/types';
 // IndexedDB and localStorage stand-ins
 const kv = new Map<string, unknown>();
 const local = new Map<string, unknown>();
+/** the database fails to read (a locked or broken IndexedDB) */
+let unreadable = false;
 vi.mock('../src/lib/storage', () => ({
-  kvGet: async (k: string) => structuredClone(kv.get(k)),
+  kvGet: async (k: string) => (unreadable ? undefined : structuredClone(kv.get(k))),
+  kvRead: async (k: string) => {
+    if (unreadable) throw new Error('IndexedDB transaction failed');
+    return structuredClone(kv.get(k));
+  },
   kvSet: async (k: string, v: unknown) => void kv.set(k, structuredClone(v)),
   kvDelete: async (k: string) => void kv.delete(k),
   localGet: (k: string, d: unknown) => (local.has(k) ? local.get(k) : d),
@@ -28,9 +34,20 @@ function project(name: string, withMedia = true): Project {
 beforeEach(() => {
   kv.clear();
   local.clear();
+  unreadable = false;
 });
 
 describe('saved projects', () => {
+  it("a list that can't be read is never written over with just one project", async () => {
+    await idx.saveProject('a', project('A'));
+    await idx.saveProject('b', project('B'));
+    unreadable = true;
+    expect(await idx.saveProject('c', project('C'))).toBe(false);
+    await expect(idx.loadIndexStrict()).rejects.toThrow();
+    unreadable = false;
+    expect((await idx.loadIndex()).map((m) => m.id).sort()).toEqual(['a', 'b']);
+  });
+
   it('moves the old single autosave into the list once, with its snapshots', async () => {
     kv.set('autosave', project('Old one'));
     kv.set('snapshots', [{ id: 's1', name: 'Snap' }]);

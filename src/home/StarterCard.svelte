@@ -7,6 +7,7 @@
   let { s, badge = '', busy = false, onclick }: { s: Starter; badge?: string; busy?: boolean; onclick: () => void } = $props();
   let video = $state<HTMLVideoElement>();
   let missing = $state(false);
+  let noPoster = $state(false);
   const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   onMount(() => {
@@ -27,6 +28,9 @@
   <div class="thumb">
     {#if !missing}
       <video bind:this={video} src="examples/{s.thumb}.webm" poster="examples/{s.thumb}.jpg" muted loop playsinline preload="none" onerror={() => (missing = true)}></video>
+    {:else if !noPoster}
+      <!-- a browser that can't play the preview (older iPhones and WebM) still shows its picture -->
+      <img src="examples/{s.thumb}.jpg" alt="" onerror={() => (noPoster = true)} />
     {:else}
       <div class="ph"><Logo size={30} color="var(--line-2)" /></div>
     {/if}
@@ -64,6 +68,7 @@
     border-color: var(--accent);
   }
   video,
+  img,
   .ph {
     width: 100%;
     height: 100%;

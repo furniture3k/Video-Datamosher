@@ -57,9 +57,12 @@ npm run desktop          # development window with hot reload
 npm run desktop:build    # installers in src-tauri/target/release/bundle/
 ```
 
-`npm run desktop` copies the `ffmpeg` on your PATH into `src-tauri/binaries/` (or downloads one if
-there is none). `npm run desktop:build` always downloads a static build for the current platform
-(`scripts/fetch-ffmpeg.mjs`; `--target <triple>` for another one, `MOSHPIT_FFMPEG_URL` for your own archive).
+`npm run desktop` copies the `ffmpeg` on your PATH into `src-tauri/binaries/` (or builds one if
+there is none). `npm run desktop:build` builds FFmpeg from source for the current platform
+(`scripts/fetch-ffmpeg.mjs`, which runs `scripts/build-ffmpeg.sh`; `--target <triple>` for another
+one). Building needs macOS or Linux with a C compiler, `make`, `nasm`, `pkg-config`, `git`, `curl`
+and `gpg` (and `mingw-w64` for a Windows build); it takes a few minutes and is kept once made. To use
+an archive of your own instead, set `MOSHPIT_FFMPEG_URL` and `MOSHPIT_FFMPEG_SHA256`.
 
 Releases: pushing a tag like `v1.1.0` (or running the workflow by hand with **release** ticked,
 which tags `v<version>` from `package.json`) runs `.github/workflows/desktop.yml`, which builds Windows
@@ -75,11 +78,25 @@ then `xvfb-run node scripts/e2e-desktop.mjs` (needs `cargo install tauri-driver`
 
 ## FFmpeg builds and licensing
 
-moshpit is GPL-3.0-or-later. The release builds bundle GPL builds of FFmpeg (with libx264):
-BtbN/FFmpeg-Builds for Windows and Linux, ffmpeg.martin-riedl.de for macOS. FFmpeg runs as a
-separate program. To meet the GPL for it, `scripts/fetch-ffmpeg.mjs` writes `FFMPEG-NOTICE.txt`
-(exact version, origin, license, where the source is), and every installer ships it next to
-`LICENSE.txt` and `THIRD-PARTY-NOTICES.md`. The release notes link the sources too.
+moshpit is GPL-3.0-or-later. The release builds bundle a GPL build of FFmpeg (with libx264) that
+this project makes itself: nothing prebuilt is downloaded. `.github/workflows/ffmpeg.yml` runs
+`scripts/build-ffmpeg.sh` for each platform (macOS on Apple Silicon, the Intel one under Rosetta;
+Linux; Windows cross-compiled on Linux with mingw-w64 and then run on Windows to check it). Every
+source is checked before it is built: FFmpeg's release tarball against the FFmpeg release signing
+key and a pinned SHA-256, x264 and libvpx against pinned git commits, libvorbis, libogg and zlib
+against pinned SHA-256s, all in `scripts/ffmpeg-sources.sh`. A source that changes upstream stops
+the build. The build takes nothing from the build machine but its compiler (`--disable-autodetect`),
+and the result is checked to need only the operating system's own libraries and to have every
+encoder and filter the app uses (`scripts/check-ffmpeg.sh`). Builds are cached until the script or
+the pins change.
+
+To update a source: change its version in `scripts/ffmpeg-sources.sh` and empty its hash; the next
+build stops and prints the hash of what it downloaded. Check it against the project's published
+value, then pin it.
+
+FFmpeg runs as a separate program. To meet the GPL for it, the build writes `FFMPEG-NOTICE.txt`
+(the exact sources, license, where the source is), and every installer ships it next to
+`LICENSE.txt` and `THIRD-PARTY-NOTICES.md`.
 
 ## Signing (not set up yet)
 

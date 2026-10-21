@@ -25,7 +25,8 @@
   import { addPen } from '../lib/edit';
   import { fontState } from '../lib/fonts.svelte';
   import { audioCtx } from '../lib/audioctx';
-  import { download } from '../lib/storage';
+  import { lowMemory } from '../lib/platform';
+  import { download, localGet, localSet } from '../lib/storage';
   import type { Project } from '../engine/types';
   import { tc, parseTimecode } from '../lib/timecode';
   import { outputSize } from '../engine/args';
@@ -58,9 +59,9 @@
     } else {
       p = createImageBitmap(new Blob([jpegs[i] as BlobPart], { type: 'image/jpeg' }));
       cache.set(k, p);
-      // keep decoded frames within ~160 MB
+      // keep decoded frames within ~160 MB (80 on phones)
       const r = store.render;
-      const limit = r ? Math.max(24, Math.min(240, Math.floor(160e6 / (r.w * r.h * 4 * (store.ui.compare !== 'off' ? 2 : 1))))) : 120;
+      const limit = r ? Math.max(24, Math.min(240, Math.floor((lowMemory ? 80e6 : 160e6) / (r.w * r.h * 4 * (store.ui.compare !== 'off' ? 2 : 1))))) : 120;
       if (cache.size > limit) {
         const first = cache.keys().next().value!;
         cache.get(first)!.then((b) => b.close(), () => {});
@@ -121,7 +122,7 @@
       ctx.drawImage(b, 0, 0, w, h);
     } else ctx.drawImage(a, 0, 0, w, h);
     // clean titles sit on top of the mosh (they're baked in only on export)
-    if (mode !== 'hold' && store.project.layers.length) drawLayers(ctx, store.project.layers, src / r.fps, w, h, 'clean', matteSourceFor(store.project));
+    if (mode !== 'hold' && plain.layers.length) drawLayers(ctx, plain.layers, src / r.fps, w, h, 'clean', matteSourceFor(plain));
     // prefetch
     for (let k = 1; k < 8; k++) bitmap(r.jpegs, i + k, 'm');
   }
@@ -153,8 +154,11 @@
         });
       }
     };
-    preview.draw(store.project, store.ui.time, store.ui.playing && !mosh, store.ui.speed);
+    preview.draw(plain, store.ui.time, store.ui.playing && !mosh, store.ui.speed);
   }
+  // the project as plain data, copied again only when it changes: drawing reads it every frame, and
+  // reading plain objects is several times quicker than reading the live (reactive) project
+  const plain = $derived($state.snapshot(store.project) as Project);
   // deep signatures of the timeline: worked out again only when it changes, not on every frame
   const clipsSig = $derived(JSON.stringify(store.project.clips));
   const layersSig = $derived(JSON.stringify(store.project.layers));
@@ -437,7 +441,7 @@
       store.seek(t);
       expected = store.ui.time;
       // backwards: videos can't play in reverse, so each frame is a seek
-      preview?.draw(store.project, t, !back, Math.abs(speed));
+      preview?.draw(plain, t, !back, Math.abs(speed));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -895,7 +899,7 @@
     if (!id || !editCanvas) return;
     preview ??= new EditPreview(editCanvas);
     preview.noKey = true;
-    preview.draw(store.project, store.ui.time, false);
+    preview.draw(plain, store.ui.time, false);
     preview.noKey = false;
     // measure against whichever picture is on screen (same shape), then map into the edit canvas
     const shown = mosh ? canvas : editCanvas;
@@ -920,13 +924,29 @@
   let tapAt: { x: number; y: number; t: number } | null = null;
   let holdTimer = 0;
   /** the add-here menu: where it opens (stage pixels) and the point in the frame */
-  let quick = $state<{ x: number; y: number; u: number; v: number } | null>(null);
+  let quick = $state<{ x: number; y: number; u: number; v: number; maxh: number } | null>(null);
+  /** the tip that says the picture has an add-here menu, until it has been opened (or the tip closed) */
+  let quickSeen = $state(localGet('quickSeen', false));
+  function seenQuick() {
+    if (quickSeen) return;
+    quickSeen = true;
+    localSet('quickSeen', true);
+  }
   function openQuick(e: { clientX: number; clientY: number }) {
     const r = wrap.getBoundingClientRect();
     const [u, v] = pictureUV(e);
     if (u < 0 || u > 1 || v < 0 || v > 1) return;
     store.ui.playing = false;
-    quick = { x: Math.max(4, Math.min(e.clientX - r.left, r.width - 200)), y: Math.max(4, Math.min(e.clientY - r.top, r.height - 260)), u, v };
+    seenQuick();
+    // as low as the point, but high enough that the whole menu fits under it when the stage is tall enough (it scrolls when not)
+    const y = Math.max(4, Math.min(e.clientY - r.top, r.height - 460));
+    quick = { x: Math.max(4, Math.min(e.clientX - r.left, r.width - 200)), y, u, v, maxh: r.height - y - 6 };
+  }
+  /** The add-here menu on the middle of the picture (from the tip's button). */
+  function openQuickMiddle() {
+    const shown = mosh ? canvas : editCanvas;
+    const r = shown.getBoundingClientRect();
+    openQuick({ clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
   }
   function splitMove(e: PointerEvent) {
     if (!draggingSplit) return;
@@ -1096,6 +1116,13 @@
     {/if}
     {#if quick}
       <QuickMenu {...quick} onclose={() => (quick = null)} />
+    {:else if hasTimeline && !quickSeen && !store.ui.playing && !store.ui.cutout && !store.ui.trackPick && !store.ui.surfacePick && !store.ui.pen && !paintFx && !cutoutJob.running && store.ui.compare === 'off'}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="addhint" onpointerdown={(e) => e.stopPropagation()} onpointerup={(e) => e.stopPropagation()}>
+        <span>{compact ? 'Hold' : 'Right-click'} the picture to add a title, box, arrow or cut-out right there</span>
+        <button class="small" onclick={openQuickMiddle}>Add…</button>
+        <button class="icon ghost small" aria-label="Hide this tip" title="Hide this tip" onclick={seenQuick}><Icon name="x" size={12} /></button>
+      </div>
     {/if}
     {#if gizmoBox}
       <Gizmo W={guideSize.w} H={guideSize.h} box={gizmoBox} {compact} />
@@ -1128,13 +1155,13 @@
       <div class="empty">
         {#if store.project.media.length}
           <p class="et">The timeline is empty</p>
-          <p class="muted small">{compact ? 'Tap + to put clips on the timeline.' : 'Drag clips from the Media panel onto the timeline, or press + on one.'}</p>
+          <p class="muted small">{compact ? 'Tap + to put clips on the timeline.' : 'Drag clips from the Media panel onto the timeline, or press + on one.'} Then try <b>Templates</b> to make it look like an edit you've seen.</p>
         {:else}
           <Logo size={44} />
           <p class="et">Make something melt</p>
           <ol class="steps small">
-            <li><span><b>Add</b> two or more clips. Lots of motion melts best.</span></li>
-            <li><span><b>Mosh</b>: put a <i>Melt</i> on a cut, or pick a preset.</span></li>
+            <li><span><b>Add</b> two or more clips, and a song. Lots of motion melts best.</span></li>
+            <li><span><b>Templates</b> make it look like an edit you've seen (words behind the subject, lyrics on the beat, a collage, red notes) in one go. Or <b>mosh</b> it: a <i>Melt</i> on a cut, or a preset.</span></li>
             <li><span><b>Export</b> when it looks right.</span></li>
           </ol>
           <div class="row">
@@ -1478,6 +1505,35 @@
     background: var(--accent);
     transition: width 0.15s;
     z-index: 2;
+  }
+  .addhint {
+    position: absolute;
+    left: 50%;
+    top: 8px;
+    transform: translateX(-50%);
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 20px);
+    padding: 4px 4px 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.62);
+    backdrop-filter: blur(6px);
+  }
+  .addhint span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .addhint button {
+    flex: none;
+    height: 22px;
+  }
+  .addhint .icon {
+    color: #fff;
   }
   .stage-note {
     position: absolute;

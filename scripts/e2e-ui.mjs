@@ -3437,11 +3437,27 @@ await step('templates for each reference style build with sample footage and ren
     'Kinetic lyrics': (p) => p.layers.filter((l) => l.kind === 'text' && l.fit === 'width').length >= 2,
     Scrapbook: (p) => !!p.canvas && p.layers.some((l) => l.trail) && p.effects.some((e) => e.type === 'hold'),
     'Product demo': (p) => p.canvas?.device === 'browser' && p.layers.some((l) => l.shape === 'cursor'),
-    'Red notes': (p) => p.layers.some((l) => l.shape === 'rect') && p.layers.some((l) => l.shape === 'arrow'),
+    // things in the footage found and followed: boxes and arrows that move, with the notes typed in
+    'Red notes': (p) => p.layers.some((l) => l.shape === 'rect' && l.follow?.length > 1) && p.layers.some((l) => l.shape === 'arrow') && p.layers.some((l) => l.kind === 'text' && l.text === 'everything feels connected'),
+    // the subject cut out of each clip, the words and rings behind it
+    'Behind the subject': (p) => p.media.some((m) => m.mattes?.length) && p.layers.filter((l) => l.depth === 'behind' && l.kind === 'text').length === 2 && p.layers.some((l) => l.shape === 'circle' && l.depth === 'behind'),
+    // cards over each shot, popping in, on tracks of their own
+    'Pop-up collage': (p) => p.clips.filter((c) => c.track !== 'v1' && c.card && c.pop && c.keys?.zoom).length >= 3 && new Set(p.clips.filter((c) => c.card).map((c) => c.track)).size >= 2,
+    'Tour poster': (p) => p.canvas?.color === '#eeede8' && p.clips.every((c) => c.track !== 'v1' || c.stepFps === 16) && p.layers.some((l) => l.strokeOnly) && p.clips.some((c) => c.transition?.type === 'circlecrop'),
     Cinematic: (p) => p.clips.some((c) => c.transition?.type === 'whipleft') && p.effects.some((e) => e.type === 'glow'),
     'Degraded film': (p) => p.effects.some((e) => e.type === 'hold') && p.layers.some((l) => l.strobe),
     'Split screen': (p) => p.clips.filter((c) => c.transform?.zoom).length === 2,
   };
+  // cut-outs without a model download: everything in the middle of the picture is the subject
+  await S(() =>
+    window.__moshpit.objectseg.setObjectSegmenter(async () => {
+      const w = 32;
+      const h = 18;
+      const data = new Uint8Array(w * h);
+      for (let y = 4; y < 14; y++) for (let x = 11; x < 21; x++) data[y * w + x] = 255;
+      return { w, h, data };
+    }),
+  );
   for (const [name, ok] of Object.entries(checks)) {
     await S(() => window.__moshpit.projects.goHome());
     await page.locator('[data-testid=home]').waitFor();
@@ -3453,7 +3469,36 @@ await step('templates for each reference style build with sample footage and ren
     const p = await S(() => JSON.parse(JSON.stringify(window.__moshpit.store.project)));
     if (!ok(p)) throw new Error(name + ' was not built: ' + JSON.stringify({ layers: p.layers.map((l) => l.shape ?? l.text), canvas: p.canvas, effects: p.effects.map((e) => e.type) }));
     if (!(await S(() => window.__moshpit.store.render?.frames.length))) throw new Error(name + ' did not render');
+    // the whole look is one undo step
+    const undone = await S(() => {
+      const st = window.__moshpit.store;
+      const before = st.project.layers.length + st.project.clips.length;
+      st.undo();
+      const after = { layers: st.project.layers.length, canvas: !!st.project.canvas, upper: st.project.clips.filter((c) => c.track !== 'v1' && st.project.tracks.find((t) => t.id === c.track)?.kind === 'video').length };
+      st.redo();
+      return { before, after };
+    });
+    if (undone.after.layers || undone.after.canvas || undone.after.upper) throw new Error(name + ': one undo did not take the whole look off: ' + JSON.stringify(undone));
   }
+  await S(() => window.__moshpit.objectseg.setObjectSegmenter(null));
+});
+
+await step('templates in the editor: put a look on the clips already in the project, with your own words, and undo it', async () => {
+  const st = () => S(() => window.__moshpit.store.project.layers.map((l) => l.text ?? l.shape));
+  await page.getByRole('button', { name: 'Templates' }).first().click();
+  await page.locator('[role=dialog] .starter', { hasText: 'Kinetic lyrics' }).click();
+  await page.locator('[role=dialog] textarea').fill('ONE TWO THREE');
+  const before = (await st()).length;
+  await page.getByRole('button', { name: 'Put it on my clips' }).click();
+  await page.waitForFunction(() => !window.__moshpit.store.ui.dialog, null, { timeout: 120000 });
+  await settle();
+  const words = await st();
+  if (!['ONE', 'TWO', 'THREE'].every((w) => words.includes(w))) throw new Error('the words typed were not used: ' + words.join(', '));
+  if ((await S(() => window.__moshpit.store.project.encoder.aspect)) !== '9:16') throw new Error('the look did not set its aspect');
+  await S(() => window.__moshpit.store.undo());
+  if ((await st()).length !== before) throw new Error('one undo did not take the look off');
+  // its note (with an Undo of its own) would still be up for the steps after
+  await S(() => (window.__moshpit.store.toasts = []));
 });
 
 await step('home: rename, duplicate and delete a project', async () => {

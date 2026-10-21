@@ -80,6 +80,7 @@ try {
     ['export', 'export'],
     ['add effect', 'addEffect'],
     ['presets', 'presets'],
+    ['templates', 'looks'],
     ['help', 'help'],
     ['command palette', 'palette'],
     ['history', 'history'],

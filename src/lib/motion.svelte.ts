@@ -2,16 +2,17 @@
 import { store } from './store.svelte';
 import { clipFrames } from './analysis';
 import { trackBox, stabilize, simplify, type Gray, type Stabilized, type TrackPoint } from '../engine/track';
-import { trackPlane, simplifyKeys, quadAt, type PlaneFrame } from '../engine/planar';
+import { trackPlane, simplifyKeys, quadAt, corners, type PlaneFrame } from '../engine/planar';
 import { screenFromPlane } from '../engine/screen';
 import { clipLen, layers, layoutVideo, localTime, sourceTime, mediaOf } from '../engine/timeline';
 import { apply, fitRect, invert, pictureMatrix } from '../engine/placement';
 import { outputSize } from '../engine/args';
 import { uid } from '../engine/presets';
-import { VIDEO_TRACK, type Clip, type Project } from '../engine/types';
-import { FIRST_ROW, freeRow, layerPos, type TextLayer } from '../engine/layers';
+import { VIDEO_TRACK, type Clip, type MediaItem, type Project } from '../engine/types';
+import { FIRST_ROW, freeRow, layerPos, type Layer, type TextLayer } from '../engine/layers';
 import type { TrackJob } from './track.worker';
 import { markLayers } from '../engine/annotate';
+import type { ShapeLook } from '../engine/shapes';
 import { linkFaces } from '../engine/faces';
 import { detectFaces } from './faces';
 import { cardScale, offCard, onCard } from '../engine/canvas';
@@ -121,6 +122,68 @@ export async function stabilizeClip(id: string, strength = 20) {
 }
 
 /**
+ * Follow a box (u0, v0, u1, v1: shares of the clip's own picture) on the frame at source time
+ * `srcT` through the whole clip, forwards and backwards at once: [source seconds, x, y] of its middle.
+ */
+async function followBox(c: Clip, m: MediaItem, fps: number, srcT: number, [u0, v0, u1, v1]: [number, number, number, number]) {
+  const g = await clipFrames(c, m, fps, ANALYSIS_W);
+  const n = g.frames.length;
+  const k = Math.max(0, Math.min(n - 1, Math.round((srcT - c.in) * fps)));
+  const [cx, cy, bw, bh] = [((u0 + u1) / 2) * g.w, ((v0 + v1) / 2) * g.h, (u1 - u0) * g.w, (v1 - v0) * g.h];
+  // forwards and backwards at the same time, each on its own share of the frames
+  const [fwd, back] = await Promise.all([
+    inWorker<TrackPoint[]>({ kind: 'track', w: g.w, h: g.h, buf: framesBuffer(g, k, n), start: 0, cx, cy, bw, bh, dir: 1 }, () => trackBox({ ...g, frames: g.frames.slice(k) }, 0, cx, cy, bw, bh, 1)).then((t) => t.map(([f, x, y, q]) => [f + k, x, y, q] as TrackPoint)),
+    inWorker<TrackPoint[]>({ kind: 'track', w: g.w, h: g.h, buf: framesBuffer(g, 0, k + 1), start: k, cx, cy, bw, bh, dir: -1 }, () => trackBox({ ...g, frames: g.frames.slice(0, k + 1) }, k, cx, cy, bw, bh, -1)),
+  ]);
+  const all = [...back.slice(0, -1), ...fwd];
+  // rounded: well under a pixel, and the project (and every undo step) stays small
+  const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+  return { pts: all.map(([f, x, y]) => [r4(c.in + f / fps), r4(x / g.w), r4(y / g.h)] as [number, number, number]), whole: all.length > 0 && all[0][0] === 0 && all[all.length - 1][0] === n - 1, len: n / fps };
+}
+
+/**
+ * Find up to `n` things worth pointing at in a clip (places with the most detail, spread out, away
+ * from the edges) and track each through it, as paths kept on the clip (named "Mark 1", "Mark 2"…).
+ * Returns their ids, best first. Nothing is drawn: the caller marks them (Red notes does).
+ */
+export async function autoTrack(id: string, n = 3): Promise<string[]> {
+  const p = $state.snapshot(store.project) as Project;
+  const c = p.clips.find((x) => x.id === id);
+  const m = c && mediaOf(p, c.mediaId);
+  if (!c || !m || m.source.kind !== 'file' || m.source.isImage || !m.hasVideo) return [];
+  const fps = p.encoder.fps;
+  const found = await busy('Finding things to mark', async () => {
+    const g = await clipFrames(c, m, fps, ANALYSIS_W);
+    if (!g.frames.length) return [];
+    // a frame a little way in (the first can be a fade or a cut)
+    const k = Math.min(g.frames.length - 1, Math.round(g.frames.length * 0.25));
+    const mx = Math.round(g.w * 0.12);
+    const my = Math.round(g.h * 0.12);
+    const poly: [number, number][] = [[mx, my], [g.w - mx, my], [g.w - mx, g.h - my], [mx, g.h - my]];
+    // a wide window scores whole patches of detail rather than single specks; far apart from each other
+    const pts = corners(g.frames[k], g.w, g.h, poly, n, Math.min(g.w, g.h) * 0.3, 8, 6, 0.05);
+    const srcT = c.in + k / fps;
+    const side = Math.min(g.w, g.h) * 0.16;
+    const out: { pts: [number, number, number][]; size: [number, number] }[] = [];
+    for (const [x, y] of pts) {
+      const box: [number, number, number, number] = [(x - side / 2) / g.w, (y - side / 2) / g.h, (x + side / 2) / g.w, (y + side / 2) / g.h];
+      const r = await followBox(c, m, fps, srcT, box);
+      if (r.pts.length >= 2) out.push({ pts: r.pts, size: [Math.round((side / g.w) * 1e4) / 1e4, Math.round((side / g.h) * 1e4) / 1e4] });
+    }
+    return out;
+  });
+  if (!found.length) return [];
+  const ids = found.map(() => uid());
+  store.edit((q) => {
+    const x = q.clips.find((y) => y.id === id);
+    if (!x) return;
+    const n0 = (x.paths ?? []).filter((pp) => pp.name.startsWith('Mark')).length;
+    x.paths = [...(x.paths ?? []), ...found.map((f, i) => ({ id: ids[i], name: `Mark ${n0 + i + 1}`, pts: f.pts, size: f.size }))];
+  });
+  return ids;
+}
+
+/**
  * Start (or stop) drawing a box to track on the player, with the playhead on the clip. `then`:
  * 'mark' adds a box, an arrow and a label that follow it once it's tracked.
  */
@@ -161,21 +224,7 @@ export async function trackClip(id: string, box: [number, number, number, number
   const v1 = clamp(Math.max(...corners.map((q) => q[1])));
   if (u1 - u0 < 0.01 || v1 - v0 < 0.01) return store.toast('That box is outside the clip: draw it over the clip’s picture.', 'error');
   store.ui.playing = false;
-  const res = await busy('Tracking', async () => {
-    const g = await clipFrames(c, m, fps, ANALYSIS_W);
-    const n = g.frames.length;
-    const k = Math.max(0, Math.min(n - 1, Math.round((srcT - c.in) * fps)));
-    const [cx, cy, bw, bh] = [((u0 + u1) / 2) * g.w, ((v0 + v1) / 2) * g.h, (u1 - u0) * g.w, (v1 - v0) * g.h];
-    // forwards and backwards at the same time, each on its own share of the frames
-    const [fwd, back] = await Promise.all([
-      inWorker<TrackPoint[]>({ kind: 'track', w: g.w, h: g.h, buf: framesBuffer(g, k, n), start: 0, cx, cy, bw, bh, dir: 1 }, () => trackBox({ ...g, frames: g.frames.slice(k) }, 0, cx, cy, bw, bh, 1)).then((t) => t.map(([f, x, y, q]) => [f + k, x, y, q] as TrackPoint)),
-      inWorker<TrackPoint[]>({ kind: 'track', w: g.w, h: g.h, buf: framesBuffer(g, 0, k + 1), start: k, cx, cy, bw, bh, dir: -1 }, () => trackBox({ ...g, frames: g.frames.slice(0, k + 1) }, k, cx, cy, bw, bh, -1)),
-    ]);
-    const all = [...back.slice(0, -1), ...fwd];
-    // rounded: well under a pixel, and the project (and every undo step) stays small
-    const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
-    return { pts: all.map(([f, x, y]) => [r4(c.in + f / fps), r4(x / g.w), r4(y / g.h)] as [number, number, number]), whole: all[0][0] === 0 && all[all.length - 1][0] === n - 1, len: n / fps };
-  });
+  const res = await busy('Tracking', () => followBox(c, m, fps, srcT, [u0, v0, u1, v1]));
   const { pts } = res;
   if (pts.length < 2) return store.toast('Could not follow that: draw the box snugly around something with detail (an edge, a pattern, a face).', 'error');
   const name = `Track ${(c.paths?.length ?? 0) + 1}`;
@@ -646,20 +695,25 @@ export function emojiFollows(clipId: string, pathId: string, emoji = '😎') {
   store.ui.selectedClips = [tx.id];
 }
 
-/** Mark a tracked object: a box round it (`bw`×`bh` of the frame), an arrow at it and a label, all following it. */
-export function markTracked(clipId: string, pathId: string, bw?: number, bh?: number) {
+/** Mark a tracked object: a box round it (`bw`×`bh` of the frame), an arrow at it and a label, all following it. Returns what it added. */
+export function markTracked(clipId: string, pathId: string, bw?: number, bh?: number, label = 'Look', quiet = false, look: ShapeLook = shapeLook()): Layer[] {
   const p = $state.snapshot(store.project) as Project;
   const c = p.clips.find((x) => x.id === clipId);
-  if (!c) return;
+  if (!c) return [];
   // a path tracked earlier: the size of its box on screen
   if (bw === undefined || bh === undefined) [bw, bh] = pathSize(p, c, pathId) ?? [0.2, 0.2];
   const follow = pathOnTimeline(p, c, pathId);
-  if (!follow.length) return store.toast('That track is in a part of the clip that has been trimmed off.', 'error');
+  if (!follow.length) {
+    if (!quiet) store.toast('That track is in a part of the clip that has been trimmed off.', 'error');
+    return [];
+  }
   const { w, h } = outputSize(p, p.encoder.previewWidth);
-  const marks = markLayers(follow, Math.abs(bw), Math.abs(bh), w / h, shapeLook(), p.layers, uid);
+  const marks = markLayers(follow, Math.abs(bw), Math.abs(bh), w / h, look, p.layers, uid, label);
   store.edit((q) => q.layers.push(...marks));
+  if (quiet) return marks;
   store.ui.selectedClips = [marks[marks.length - 1].id];
   store.toast('Marked it: a box, an arrow and a label that follow it. Double-click the label to change it.', 'ok', 5000);
+  return marks;
 }
 
 /** Make a clip on a track above move with a tracked path (its position keyframes). */

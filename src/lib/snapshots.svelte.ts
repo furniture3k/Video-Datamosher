@@ -1,7 +1,7 @@
 // Snapshots: named versions of the project with a thumbnail, kept across sessions. Taken by hand
 // (Ctrl+Shift+S) and automatically before anything that replaces the whole effect stack.
 import { store } from './store.svelte';
-import { kvGet, kvSet } from './storage';
+import { kvRead, kvSet } from './storage';
 import { uid } from '../engine/presets';
 import { migrate } from '../engine/migrate';
 import type { Project } from '../engine/types';
@@ -26,8 +26,11 @@ const MAX_AUTO = 20;
 export const snapshots = $state<{ list: Snapshot[]; loaded: boolean }>({ list: [], loaded: false });
 
 let loading: Promise<void> | null = null;
+/** the saved list couldn't be read: it is read again next time, and never written over meanwhile */
+let unread = false;
 export function loadSnapshots(): Promise<void> {
-  loading ??= kvGet<Snapshot[]>(KEY).then((l) => {
+  loading ??= kvRead<Snapshot[]>(KEY).then((l) => {
+    unread = false;
     // snapshots taken by older versions are in older project formats
     snapshots.list = (l ?? []).flatMap((s) => {
       try {
@@ -37,11 +40,16 @@ export function loadSnapshots(): Promise<void> {
       }
     });
     snapshots.loaded = true;
+  }, (e) => {
+    console.warn('snapshots not read', e);
+    unread = true;
+    loading = null;
+    snapshots.loaded = true;
   });
   return loading;
 }
 
-const save = () => kvSet(KEY, $state.snapshot(snapshots.list));
+const save = () => (unread ? Promise.resolve(false) : kvSet(KEY, $state.snapshot(snapshots.list)));
 
 /** The player registers this so snapshots get a thumbnail of what's on screen. */
 let grabber: (() => string) | null = null;
@@ -70,6 +78,8 @@ export async function deleteProjectSnapshots(projectId: string) {
 /** Media and LUT files referenced by snapshots (kept when unused files are cleaned up). */
 export async function snapshotFileIds(): Promise<string[]> {
   await loadSnapshots();
+  // what they use isn't known: whoever asked must not take the list as complete
+  if (unread) throw new Error('The snapshots could not be read.');
   return snapshots.list.flatMap((s) => [...s.project.media.flatMap((m) => (m.source.kind === 'file' ? [m.source.fileId] : [])), ...(s.project.luts ?? []).map((l) => 'lut:' + l.id), ...(s.project.fonts ?? []).map((f) => 'font:' + f.id), ...s.project.media.flatMap((m) => (m.mattes ?? []).map((x) => x.fileId))]);
 }
 

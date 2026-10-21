@@ -22,7 +22,8 @@ export const FONTS: Record<BuiltinFont, string> = {
   sans: "-apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
   serif: "Georgia, 'Times New Roman', serif",
   mono: "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace",
-  impact: "Impact, 'Arial Black', 'Helvetica Neue', sans-serif",
+  // (phones have no Impact: iOS has a condensed black Helvetica, Android a condensed sans)
+  impact: "Impact, Haettenschweiler, 'HelveticaNeue-CondensedBlack', 'Helvetica Neue Condensed Black', 'Arial Narrow Bold', 'Arial Black', sans-serif-condensed, 'Helvetica Neue', sans-serif",
 };
 
 const fontOf = (tx: TextLayer, size: number) => `${tx.bold ? 700 : 400} ${size}px ${fontCss(tx.font, FONTS)}`;

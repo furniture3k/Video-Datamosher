@@ -131,16 +131,26 @@
     {/if}
 
     <section>
+      <h2>{t('Make a video like this')}</h2>
+      <p class="faint small sub">{t('Pick a look, choose your clips (or try it with sample footage), type your words. The titles, cut-outs, marks and timing are made for you.')}</p>
+      <div class="grid starters">
+        {#each TEMPLATES.filter((x) => x.look) as tp (tp.id)}
+          <StarterCard s={tp} badge={tp.aspect === '9:16' ? '9:16' : tp.music ? '♪ beat' : ''} onclick={() => (template = tp)} />
+        {/each}
+      </div>
+    </section>
+
+    <section>
       <h2>{t('Steal this edit')}</h2>
       <p class="faint small sub">{t('Pick a video whose edit you like (a screen recording of a Reel). moshpit measures its cuts, frame rate and colours, and cuts your footage the same way.')}</p>
       <button class="steal" onclick={() => (stealing = true)}>{t('Pick a reference video')}</button>
     </section>
 
     <section>
-      <h2>{t('Start from a template')}</h2>
+      <h2>{t('More templates')}</h2>
       <p class="faint small sub">{t('Pick your clips and the mosh is set up for you. Or try one with sample footage first.')}</p>
       <div class="grid starters">
-        {#each TEMPLATES as tp (tp.id)}
+        {#each TEMPLATES.filter((x) => !x.look) as tp (tp.id)}
           <StarterCard s={tp} badge={tp.aspect === '9:16' ? '9:16' : tp.music ? '♪ beat' : ''} onclick={() => (template = tp)} />
         {/each}
       </div>
