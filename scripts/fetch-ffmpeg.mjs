@@ -1,15 +1,17 @@
 // Puts the FFmpeg the desktop app bundles at src-tauri/binaries/moshpit-ffmpeg-<target triple>[.exe].
 //
-//   node scripts/fetch-ffmpeg.mjs                 download a static build for this machine
+//   node scripts/fetch-ffmpeg.mjs                 build it from source for this machine (scripts/build-ffmpeg.sh)
 //   node scripts/fetch-ffmpeg.mjs --target <triple>
 //   node scripts/fetch-ffmpeg.mjs --dev           development: reuse the ffmpeg on PATH if there is one
 //
-// Builds: BtbN/FFmpeg-Builds (Windows, Linux) and ffmpeg.martin-riedl.de (macOS), all GPL static
-// builds. Set MOSHPIT_FFMPEG_URL to use another archive (zip, tar.xz or a bare binary).
+// Nothing prebuilt is downloaded from anyone: the release builds make FFmpeg from checked source
+// in .github/workflows/ffmpeg.yml, and so does this. To use an archive of your own instead, set
+// MOSHPIT_FFMPEG_URL and MOSHPIT_FFMPEG_SHA256 (the file's SHA-256: it is checked before use).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const argv = process.argv.slice(2);
 const dev = argv.includes('--dev');
@@ -25,17 +27,6 @@ const target = ti >= 0 ? argv[ti + 1] : process.env.TAURI_TARGET_TRIPLE || host(
 const win = target.includes('windows');
 const dir = path.resolve('src-tauri/binaries');
 const dest = path.join(dir, `moshpit-ffmpeg-${target}${win ? '.exe' : ''}`);
-
-const BTBN = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/';
-const RIEDL = 'https://ffmpeg.martin-riedl.de/redirect/latest/macos/';
-const URLS = {
-  'x86_64-pc-windows-msvc': BTBN + 'ffmpeg-master-latest-win64-gpl.zip',
-  'aarch64-pc-windows-msvc': BTBN + 'ffmpeg-master-latest-winarm64-gpl.zip',
-  'x86_64-unknown-linux-gnu': BTBN + 'ffmpeg-master-latest-linux64-gpl.tar.xz',
-  'aarch64-unknown-linux-gnu': BTBN + 'ffmpeg-master-latest-linuxarm64-gpl.tar.xz',
-  'aarch64-apple-darwin': RIEDL + 'arm64/release/ffmpeg.zip',
-  'x86_64-apple-darwin': RIEDL + 'amd64/release/ffmpeg.zip',
-};
 
 const NOTICE = path.join(dir, 'FFMPEG-NOTICE.txt');
 /** Written next to the binary and bundled with the app: which FFmpeg this is and where its source is. */
@@ -78,7 +69,7 @@ if (dev) {
     // the app needs FFmpeg 5.1 or newer (-fps_mode); development builds ("N-…") are recent
     const v = /ffmpeg version n?(\d+)\.(\d+)/.exec(execFileSync(which, ['-version'], { encoding: 'utf8' }));
     const recent = !v || +v[1] > 5 || (+v[1] === 5 && +v[2] >= 1);
-    if (!recent) console.log(`the ffmpeg on PATH is ${v[1]}.${v[2]}; moshpit needs 5.1 or newer, downloading one`);
+    if (!recent) console.log(`the ffmpeg on PATH is ${v[1]}.${v[2]}; moshpit needs 5.1 or newer, building one`);
     if (which && recent) {
       fs.copyFileSync(which, dest);
       fs.chmodSync(dest, 0o755);
@@ -87,12 +78,10 @@ if (dev) {
       process.exit(0);
     }
   } catch {
-    /* not installed: download one */
+    /* not installed: build one */
   }
 }
 
-const url = process.env.MOSHPIT_FFMPEG_URL || URLS[target];
-if (!url) throw new Error(`no FFmpeg download for ${target}; set MOSHPIT_FFMPEG_URL`);
 /** The download, tried again a few times (waiting longer each time) when the server is down or busy or the connection drops. */
 async function download(u) {
   const waits = [5, 15, 30, 60, 120];
@@ -114,12 +103,24 @@ async function download(u) {
   }
 }
 
+const url = process.env.MOSHPIT_FFMPEG_URL;
+if (!url) {
+  // built here, from the pinned sources (Windows builds are cross-compiled on Linux)
+  if (process.platform === 'win32') throw new Error('Building FFmpeg needs macOS or Linux (WSL works). Or set MOSHPIT_FFMPEG_URL and MOSHPIT_FFMPEG_SHA256 to an archive you trust.');
+  execFileSync('bash', [path.resolve('scripts/build-ffmpeg.sh'), target], { stdio: 'inherit' });
+  process.exit(0);
+}
+const want = (process.env.MOSHPIT_FFMPEG_SHA256 || '').toLowerCase();
+if (!/^[0-9a-f]{64}$/.test(want)) throw new Error('MOSHPIT_FFMPEG_URL needs MOSHPIT_FFMPEG_SHA256: the SHA-256 of that file, so what is downloaded is checked before it goes into the app.');
 console.log('downloading', url);
 const res = await download(url);
+const data = Buffer.from(await res.arrayBuffer());
+const got = createHash('sha256').update(data).digest('hex');
+if (got !== want) throw new Error(`${url} is not the file expected: its SHA-256 is ${got}, not ${want}`);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'moshpit-ffmpeg-'));
 // name from the requested URL: redirects (GitHub release assets) end in opaque names
 const file = path.join(tmp, path.basename(new URL(url).pathname) || 'ffmpeg');
-fs.writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+fs.writeFileSync(file, data);
 
 let bin = file;
 if (/\.(zip|tar\.xz|tar\.gz|tgz)$/.test(file)) {
@@ -144,5 +145,5 @@ if (/\.(zip|tar\.xz|tar\.gz|tgz)$/.test(file)) {
 fs.copyFileSync(bin, dest);
 fs.chmodSync(dest, 0o755);
 fs.rmSync(tmp, { recursive: true, force: true });
-writeNotice(url);
+writeNotice(`${url} (sha256 ${want})`);
 console.log('ffmpeg ready:', path.relative('.', dest));

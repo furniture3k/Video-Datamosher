@@ -26,8 +26,13 @@ jobs:
       # every window size from the desktop app's smallest to 4K, phones and tablets, every picture shape
       - run: npm run test:screens
 
+  ffmpeg:
+    # the FFmpeg the desktop app bundles, built from checked source
+    uses: ./.github/workflows/ffmpeg.yml
+
   desktop:
     # the desktop app (Tauri + native FFmpeg), driven through WebDriver on Linux
+    needs: ffmpeg
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +52,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       # the same FFmpeg the installers ship (Ubuntu 22.04's own is 4.4, too old)
-      - run: node scripts/fetch-ffmpeg.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-x86_64-unknown-linux-gnu
+          path: src-tauri/binaries
+      - run: chmod +x src-tauri/binaries/moshpit-ffmpeg-*
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo build --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol
       - run: xvfb-run -a -s "-screen 0 1600x1000x24" node scripts/e2e-desktop.mjs
@@ -59,10 +68,13 @@ jobs:
 
   desktop-other:
     # the native shell compiles and its tests pass on Windows and macOS too
+    needs: ffmpeg
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: macos-latest, target: aarch64-apple-darwin }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +88,11 @@ jobs:
           workspaces: src-tauri -> target
       - run: npm ci
       - run: npm run build
-      - run: node scripts/fetch-ffmpeg.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: src-tauri/binaries
+      - run: chmod +x src-tauri/binaries/moshpit-ffmpeg-*
+        shell: bash
       - run: cargo test --manifest-path src-tauri/Cargo.toml
       - run: cargo build --manifest-path src-tauri/Cargo.toml --features tauri/custom-protocol

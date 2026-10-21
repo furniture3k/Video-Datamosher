@@ -6,3 +6,4 @@ public/app/ffmpeg-mt
 test-results
 .DS_Store
 demo-output
+.ffmpeg-build

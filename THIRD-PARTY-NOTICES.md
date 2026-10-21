@@ -12,10 +12,11 @@ the GPL-3.0-or-later.
 | `@ffmpeg/ffmpeg`, `@ffmpeg/util` | website and installable web app | MIT | https://github.com/ffmpegwasm/ffmpeg.wasm |
 | FFmpeg (native build, run as the separate program `moshpit-ffmpeg`) | desktop app | GPL (v2 or later, or v3 or later depending on the build) | https://ffmpeg.org/download.html |
 
-The desktop app's FFmpeg comes from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)
-(Windows, Linux) and [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de) (macOS); both publish
-their build scripts. Every installer contains `FFMPEG-NOTICE.txt` naming the exact FFmpeg version
-it bundles, and `moshpit-ffmpeg -version` prints it along with the build configuration. FFmpeg's
+The desktop app's FFmpeg is built by this project from source (`scripts/build-ffmpeg.sh`, run in
+`.github/workflows/ffmpeg.yml`): FFmpeg's signed release, with x264 (GPL-2.0-or-later), libvpx
+(BSD-3-Clause), libvorbis and libogg (BSD-3-Clause) and zlib (zlib license), each pinned by its
+hash or commit in `scripts/ffmpeg-sources.sh`. Every installer contains `FFMPEG-NOTICE.txt` naming
+the exact sources it was built from, and `moshpit-ffmpeg -version` prints the build configuration. FFmpeg's
 source for any version is at https://git.ffmpeg.org/ffmpeg.git. FFmpeg's licensing details:
 https://ffmpeg.org/legal.html.
 
