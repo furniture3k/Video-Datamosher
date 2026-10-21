@@ -3497,6 +3497,8 @@ await step('templates in the editor: put a look on the clips already in the proj
   if ((await S(() => window.__moshpit.store.project.encoder.aspect)) !== '9:16') throw new Error('the look did not set its aspect');
   await S(() => window.__moshpit.store.undo());
   if ((await st()).length !== before) throw new Error('one undo did not take the look off');
+  // its note (with an Undo of its own) would still be up for the steps after
+  await S(() => (window.__moshpit.store.toasts = []));
 });
 
 await step('home: rename, duplicate and delete a project', async () => {
