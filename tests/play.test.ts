@@ -6,10 +6,12 @@ import { withChaos, chaosValue } from '../src/engine/chaos';
 import { EFFECTS, type ParamDef } from '../src/engine/effects';
 import { makeEffect, breed, chaos } from '../src/engine/presets';
 import { encodeRecipe, decodeRecipe, applyRecipe, findRecipe, gifWithComment, gifComments } from '../src/engine/recipe';
-import { bitrateFor, aspectSize, SOCIAL_PRESETS } from '../src/engine/social';
+import { even, moshWidthFor, rateFilter } from '../src/engine/args';
+import { bitrateFor, aspectSize, sizeChoices, widthForShape, SOCIAL_PRESETS } from '../src/engine/social';
 import { exportArgs, defaultExport, parseProbe, metadataArgs } from '../src/engine/args';
 import { newProject, type Project } from '../src/engine/types';
 import { hasFfmpeg, tmpdir, ff, ffLog } from './helpers';
+import { execFileSync } from 'node:child_process';
 
 type NumDef = Extract<ParamDef, { type: 'number' | 'int' }>;
 const def = (type: string, key: string) => EFFECTS[type].params.find((d) => d.key === key) as NumDef;
@@ -133,6 +135,31 @@ describe('social presets', () => {
     expect(aspectSize('9:16', 1080)).toEqual({ w: 1080, h: 1920 });
     expect(SOCIAL_PRESETS.length).toBeGreaterThan(5);
   });
+  it('size choices follow the shape of the frame', () => {
+    const wide = sizeChoices(16 / 9);
+    expect(wide.map((c) => c.value)).toEqual([320, 480, 640, 854, 960, 1280, 1920, 2560, 3840]);
+    expect(wide.find((c) => c.value === 3840)!.label).toBe('4K UHD (3840×2160)');
+    const tall = sizeChoices(9 / 16, 480);
+    expect(tall.find((c) => c.label.startsWith('4K'))!.label).toBe('4K UHD (2160×3840)');
+    expect(tall.find((c) => c.label.startsWith('1080p'))!.value).toBe(1080);
+    // a width that isn't a class stays choosable, with its real size
+    expect(sizeChoices(9 / 16, 0, 1280).find((c) => c.value === 1280)!.label).toBe('1280×2276');
+    expect(SOCIAL_PRESETS.find((p) => p.id === 'vertical4k')!.opts.width).toBe(2160);
+  });
+  it('full quality moshes at the size that is saved', () => {
+    expect(moshWidthFor(3840, 16 / 9)).toBe(3840);
+    // 9:16 cut out of a 16:9 mosh: the mosh must be wide enough for a 2160-wide crop
+    expect(moshWidthFor(2160, 16 / 9, 9 / 16)).toBe(even((2160 * 16) / 9 / (9 / 16)));
+    // a wider shape crops the top and bottom: the width is the output's
+    expect(moshWidthFor(1920, 9 / 16, 16 / 9)).toBe(1920);
+  });
+  it('a new shape keeps the resolution class', () => {
+    expect(widthForShape(1280, 16 / 9, 9 / 16)).toBe(720);
+    expect(widthForShape(720, 9 / 16, 16 / 9)).toBe(1280);
+    expect(widthForShape(1920, 16 / 9, 1)).toBe(1080);
+    expect(widthForShape(1080, 1, 4 / 5)).toBe(1080);
+    expect(widthForShape(1280, 0, 1)).toBe(1280);
+  });
 });
 
 const d = hasFfmpeg ? describe : describe.skip;
@@ -159,5 +186,21 @@ d('recipes in exported files (native ffmpeg)', () => {
     fs.writeFileSync(path.join(dir, 'b.gif'), gifWithComment(new Uint8Array(fs.readFileSync(path.join(dir, 'a.gif'))), code));
     expect(gifComments(new Uint8Array(fs.readFileSync(path.join(dir, 'b.gif'))))).toEqual([code]);
     ff(dir, ['-i', 'b.gif', '-f', 'null', '-']);
+  });
+});
+
+d('frame rate on export (native ffmpeg)', () => {
+  it('60 fps from a 24 fps mosh: two and a half times the frames, the same length', () => {
+    const dir = tmpdir();
+    ff(dir, ['-f', 'lavfi', '-i', 'testsrc2=s=320x240:r=24:d=1', '-c:v', 'mpeg4', '-q:v', '2', '-f', 'avi', 'm.avi']);
+    const o = { ...defaultExport(), preset: 'ultrafast' as const, fps: 60 };
+    ff(dir, exportArgs(o, newProject().decoder, 24, { file: 'm.avi', mjpeg: false }, null, 'o.mp4'));
+    const [rate, frames, dur] = execFileSync('ffprobe', ['-v', 'error', '-count_frames', '-select_streams', 'v', '-show_entries', 'stream=r_frame_rate,nb_read_frames:format=duration', '-of', 'csv=p=0:s=,', path.join(dir, 'o.mp4')]).toString().trim().split(/[,\n]/);
+    expect(rate).toBe('60/1');
+    expect(Math.abs(+frames - 60)).toBeLessThanOrEqual(1);
+    expect(Math.abs(+dur - 1)).toBeLessThan(0.05);
+    expect(rateFilter(24, 60)).toBe('framerate=fps=60');
+    expect(rateFilter(60, 30)).toBe('fps=30');
+    expect(rateFilter(24, 24)).toBe('');
   });
 });

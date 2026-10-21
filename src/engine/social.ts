@@ -20,6 +20,7 @@ export interface SocialPreset {
 
 export const SOCIAL_PRESETS: SocialPreset[] = [
   { id: 'vertical', name: 'TikTok · Reels · Shorts', aspect: '9:16', opts: { format: 'mp4', width: 1080, crf: 18, preset: 'medium' }, maxSec: 180, guides: 'vertical', note: '1080×1920. Keep text inside the guides: the apps cover the bottom and right edges.' },
+  { id: 'vertical4k', name: 'TikTok · Shorts 4K', aspect: '9:16', opts: { format: 'mp4', width: 2160, crf: 16, preset: 'medium', scaler: 'lanczos' }, maxSec: 180, guides: 'vertical', note: '2160×3840. Shorts and TikTok keep more detail from a 4K upload; Instagram shows Reels at 1080×1920 either way.' },
   { id: 'igfeed', name: 'Instagram feed', aspect: '4:5', opts: { format: 'mp4', width: 1080, crf: 18, preset: 'medium' }, maxSec: 3600, guides: 'feed', note: '1080×1350, the tallest a feed post shows.' },
   { id: 'square', name: 'Square', aspect: '1:1', opts: { format: 'mp4', width: 1080, crf: 18, preset: 'medium' }, note: '1080×1080. Works everywhere.' },
   { id: 'yt', name: 'YouTube 1080p', aspect: '16:9', opts: { format: 'mp4', width: 1920, crf: 16, preset: 'medium' }, note: 'Full HD with headroom for YouTube\'s re-encode.' },
@@ -48,4 +49,45 @@ export function aspectSize(aspect: Aspect, width: number): { w: number; h: numbe
   if (!m) return null;
   const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
   return { w: even(width), h: even((width * +m[2]) / +m[1]) };
+}
+
+/** Resolution classes by the frame's short side (the "p" in 1080p). */
+const CLASSES: [number, string][] = [
+  [180, ''],
+  [270, ''],
+  [360, '360p'],
+  [480, '480p'],
+  [540, ''],
+  [720, '720p HD'],
+  [1080, '1080p Full HD'],
+  [1440, '1440p QHD'],
+  [2160, '4K UHD'],
+];
+
+/**
+ * Widths to offer for a frame of this shape (width / height), labelled with the size they make:
+ * 1080p is 1920 wide for 16:9 and 1080 wide for 9:16. From `min` short side up; `current` is kept
+ * in the list when it isn't one of them.
+ */
+export function sizeChoices(ar: number, min = 0, current = 0): { value: number; label: string }[] {
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  const a = ar > 0 && isFinite(ar) ? ar : 16 / 9;
+  const at = (w: number) => `${w}×${even(w / a)}`;
+  const out = CLASSES.filter(([s]) => s >= min).map(([s, name]) => {
+    const w = even(a >= 1 ? s * a : s);
+    return { value: w, label: name ? `${name} (${at(w)})` : at(w) };
+  });
+  if (current > 0 && !out.some((o) => o.value === even(current))) out.push({ value: current, label: at(even(current)) });
+  return out.sort((x, y) => x.value - y.value);
+}
+
+/**
+ * The width that keeps a frame's resolution class (its short side) when its shape changes from
+ * `fromAr` to `toAr` (width / height): 720p is 1280 wide at 16:9 and 720 wide at 9:16.
+ */
+export function widthForShape(width: number, fromAr: number, toAr: number): number {
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  if (!(fromAr > 0) || !(toAr > 0)) return width;
+  const short = fromAr >= 1 ? width / fromAr : width;
+  return even(toAr >= 1 ? short * toAr : short);
 }

@@ -2,6 +2,7 @@
 import { store } from './store.svelte';
 import { getFile, putFile } from './storage';
 import { cubeText, lutFile, lutKey, parseCube, type Lut3D } from '../engine/lut';
+import { hdrCube, hdrLutFile, hdrOf } from '../engine/colour';
 import { uid } from '../engine/presets';
 import { isVideoTrack } from '../engine/timeline';
 import type { Project } from '../engine/types';
@@ -68,5 +69,18 @@ export async function lutInputs(p: Project): Promise<Record<string, () => Promis
     const text = cubeText(l, g.lutAmount ?? 1);
     out[name] = async () => new TextEncoder().encode(text);
   }
+  // HDR footage is tone-mapped by a LUT of its own
+  for (const c of p.clips) {
+    const m = isVideoTrack(c.track) ? p.media.find((x) => x.id === c.mediaId) : undefined;
+    const kind = m && hdrOf(m);
+    if (kind && !out[hdrLutFile(kind)]) out[hdrLutFile(kind)] = async () => new TextEncoder().encode(hdrCubeCached(kind));
+  }
   return out;
+}
+
+const cubes = new Map<string, string>();
+/** (the LUT takes a moment to work out: once per kind) */
+export function hdrCubeCached(kind: 'hlg' | 'pq'): string {
+  if (!cubes.has(kind)) cubes.set(kind, hdrCube(kind));
+  return cubes.get(kind)!;
 }

@@ -3,12 +3,14 @@ import { ffmpeg, ffmpegBg, Cancelled, MOUNT, type RunOptions, type Engine } from
 import { fileSize, framesFromDisk, loadFrames, assembleAvi, removeEngineFile, moveEngineFile, writeEngineFile } from './ffmpeg-native';
 import { isDesktop, lowMemory } from './platform';
 import { getFile } from './storage';
-import { lutInputs } from './luts.svelte';
+import { hdrCubeCached, lutInputs } from './luts.svelte';
 import { PostRunner } from './post';
 import { mediaState } from './mediastate.svelte';
 import { backdropPlate, borderPlate, maskPlate, type BackdropImage } from './canvas';
 import { cardRect, hasCanvas, hasChrome } from '../engine/canvas';
-import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, metadataArgs, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { regenArgs, generationEncoder, loopPassArgs, type LayerOverlay, type ClipMatte, type ClipPlates, type CanvasPlates, commentArgs, encodeArgs, metadataArgs, moshWidthFor, rateFilter, segmentArgs, prepArgs, segmentKey, decodeToMjpegArgs, decoderInputArgs, audioMixArgs, exportArgs, inputName, parseProbe, outputSize, type ExportOptions, type PathFn, even, GENERATORS } from '../engine/args';
+import { SCENES, type Scene } from '../engine/scenes';
+import { FROM_BROWSER_JPEG, JPEG_FOR_BROWSER, TAG_709, YUV_FROM_RGB, hdrLutFile, hdrOf, hdrRgba, sourceMatrix } from '../engine/colour';
 import { hasScripts, prepareScripts, packsNeeded, traceGeneration, loopMelt, type Packs, framesFromAvi, applyBitstream, applyBitstreamDisk, writeMoshed, writeMoshedBlob, concatPrepared, type Prepared } from '../engine/mosh';
 import { cutFrames, segments, timelineDuration, timelineFrames, audioSources, mediaOf, layers as upperClips, type Segment } from '../engine/timeline';
 import { analyzeAudio, type AudioFeatures } from '../engine/beats';
@@ -373,12 +375,13 @@ async function decode(project: Project, avi: Uint8Array | Blob | string, quality
   const blob = onDisk ? null : avi instanceof Blob ? avi : new Blob([avi as BlobPart]);
   const vf: string[] = [];
   if (opts.from || opts.to !== undefined) vf.push(`select='between(n,${opts.from ?? 0},${(opts.to ?? 1e9) - 1})'`);
-  if (opts.scaleW) vf.push(`scale=${even(opts.scaleW)}:-2`);
+  // (the browser reads JPEGs as BT.601, full range)
+  vf.push(opts.scaleW ? `scale=${even(opts.scaleW)}:-2:${JPEG_FOR_BROWSER}` : `scale=${JPEG_FOR_BROWSER}`);
   const args = [
     ...decoderInputArgs(project.decoder),
     '-i', onDisk ? avi : MOUNT + 'mosh.avi',
     '-fps_mode', 'passthrough',
-    ...(vf.length ? ['-vf', vf.join(',')] : []),
+    '-vf', vf.join(','),
     ...(opts.to !== undefined ? ['-frames:v', String(opts.to - (opts.from ?? 0))] : []),
     '-c:v', 'mjpeg', '-huffman', '0', '-pix_fmt', 'yuvj420p', '-q:v', String(quality),
     '-f', 'image2pipe', 'out.mjpeg',
@@ -723,7 +726,12 @@ export async function probeFile(blob: Blob, ext: string): Promise<{ info: Return
   let thumb = '';
   if (info.hasVideo)
     try {
-      const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', MOUNT + name, '-frames:v', '1', '-vf', 'scale=192:-2', '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { mounts, outputs: ['thumb.jpg'] });
+      // a JPEG the browser reads right (BT.601, full range), whatever the file's colours
+      const mat = sourceMatrix({ source: { kind: 'file', fileId: '', name, mime: '', isImage: false, ext }, width: info.width, height: info.height, color: info.color });
+      const hdr = info.color && hdrOf({ color: info.color });
+      const vf = hdr ? `scale=192:-2,${hdrRgba({ color: info.color })},scale=out_color_matrix=bt601:out_range=pc` : `scale=192:-2${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt601:out_range=pc`;
+      const inputs = hdr ? { [hdrLutFile(hdr)]: async () => new TextEncoder().encode(hdrCubeCached(hdr)) } : {};
+      const t = await ffmpeg.run(['-ss', String(Math.min(1, info.duration / 3 || 0)), '-i', MOUNT + name, '-frames:v', '1', '-vf', vf, '-q:v', '5', '-huffman', '0', '-update', '1', '-f', 'image2', 'thumb.jpg'], { mounts, inputs, outputs: ['thumb.jpg'] });
       thumb = URL.createObjectURL(new Blob([t.out['thumb.jpg'] as BlobPart], { type: 'image/jpeg' }));
     } catch {
       /* thumbnail optional */
@@ -742,8 +750,33 @@ export async function generatorThumb(spec: string[]): Promise<string> {
 
 /** Render a procedural generator to a real video file, so it behaves like any other footage. */
 export async function renderGenerator(genId: string, seconds: number, w: number, h: number, fps = 24): Promise<Blob> {
+  const scene = SCENES.find((s) => s.id === genId);
+  if (scene) return renderScene(scene, seconds, w, h, fps);
   const g = GENERATORS.find((x) => x.id === genId) ?? GENERATORS[0];
-  const r = await ffmpeg.run(['-f', 'lavfi', '-t', String(seconds), '-i', g.spec(w, h, fps), '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-g', String(fps), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', 'gen.mp4'], { outputs: ['gen.mp4'] });
+  const r = await ffmpeg.run(['-f', 'lavfi', '-t', String(seconds), '-i', g.spec(w, h, fps), '-vf', YUV_FROM_RGB, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '18', '-g', String(fps), ...TAG_709, '-movflags', '+faststart', 'gen.mp4'], { outputs: ['gen.mp4'] });
+  return new Blob([r.out['gen.mp4'] as BlobPart], { type: 'video/mp4' });
+}
+
+/** A drawn scene (engine/scenes.ts) as a video file: drawn frame by frame on a canvas, then encoded. */
+async function renderScene(scene: Scene, seconds: number, w: number, h: number, fps: number): Promise<Blob> {
+  const c = new OffscreenCanvas(w, h);
+  const g = c.getContext('2d')!;
+  const parts: Uint8Array[] = [];
+  const n = Math.max(1, Math.round(seconds * fps));
+  for (let i = 0; i < n; i++) {
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    scene.draw(g, w, h, i / fps);
+    parts.push(new Uint8Array(await (await c.convertToBlob({ type: 'image/jpeg', quality: 0.93 })).arrayBuffer()));
+  }
+  const cat = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
+  let off = 0;
+  for (const p of parts) (cat.set(p, off), (off += p.length));
+  const r = await ffmpeg.run(['-framerate', String(fps), '-f', 'image2pipe', '-c:v', 'mjpeg', '-i', 'frames.mjpeg', '-vf', `scale=${FROM_BROWSER_JPEG},format=yuv420p`, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '16', '-g', String(fps), ...TAG_709, '-movflags', '+faststart', 'gen.mp4'], {
+    inputs: { 'frames.mjpeg': async () => cat },
+    outputs: ['gen.mp4'],
+  });
   return new Blob([r.out['gen.mp4'] as BlobPart], { type: 'video/mp4' });
 }
 
@@ -754,18 +787,23 @@ export async function renderGenerator(genId: string, seconds: number, w: number,
  */
 export async function makeProxy(m: MediaItem, blob: Blob, onProgress?: (p: number) => void, webm = false): Promise<{ blob: Blob; hardware: boolean }> {
   if (m.source.kind !== 'file') throw new Error('no file');
-  const hw = await hardwareProxy(blob, m.width, m.fps, onProgress);
+  // (HDR footage is tone-mapped by FFmpeg, as the render does it)
+  const hdr = hdrOf(m);
+  const hw = hdr ? null : await hardwareProxy(blob, m.width, m.fps, onProgress);
   if (hw) return { blob: hw, hardware: true };
   const name = inputName(m);
   const w = Math.min(960, even(m.width || 960));
-  const vf = [`scale=${w}:-2:flags=bicubic`, m.fps > 30 ? 'fps=30' : '', 'format=yuv420p'].filter(Boolean).join(',');
+  // in BT.709 and saying so, as the browser shows the timeline
+  const mat = sourceMatrix(m);
+  const vf = (hdr ? [`scale=${w}:-2:flags=bicubic`, hdrRgba(m)!, YUV_FROM_RGB] : [`scale=${w}:-2:flags=bicubic${mat === 'auto' ? '' : `:in_color_matrix=${mat}`}:out_color_matrix=bt709:out_range=tv`, 'format=yuv420p']).join(',') + (m.fps > 30 ? ',fps=30' : '');
   const total = Math.max(1, m.duration * Math.min(30, m.fps || 30));
   const out = webm ? 'proxy.webm' : 'proxy.mp4';
   const codec = webm
-    ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2500k', '-g', '12', '-auto-alt-ref', '0', '-c:a', 'libvorbis', '-q:a', '4']
-    : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-g', '12', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'];
+    ? ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2500k', '-g', '12', '-auto-alt-ref', '0', ...TAG_709, '-c:a', 'libvorbis', '-q:a', '4']
+    : ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-g', '12', ...TAG_709, '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'];
   const args = ['-i', MOUNT + name, '-map', '0:v:0', '-map', '0:a:0?', '-vf', vf, ...codec, '-ac', '2', out];
-  const r = await ffmpegBg.run(args, { mounts: { [name]: blob }, outputs: [out], onFrame: (n) => onProgress?.(Math.min(1, n / total)) });
+  const inputs = hdr ? { [hdrLutFile(hdr)]: async () => new TextEncoder().encode(hdrCubeCached(hdr)) } : {};
+  const r = await ffmpegBg.run(args, { mounts: { [name]: blob }, inputs, outputs: [out], onFrame: (n) => onProgress?.(Math.min(1, n / total)) });
   return { blob: new Blob([r.out[out] as BlobPart], { type: webm ? 'video/webm' : 'video/mp4' }), hardware: false };
 }
 
@@ -851,6 +889,16 @@ export async function exportVideo(project: Project, o: ExportOptions, progress: 
 }
 
 async function exportWith(project: Project, o: ExportOptions, progress: Progress, signal: Signal, eng: Engine): Promise<Exported> {
+  // full quality: mosh at the size that is saved (no scaling up afterwards)
+  if (o.moshAtSize && o.width > 0 && o.format !== 'avi') {
+    const shape = outputSize(project, project.encoder.width);
+    const dst = o.reframeTo ? aspectRatio(o.reframeTo) : undefined;
+    const mw = moshWidthFor(o.width, shape.w / shape.h, dst);
+    if (mw > project.encoder.width) {
+      project = { ...project, encoder: { ...project.encoder, width: mw } };
+      o = { ...o, width: 0 };
+    }
+  }
   const width = project.encoder.width;
   // Desktop: frame payloads stay on disk and the moshed AVI is assembled there, so memory use
   // doesn't grow with the length of the video.
@@ -905,6 +953,9 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     const audioIn: Record<string, () => Promise<Uint8Array>> = pcm && !disk ? { 'a.wav': async () => wav(pcm) } : {};
     check(signal);
     if (looping === 'crossfade') o = { ...o, crossfade: { frames: hi - lo, overlap: Math.min(seam, Math.floor((hi - lo) / 3)) } };
+    // another frame rate (MP4 / WebM): not with a crossfade loop, whose seam is counted in the project's frames
+    const newRate = (o.format === 'mp4' || o.format === 'webm') && !o.crossfade && !!o.fps && o.fps !== project.encoder.fps;
+    if (!newRate) o = { ...o, fps: undefined };
     // another shape than the project: find where the action is and let the crop follow it
     const shape = outputSize(project, width);
     if (o.reframeTo && o.format !== 'avi' && Math.abs(aspectRatio(o.reframeTo) - shape.w / shape.h) > 0.01) {
@@ -937,7 +988,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     const n = hi - lo;
     const { w, h } = outputSize(project, width);
     // the browser's hardware encoder (a crossfade loop needs ffmpeg's filters)
-    const enc = o.hardware && !disk && (o.format === 'mp4' || o.format === 'webm') && !o.crossfade ? encodedSize({ srcW: w, srcH: h, width: o.width, reframe: o.reframe }) : null;
+    const enc = o.hardware && !disk && (o.format === 'mp4' || o.format === 'webm') && !o.crossfade && !newRate ? encodedSize({ srcW: w, srcH: h, width: o.width, reframe: o.reframe }) : null;
     const hwCodec = enc ? await hardwareCodec(o.format, enc.w, enc.h) : null;
 
     // No pixel effects (and the whole timeline): encode straight from the moshed file in one pass.
@@ -1001,8 +1052,10 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
         } else {
           const cat = concatBytes(done);
           const out = `p${k}.${o.format}`;
-          // pieces never loop on their own; the crop's clock carries on from piece to piece
-          const r = await eng.run(exportArgs({ ...o, crossfade: undefined, timeOffset: (a - lo) / fps }, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, out), {
+          // pieces never loop on their own; the crop's clock carries on from piece to piece; a new
+          // frame rate is made over the whole video when they're joined (pieces near-lossless till then)
+          const piece: ExportOptions = { ...o, crossfade: undefined, timeOffset: (a - lo) / fps, ...(newRate ? { fps: undefined, crf: Math.min(o.crf, 10), videoKbps: undefined } : {}) };
+          const r = await eng.run(exportArgs(piece, project.decoder, fps, { file: 'frames.mjpeg', mjpeg: true }, null, out), {
             inputs: { 'frames.mjpeg': async () => cat },
             ...(isDesktop ? { leave: [out] } : { outputs: [out] }),
             onFrame: (x) => progress(`Encoding ${o.format.toUpperCase()} ${a - lo + 1}–${b - lo} of ${n}`, span(Math.min(1, x / (b - a)))),
@@ -1060,8 +1113,10 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     Object.assign(inputs, audioIn);
     const out = `out.${o.format}`;
     const args = ['-f', 'concat', '-safe', '0', '-i', 'list.txt'];
-    if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', '-c:v', 'copy', ...audioCodecArgs(o), '-shortest');
-    else args.push('-c', 'copy');
+    // the new frame rate, over the whole video (one more encode); else the pieces are copied as they are
+    const video = newRate ? ['-vf', `${rateFilter(fps, o.fps)},format=yuv420p`, '-r', String(o.fps), ...encodeArgs(o, false)] : ['-c:v', 'copy'];
+    if (audio) args.push('-i', 'a.wav', '-map', '0:v', '-map', '1:a', ...video, ...audioCodecArgs(o), '-shortest');
+    else args.push(...(newRate ? video : ['-c', 'copy']));
     try {
       if (o.crossfade) {
         // a crossfade loop needs the whole video: join, then one more encode that loops it

@@ -72,7 +72,7 @@ export function chaosGraphics(project: Pick<Project, 'layers' | 'canvas'>, seed:
 function restyleText(l: TextLayer, rng: Rng, pal: string[], intensity: number) {
   // an added font is the user's choice: only the built-in ones are swapped
   if (!l.font.startsWith('font:') && rng.chance(0.4 + intensity * 0.4)) l.font = rng.pick(FONTS);
-  if (!l.fit) l.size = r3(clamp(l.size * rng.range(1 - 0.5 * intensity, 1 + 0.6 * intensity), 0.03, 0.6));
+  if (l.fit !== 'width') l.size = r3(clamp(l.size * rng.range(1 - 0.5 * intensity, 1 + 0.6 * intensity), 0.03, 0.6));
   if (rng.chance(0.6)) l.color = rng.pick(pal);
   l.bold = rng.chance(0.7);
   if (rng.chance(0.15 + intensity * 0.3)) {
@@ -109,7 +109,7 @@ export function mutateGraphics(project: Pick<Project, 'layers' | 'canvas'>, seed
   const layers = project.layers.map((src) => {
     const l = clone(src);
     if (l.kind === 'text') {
-      if (!l.fit) l.size = r3(clamp(l.size * rng.range(1 - 0.3 * amount, 1 + 0.3 * amount), 0.03, 0.6));
+      if (l.fit !== 'width') l.size = r3(clamp(l.size * rng.range(1 - 0.3 * amount, 1 + 0.3 * amount), 0.03, 0.6));
       l.color = jitterColour(l.color, rng, 90 * amount);
       if (rng.chance(amount * 0.3)) l.anim = rng.pick(ANIMS);
       if (l.stroke && rng.chance(amount)) l.strokeColor = jitterColour(l.strokeColor ?? '#000000', rng, 90 * amount);
@@ -149,7 +149,7 @@ export function breedGraphics(parents: Pick<Project, 'layers' | 'canvas'>[], see
       if (!d.font.startsWith('font:') && !l.font.startsWith('font:')) l.font = d.font;
       l.anim = d.anim;
       l.bold = d.bold;
-      if (!l.fit && !d.fit) l.size = r3((l.size + d.size) / 2);
+      if (l.fit !== 'width' && d.fit !== 'width') l.size = r3((l.size + d.size) / 2);
       if (d.stroke) ((l.stroke = d.stroke), (l.strokeColor = d.strokeColor));
       else delete l.stroke;
     } else if (l.kind === 'shape' && d.kind === 'shape' && l.shape !== 'subject') {

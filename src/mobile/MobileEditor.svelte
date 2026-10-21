@@ -8,6 +8,7 @@
   import { saveProjectFile, loadProjectFile, startNewProject, saveRecipeFile, pickRecipeFile } from '../lib/projectio.svelte';
   import { reportProblem } from '../lib/report';
   import * as haptics from '../lib/haptics';
+  import { hitsOnBeats } from '../lib/graphicsops.svelte';
   import { goHome } from '../lib/projects.svelte';
   import { VIDEO_TRACK } from '../engine/types';
   import { BLEND_TRANSITIONS, MOSH_TRANSITIONS, clipLen, layoutVideo, isMoshTransition } from '../engine/timeline';
@@ -307,6 +308,8 @@
         {#if mode === 'video'}
           <button class="tool hot" onclick={moshThis}><Icon name="melt" size={22} /><span>Mosh it</span></button>
           <button class="tool" onclick={() => edit.freezeAtPlayhead()}><Icon name="freeze" size={22} /><span>Freeze</span></button>
+          <button class="tool" onclick={() => (hitsOnBeats('punch', 'beat'), haptics.thud())}><Icon name="fullscreen" size={22} /><span>Beat zoom</span></button>
+          <button class="tool" onclick={() => (hitsOnBeats('shake', 'beat'), haptics.thud())}><Icon name="nudge" size={22} /><span>Beat shake</span></button>
           {#if canAnalyse}
             <button class="tool" class:hot={store.ui.trackPick === clip?.id} disabled={motionJob.running} onclick={track}><Icon name="target" size={22} /><span>{motionJob.running && motionJob.stage === 'Tracking' ? 'Tracking…' : store.ui.trackPick === clip?.id ? 'Cancel' : 'Track'}</span></button>
             <button class="tool" class:hot={store.ui.surfacePick === clip?.id} disabled={motionJob.running} onclick={surface}><Icon name="screen" size={22} /><span>{motionJob.running && motionJob.stage === 'Tracking the surface' ? 'Tracking…' : store.ui.surfacePick === clip?.id ? 'Cancel' : 'Surface'}</span></button>

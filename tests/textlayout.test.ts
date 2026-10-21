@@ -35,6 +35,18 @@ describe('title layout', () => {
     expect(L.size).toBeCloseTo((1000 * FIT_WIDTH) / 2.6, 6);
   });
 
+  it('keeps a line inside a narrow frame, unless told to run off', () => {
+    // 20 letters at 0.1 of 1920 px tall = 1920 px wide, in a 1080 px wide frame
+    const long = { text: 'ABCDEFGHIJKLMNOPQRST' };
+    const L = layoutText(title(long), 1080, 1920, measure);
+    expect(L.lines[0].width).toBeCloseTo(1080 * FIT_WIDTH, 6);
+    expect(layoutText(title({ ...long, fit: 'none' }), 1080, 1920, measure).size).toBe(192);
+    // tickers and repeated copies are meant to be wider than the frame
+    expect(layoutText(title({ ...long, scroll: 0.2 }), 1080, 1920, measure).size).toBe(192);
+    // a title that fits keeps its size
+    expect(layoutText(title(), 1080, 1920, measure).size).toBe(192);
+  });
+
   it('pads the background box', () => {
     const L = layoutText(title({ box: true }), 1000, 500, measure);
     expect(L.box).toEqual({ x: -70, y: -40, w: 140, h: 80 });

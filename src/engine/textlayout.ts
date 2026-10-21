@@ -73,9 +73,11 @@ export function layoutText(tx: TextLayer, W: number, H: number, measure: Measure
   /** width of line i at a base size (its own multiple applied) */
   const widthAt = (s: string, i: number, size: number) => (measure(s, spec(i)) * size * mult(i)) / 100 + Math.max(0, [...s].length - 1) * (tx.spacing ?? 0) * size * mult(i);
   let size = Math.max(4, tx.size * H);
-  if (tx.fit === 'width') {
+  if (tx.fit !== 'none') {
     const widest = Math.max(...lines.map((l, i) => widthAt(l, i, size)));
-    if (widest > 0) size *= (W * FIT_WIDTH) / widest;
+    // fitted to the width, or (copies and tickers aside) kept inside it: a line written for a wide
+    // frame would otherwise run off both sides of a tall one
+    if (widest > 0 && (tx.fit === 'width' || (!tx.repeat && !tx.scroll && widest > W * FIT_WIDTH))) size *= (W * FIT_WIDTH) / widest;
   }
   const spacing = (tx.spacing ?? 0) * size;
   const lh = tx.lineHeight ?? 1.2;

@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { ffmpegMajor, graphsToFiles } from '../src/engine/args';
 
 export const hasFfmpeg = (() => {
   try {
@@ -16,7 +17,13 @@ export function tmpdir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-'));
 }
 
+let major = -1;
 export function ff(cwd: string, args: string[]): string {
+  // long filter graphs go in files, as the desktop app does (a command line has a length limit)
+  if (major < 0) major = ffmpegMajor(execFileSync('ffmpeg', ['-version']).toString().split('\n')[0]) || 99;
+  const graphs = graphsToFiles(args, major);
+  for (const [name, text] of graphs.files) fs.writeFileSync(path.join(cwd, name), text);
+  args = graphs.args;
   try {
     return execFileSync('ffmpeg', ['-hide_banner', '-nostdin', '-y', ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 }).toString();
   } catch (e) {

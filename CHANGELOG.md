@@ -1,5 +1,47 @@
 # Changelog
 
+## 1.16.0
+
+- **Hits on the beat**: **Zoom punch** (Z) and **Shake** (H) (Clip tab › On the
+  beat, the phone's clip tools, or the palette) jump the picture in, or knock it sideways, on every
+  beat or every bar of the music and ease it back before the next one, on the selected clips of the
+  main track or all of them. **Hit strength** sets how hard. They are keyframes, so they can be
+  changed after, and they melt with the mosh like any other move.
+- **Motion blur**: clips with keyframed moves (punches, shakes, slides, zooms) can blur along them
+  like a camera's shutter (Clip tab › Motion blur), and whip transitions now smear sideways through
+  their middle.
+- **Velocity edits**: Speed ramp › **On the beat** (or Shift V) slows a clip on
+  each beat and rushes it between, keeping its length on the timeline.
+- **Colours come out as they went in**: footage, titles, pictures and canvases kept their colours
+  only roughly before (a strong red was 11–16 levels off in the preview and in exports). Every step
+  now names its colour matrix, each clip is read the way it was recorded, and MP4 and WebM files say
+  they are BT.709, so phones and Instagram show them as you saw them.
+- **HDR footage looks right**: iPhone HDR (HLG) and HDR10 clips are tone-mapped to normal range in the
+  render, the preview copies and the thumbnails, instead of looking grey and washed out.
+- **60 fps exports**: Export › **Frame rate** makes 30, 50 or 60 fps from a 24 fps project, the frames
+  in between blended from their neighbours.
+- **Full quality 4K**: Export › **Full quality: mosh at this size** moshes at the size that's saved
+  instead of scaling a smaller mosh up.
+- **Draft preview on phones**: the phone player has the preview-quality button, and phones start on
+  **Draft** (a quarter of the resolution: much faster; exports are still full quality).
+- **4K for vertical video**: export sizes are named by what they make in the project's shape, so on
+  a 9:16 project **4K UHD** is 2160×3840 and **1080p** is 1080×1920 (they used to be widths: "4K"
+  made a 3840×6826 file). **Made for** has **TikTok · Shorts 4K**. The export dialog shows the real
+  size when the video is reframed to another shape. The mosh resolution is named the same way.
+- **Vertical projects render faster**: a tall or square project keeps the mosh resolution's class
+  when its shape is set (a 9:16 project moshes at 720×1280, not 1280×2276: three times the pixels),
+  from the first clip, the Aspect ratio setting, **Make it 9:16** and the templates.
+- **Titles stay in the frame**: a title whose line would run off the sides is made smaller to fit,
+  which mattered most on narrow 9:16 frames (the Degraded film template's lyric ran off both edges).
+  **Width** in the title's settings has **Fit to the frame width** as before and **Let it run off the
+  edges** for the old behaviour. Tickers and repeated copies are left as they are.
+- **Keyframes on the desktop**: clips with many zoom or position keyframes no longer fail to render in
+  the desktop app (their filter graphs were longer than a command line may be, 32 767 characters on
+  Windows); long graphs are now handed to FFmpeg in a file.
+- **Better-looking templates**: the sample footage is drawn like camera footage (city lights, a sunset
+  over water, a night drive, a dancer; also in **Generate**) instead of test patterns, **Scrapbook** has a handwritten caption above the card (your own words) instead of copies of
+  a serif word piling onto each other, and **Glitch intro** has its own preview.
+
 ## 1.15.0
 
 - **Make a video like this**: five templates made from edits people post, at the top of the home

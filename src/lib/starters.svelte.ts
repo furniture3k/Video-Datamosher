@@ -12,6 +12,9 @@ import { beatPoints, phrases, splitWords, wordSlots, wordTitles } from '../engin
 import { freeRow, nextRow, type BuiltinFont, type Layer, type TextLayer } from '../engine/layers';
 import { clipLen, layoutVideo, makeClip, mediaOf, uid } from '../engine/timeline';
 import { GENERATORS, even, outputSize } from '../engine/args';
+import { widthForShape } from '../engine/social';
+import { generatorName } from '../engine/scenes';
+import { aspectRatio } from '../engine/reframe';
 import { PRESETS, applyPreset } from '../engine/presets';
 import { beatEdit, defaultBeatEdit } from '../engine/beatedit';
 import { applyRecipe, type Recipe } from '../engine/recipe';
@@ -202,7 +205,7 @@ export const TEMPLATES: Template[] = [
     words: 'I am both wound and knife\nconsume me\nmy life, my blood\nyou must destroy yourself to blossom',
     wordsHint: 'One line for each clip.',
     hint: 'Clips with one clear subject in the middle (a person, an animal, a thing). It is cut out by itself; the first time, a small model is downloaded.',
-    sample: [['mandelbrot', 3], ['mandelbrot', 3]],
+    sample: [['figure', 3], ['figure', 3]],
     build: async (media, words) => {
       const lines = phrases(words);
       const font = await webFont('Pinyon Script', 'serif');
@@ -258,7 +261,7 @@ export const TEMPLATES: Template[] = [
     words: 'EVERYTHING WORKS IN MY FAVOR BECAUSE I WORK FOR EVERYTHING',
     wordsHint: 'One word lands on each beat.',
     hint: 'A few clips and a song.',
-    sample: [['gradients', 2], ['testsrc2', 2], ['gradients', 2]],
+    sample: [['sunset', 2], ['nightdrive', 2], ['citylights', 2]],
     build: async (media, words) => {
       const cut = await toTheBeat(media);
       const beats = cut ? beatPoints(beatInfo.beats, 1) : null;
@@ -274,7 +277,7 @@ export const TEMPLATES: Template[] = [
     music: true,
     look: true,
     hint: 'Photos, screenshots and short clips. With a song, the cards land on its beat.',
-    sample: [['testsrc2', 4], ['mandelbrot', 4], ['gradients', 4]],
+    sample: [['citylights', 4], ['figure', 4], ['sunset', 4]],
     build: async (media) => {
       const beats = await musicBeats(media);
       const all = spans();
@@ -336,7 +339,7 @@ export const TEMPLATES: Template[] = [
     words: "What's on the star?\nALL IN MOTION\nlive tonight",
     wordsHint: 'One line for each clip.',
     hint: 'Portraits, fashion, stage or product shots.',
-    sample: [['testsrc2', 3], ['mandelbrot', 3]],
+    sample: [['nightdrive', 3], ['sunset', 3]],
     build: async (_media, words) => {
       const lines = phrases(words);
       const cv = { bg: 'color' as const, color: '#eeede8', inset: 0.12, shift: 0.05, radius: 0, shadow: 0.15 };
@@ -369,7 +372,7 @@ export const TEMPLATES: Template[] = [
     words: 'everything feels connected\nhope!!\nfind a way back home\nwhere is the void?\nwhy did you stop?\ncall now!!',
     wordsHint: 'Short notes: one for each thing that is marked.',
     hint: 'Footage with things in it: a street, a room, a sky with the moon. Things that move are followed.',
-    sample: [['testsrc2', 4]],
+    sample: [['bars', 4]],
     build: async (media, words) => {
       const notes = phrases(words);
       const beats = await musicBeats(media);
@@ -415,16 +418,23 @@ export const TEMPLATES: Template[] = [
   {
     id: 'scrapbook',
     name: 'Scrapbook',
-    description: 'Your clips as a paper card on cream, a title stamped across on the beat, film grain.',
+    description: 'Your clips as a paper card on cream with a handwritten caption above, soft dissolves, film grain.',
     thumb: 'scrapbook',
     aspect: '9:16',
     clips: [1, 8],
     hint: 'Holiday clips, pets, friends.',
-    sample: [['gradients', 3], ['testsrc2', 3]],
-    build: () => {
+    words: 'summer, finally',
+    wordsHint: 'The caption above the card.',
+    sample: [['sunset', 3], ['citylights', 3]],
+    build: async (_media, words) => {
+      const font = await webFont('Caveat', 'serif');
       canvas('card');
+      // the card a little lower, so the caption has the cream above it to itself
+      store.edit((p) => (p.canvas = { ...p.canvas!, inset: 0.07, shift: 0.07 }));
       onCuts('dissolve', 0.3);
-      store.edit((p) => p.layers.push(styled('story', 'summer', 0.3, 3, { x: 0.25, y: 0.12, trail: { every: 0.4, count: 4, dx: 0.13, dy: 0.02 } })));
+      const end = layoutVideo(store.project).at(-1)?.end ?? 3;
+      const caption = words.split('\n').map((l) => l.trim()).find(Boolean) ?? 'summer';
+      store.edit((p) => p.layers.push(styled('story', caption, 0.2, Math.max(1, end - 0.2), { font, size: 0.07, color: '#2b2118', x: 0.5, y: 0.056 })));
       preset('eightmm');
     },
   },
@@ -435,7 +445,7 @@ export const TEMPLATES: Template[] = [
     thumb: 'productdemo',
     clips: [1, 4],
     hint: 'A screen recording or app footage.',
-    sample: [['testsrc2', 4]],
+    sample: [['bars', 4]],
     build: () => {
       canvas('browser');
       store.edit((p) => p.layers.push(styled('poster', 'Meet the new thing', 0.2, 2.5, { y: 0.07, size: 0.06 })));
@@ -452,7 +462,7 @@ export const TEMPLATES: Template[] = [
     thumb: 'cinematic',
     clips: [2, 10],
     hint: 'Nature, travel, slow movement.',
-    sample: [['gradients', 3], ['mandelbrot', 3]],
+    sample: [['sunset', 3], ['nightdrive', 3]],
     build: () => {
       onCuts('whipleft', 0.3);
       preset('cinefilm');
@@ -466,7 +476,7 @@ export const TEMPLATES: Template[] = [
     aspect: '9:16',
     clips: [1, 8],
     hint: 'Concert clips, night drives, home videos.',
-    sample: [['gradients', 3], ['testsrc2', 3]],
+    sample: [['citylights', 3], ['nightdrive', 3]],
     build: () => {
       preset('eightmm');
       store.edit((p) => p.layers.push(styled('bleed', 'I CANT FEEL MY FACE', 0.3, 3)));
@@ -480,7 +490,7 @@ export const TEMPLATES: Template[] = [
     aspect: '9:16',
     clips: [2, 2],
     hint: 'Two clips to compare or pair.',
-    sample: [['testsrc2', 3], ['mandelbrot', 3]],
+    sample: [['nightdrive', 3], ['figure', 3]],
     build: () => {
       // the second clip goes on a track above, at the same time as the first
       const [, second] = mainClips();
@@ -503,7 +513,7 @@ export const TEMPLATES: Template[] = [
     thumb: 'melt',
     clips: [2, 8],
     hint: 'Two or more clips with plenty of movement.',
-    sample: [['testsrc2', 3], ['mandelbrot', 3], ['gradients', 3]],
+    sample: [['nightdrive', 3], ['figure', 3], ['sunset', 3]],
     build: () => onCuts('melt', 1),
   },
   {
@@ -514,7 +524,7 @@ export const TEMPLATES: Template[] = [
     clips: [2, 12],
     music: true,
     hint: 'A few clips, and a song with a clear beat to cut them to.',
-    sample: [['mandelbrot', 4], ['gradients', 4], ['life', 4]],
+    sample: [['citylights', 4], ['sunset', 4], ['nightdrive', 4]],
     build: async (media) => {
       if (!(await toTheBeat(media))) store.toast('Add a song to cut this to the beat (Audio tab → Auto-edit to the beat).', 'info', 6000);
     },
@@ -527,7 +537,7 @@ export const TEMPLATES: Template[] = [
     aspect: '9:16',
     clips: [1, 6],
     hint: 'Short clips. Vertical footage fits best.',
-    sample: [['gradients', 2], ['mandelbrot', 2]],
+    sample: [['sunset', 2], ['citylights', 2]],
     build: () => {
       trimTo(2.5);
       onCuts('liquid', 0.8);
@@ -541,7 +551,7 @@ export const TEMPLATES: Template[] = [
     thumb: 'bloom',
     clips: [1, 4],
     hint: 'One or two clips with strong, one-direction movement.',
-    sample: [['mandelbrot', 5]],
+    sample: [['nightdrive', 5]],
     build: () => {
       onCuts('bloom', 1.2);
       preset('bloom');
@@ -551,10 +561,10 @@ export const TEMPLATES: Template[] = [
     id: 'glitchintro',
     name: 'Glitch intro',
     description: 'A title that melts into your footage, with hard glitch cuts after it.',
-    thumb: 'glitch',
+    thumb: 'glitchintro',
     clips: [1, 6],
     hint: 'Any clips. Change the title text after.',
-    sample: [['testsrc2', 3], ['cellauto', 3]],
+    sample: [['citylights', 3], ['nightdrive', 3]],
     build: () => {
       title('YOUR TITLE', 0, 2.5, true);
       onCuts('glitch', 0.6);
@@ -568,7 +578,7 @@ export const TEMPLATES: Template[] = [
     thumb: 'swap',
     clips: [2, 2],
     hint: 'Two clips: a still-ish one, then one with lots of movement.',
-    sample: [['testsrc2', 3], ['mandelbrot', 4]],
+    sample: [['nightdrive', 3], ['figure', 4]],
     build: () => preset('transfer'),
   },
   {
@@ -578,7 +588,7 @@ export const TEMPLATES: Template[] = [
     thumb: 'vhs',
     clips: [1, 8],
     hint: 'Home videos and old phone clips look great.',
-    sample: [['gradients', 4], ['testsrc2', 3]],
+    sample: [['sunset', 4], ['nightdrive', 3]],
     build: () => {
       onCuts('ghost', 0.8);
       preset('vhs');
@@ -591,7 +601,7 @@ export const TEMPLATES: Template[] = [
     thumb: 'vortex',
     clips: [1, 3],
     hint: 'Any footage; it brings its own motion.',
-    sample: [['testsrc2', 4]],
+    sample: [['citylights', 4]],
     build: () => preset('vortex'),
   },
 ];
@@ -604,7 +614,7 @@ export const EXAMPLES: Starter[] = [
     name: 'Test pattern melt',
     description: 'Colour bars melt into a Mandelbrot zoom, then bloom into the next shot.',
     thumb: 'melt',
-    sample: [['testsrc2', 3], ['mandelbrot', 4], ['gradients', 3]],
+    sample: [['bars', 3], ['mandelbrot', 4], ['gradients', 3]],
     build: () => {
       store.edit((p) => {
         const v = p.clips.filter((c) => c.track === VIDEO_TRACK);
@@ -619,7 +629,7 @@ export const EXAMPLES: Starter[] = [
     name: 'Vortex',
     description: 'A test pattern pulled into a spinning drain by a motion pack.',
     thumb: 'vortex',
-    sample: [['testsrc2', 5]],
+    sample: [['bars', 5]],
     build: () => preset('vortex'),
   },
   {
@@ -652,10 +662,10 @@ async function sampleFiles(sample: [string, number][], aspect?: Aspect): Promise
   const h = even(w / ar);
   const files: File[] = [];
   for (const [id, seconds] of sample) {
-    const g = GENERATORS.find((x) => x.id === id) ?? GENERATORS[0];
-    store.status.engine = `Generating ${g.name}…`;
+    const name = generatorName(id, GENERATORS);
+    store.status.engine = `Generating ${name}…`;
     try {
-      files.push(new File([await renderGenerator(g.id, seconds, w, h, 24)], `${g.name}.mp4`, { type: 'video/mp4' }));
+      files.push(new File([await renderGenerator(id, seconds, w, h, 24)], `${name}.mp4`, { type: 'video/mp4' }));
     } finally {
       store.status.engine = '';
     }
@@ -665,7 +675,8 @@ async function sampleFiles(sample: [string, number][], aspect?: Aspect): Promise
 
 /** A fresh project from a starter: your files (or its sample footage), then its edit. */
 async function run(s: Starter, files: File[] | null, words = '') {
-  await startProject({ ...newProject(), name: s.name, encoder: { ...newProject().encoder, ...(s.aspect ? { aspect: s.aspect } : {}) } });
+  const enc = newProject().encoder;
+  await startProject({ ...newProject(), name: s.name, encoder: { ...enc, ...(s.aspect ? { aspect: s.aspect, width: widthForShape(enc.width, 16 / 9, aspectRatio(s.aspect)) } : {}) } });
   const media = await addFiles(files?.length ? files : await sampleFiles(s.sample, s.aspect), 'none', undefined, { recipes: false });
   if (!media.length) return;
   // pictures on the main track in the order given, sound on the music track
@@ -722,7 +733,12 @@ export async function useTemplate(t: Template, files: File[] | null, words = '')
 export async function applyLook(t: Template, words = '') {
   if (!mainClips().length) throw new Error('Add some clips to the timeline first: the look is made from them.');
   await store.group(async () => {
-    if (t.aspect && store.project.encoder.aspect !== t.aspect) store.edit((p) => (p.encoder.aspect = t.aspect!));
+    if (t.aspect && store.project.encoder.aspect !== t.aspect)
+      store.edit((p) => {
+        const from = outputSize(p, p.encoder.width);
+        p.encoder.aspect = t.aspect!;
+        p.encoder.width = widthForShape(p.encoder.width, from.w / from.h, aspectRatio(t.aspect!));
+      });
     // the media on the timeline (not everything ever imported): a beat cut is made from these
     const used = store.project.media.filter((m) => store.project.clips.some((c) => c.mediaId === m.id));
     await t.build($state.snapshot(used) as MediaItem[], words || t.words || '');
@@ -739,13 +755,13 @@ export async function openExample(e: Starter) {
 /** A recipe from a link (the gallery): on sample footage in a new project, ready for your own clips. */
 export async function openRecipe(code: string) {
   const { applyShareCode } = await import('./projectio.svelte');
-  await run({ id: 'recipe', name: 'Shared recipe', description: '', thumb: '', sample: [['testsrc2', 3], ['mandelbrot', 4]], build: () => applyShareCode(code) }, null);
+  await run({ id: 'recipe', name: 'Shared recipe', description: '', thumb: '', sample: [['bars', 3], ['mandelbrot', 4]], build: () => applyShareCode(code) }, null);
   store.toast('The recipe is on sample footage. Drop your own clips in and it follows them.', 'ok', 7000);
 }
 
 /** A recipe file opened from the home screen: the same, under its own name. */
 export async function openRecipeData(data: Recipe, name = 'Recipe') {
-  await run({ id: 'recipe', name, description: '', thumb: '', sample: [['testsrc2', 3], ['mandelbrot', 4]], build: () => store.set(applyRecipe(store.project, data, store.totalFrames)) }, null);
+  await run({ id: 'recipe', name, description: '', thumb: '', sample: [['bars', 3], ['mandelbrot', 4]], build: () => store.set(applyRecipe(store.project, data, store.totalFrames)) }, null);
   store.toast('The recipe is on sample footage. Drop your own clips in and it follows them.', 'ok', 7000);
 }
 

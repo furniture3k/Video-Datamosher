@@ -107,7 +107,18 @@
 <div class="label">Letters</div>
 <Field label="Letter spacing" min={-0.1} max={1} step={0.01} value={title.spacing ?? 0} help="Space between letters, as a share of the letter size." onchange={(v: number) => set('spacing', v)} />
 <Field label="Line spacing" unit="×" min={0.6} max={3} step={0.05} value={title.lineHeight ?? 1.2} help="Space between lines, as a multiple of the letter size." onchange={(v: number) => set('lineHeight', v === 1.2 ? undefined : v)} />
-<Field type="bool" label="Fit to the frame width" value={title.fit === 'width'} help="As big as fits across the frame, whatever the words (Size is then ignored)." onchange={(v: boolean) => set('fit', v ? 'width' : undefined)} />
+<Field
+  type="select"
+  label="Width"
+  value={title.fit ?? ''}
+  options={[
+    { value: '', label: 'Keep inside the frame' },
+    { value: 'width', label: 'Fit to the frame width' },
+    { value: 'none', label: 'Let it run off the edges' },
+  ]}
+  help="Keep inside: its Size, but smaller when a line would run off the sides (a tall 9:16 frame is narrow). Fit: as big as fits across the frame, whatever the words (Size is then ignored). Run off: its Size, cut off by the edges."
+  onchange={(v: string) => set('fit', (v || undefined) as never)}
+/>
 
 <Field label="Curve" min={-1} max={1} step={0.01} value={title.curve ?? 0} help="Bends the line into an arc: up into an arch (+) or down into a smile (−). The letters follow it, turned to suit." onchange={(v: number) => set('curve', v)} />
 
