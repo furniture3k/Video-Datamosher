@@ -80,7 +80,8 @@
     if (!(await ask(`Delete ${fmt(unusedBytes)} of media nothing uses? Undo won't be able to bring back clips that used it.`, 'Delete'))) return;
     busy = true;
     try {
-      await pruneFiles(await store.keepFiles());
+      const since = Date.now();
+      await pruneFiles(await store.keepFiles(), since);
       store.toast('Cleaned up.', 'ok');
       await refresh();
     } catch (e) {

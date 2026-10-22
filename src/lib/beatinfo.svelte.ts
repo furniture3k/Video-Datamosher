@@ -6,6 +6,7 @@ import { audioFeatures } from './renderer';
 import { audioKey } from '../engine/audiofx';
 import type { AudioFeatures } from '../engine/beats';
 import { subdivide } from '../engine/beattime';
+import { audioSources } from '../engine/timeline';
 import type { Project } from '../engine/types';
 
 export const beatInfo = $state({
@@ -62,6 +63,22 @@ export async function refreshBeats(): Promise<AudioFeatures | null> {
 }
 
 export const lastBeats = () => latest;
+
+/** Why there's no beat to use, for a message. */
+export const noBeatText = () => (audioSources(store.project).length ? 'No steady beat found in the music.' : 'No beat found yet: put music on an audio track first.');
+
+/**
+ * The beats are known (true), analysing the music first if that hasn't happened yet: the beat grid
+ * and beat effects keep them up to date as the music is edited, but a beat command can come first.
+ * False when there's no beat (or no sound at all, which is answered straight away).
+ */
+export async function ensureBeats(): Promise<boolean> {
+  if (beatInfo.status === 'ready' && beatInfo.beats.length) return true;
+  if (!audioSources(store.project).length) return false;
+  store.toast('Listening for the beat…', 'info', 2500);
+  await refreshBeats();
+  return beatInfo.status === 'ready' && beatInfo.beats.length > 0;
+}
 
 export function setBeatGrid(on: boolean) {
   beatInfo.grid = on;

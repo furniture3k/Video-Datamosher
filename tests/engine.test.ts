@@ -100,4 +100,12 @@ describe('probe', () => {
     expect(parseProbe(base + '      rotate          : 90\n')).toMatchObject({ width: 1080, height: 1920 });
     expect(parseProbe(base + '      displaymatrix: rotation of 180.00 degrees\n')).toMatchObject({ width: 1920, height: 1080 });
   });
+  it('takes a song with cover art for sound, not video', () => {
+    const song = 'Duration: 00:03:12.05, start: 0.025056, bitrate: 219 kb/s\n  Stream #0:0: Audio: mp3, 44100 Hz, stereo, fltp, 192 kb/s\n  Stream #0:1: Video: mjpeg (Baseline), yuvj420p(pc, bt470bg/unknown/unknown), 500x500 [SAR 1:1 DAR 1:1], 90k tbr, 90k tbn (attached pic)\n';
+    expect(parseProbe(song)).toMatchObject({ hasAudio: true, hasVideo: false, width: 0, height: 0 });
+    // a video whose cover comes first: the real picture is the one measured
+    const video = 'Duration: 00:00:10.00, start: 0\n  Stream #0:0: Video: png, rgb24(pc), 300x300, 90k tbr, 90k tbn (attached pic)\n  Stream #0:1: Video: h264 (High), yuv420p(tv, bt709), 1280x720, 25 fps, 25 tbr\n  Stream #0:2: Audio: aac\n';
+    expect(parseProbe(video)).toMatchObject({ hasVideo: true, width: 1280, height: 720, fps: 25 });
+    expect(parseProbe(video).color?.matrix).toBe('bt709');
+  });
 });

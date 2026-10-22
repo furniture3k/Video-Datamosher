@@ -92,6 +92,8 @@ self.addEventListener('fetch', (e) => {
           const net = fetch(req)
             .then((r) => (r.ok && c.put(req, r.clone()), r))
             .catch(() => hit);
+          // the copy is refreshed after answering from the cache: keep the worker alive for that
+          if (hit) e.waitUntil(net);
           return hit || net;
         }),
       ),

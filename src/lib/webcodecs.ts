@@ -2,10 +2,21 @@
 // file format. Much faster than encoding in ffmpeg.wasm, which has no access to the GPU and (in
 // most browsers) runs on one thread. Used for MP4 / WebM exports and for preview copies; anything
 // it can't do falls back to ffmpeg.
-import { Output, Mp4OutputFormat, WebMOutputFormat, BufferTarget, VideoSampleSource, VideoSample, QUALITY_MEDIUM, Input, BlobSource, ALL_FORMATS, Conversion, canEncodeVideo, type VideoCodec } from 'mediabunny';
+import type { Output, BufferTarget, VideoSampleSource, VideoCodec } from 'mediabunny';
 import { isDesktop } from './platform';
 import { even } from '../engine/args';
 import { centreAt, type ReframePath } from '../engine/reframe';
+
+/**
+ * mediabunny, loaded the first time it's needed: it's a big library that only hardware exports and
+ * preview copies use, so the editor starts without it.
+ */
+let lib: Promise<typeof import('mediabunny')> | null = null;
+function mediabunny() {
+  lib ??= import('mediabunny');
+  lib.catch(() => (lib = null));
+  return lib;
+}
 
 /** The browser has WebCodecs (the desktop app has a native FFmpeg instead, which is faster still). */
 export const hasWebCodecs = () => !isDesktop && typeof VideoEncoder === 'function' && typeof VideoFrame === 'function';
@@ -16,6 +27,13 @@ const CODECS: Record<'mp4' | 'webm', VideoCodec[]> = { mp4: ['avc'], webm: ['vp9
 /** A codec the browser can encode this size with, or null (then ffmpeg does it). */
 export async function hardwareCodec(format: string, w: number, h: number): Promise<VideoCodec | null> {
   if (!hasWebCodecs() || (format !== 'mp4' && format !== 'webm')) return null;
+  let canEncodeVideo: typeof import('mediabunny').canEncodeVideo;
+  try {
+    ({ canEncodeVideo } = await mediabunny());
+  } catch {
+    // (offline, and it was never downloaded): ffmpeg encodes
+    return null;
+  }
   for (const c of CODECS[format]) {
     try {
       if (await canEncodeVideo(c, { width: w, height: h, bitrate: 4e6 })) return c;
@@ -69,7 +87,7 @@ export function encodedSize(o: Pick<EncodeOptions, 'srcW' | 'srcH' | 'width' | '
 /**
  * Encodes JPEG frames (as the renderer makes them) into a video-only MP4 / WebM. Add frames in
  * order with `add`, then `finish`. The sound and the recipe are added afterwards by ffmpeg
- * without re-encoding the picture.
+ * without re-encoding the picture. Made with `FrameEncoder.create`.
  */
 export class FrameEncoder {
   private output: Output;
@@ -80,7 +98,15 @@ export class FrameEncoder {
   private n = 0;
   private started: Promise<void>;
 
-  constructor(private o: EncodeOptions) {
+  static async create(o: EncodeOptions): Promise<FrameEncoder> {
+    return new FrameEncoder(o, await mediabunny());
+  }
+
+  private constructor(
+    private o: EncodeOptions,
+    private mb: typeof import('mediabunny'),
+  ) {
+    const { Output, Mp4OutputFormat, WebMOutputFormat, BufferTarget, VideoSampleSource } = mb;
     this.size = encodedSize(o);
     this.output = new Output({ format: o.format === 'mp4' ? new Mp4OutputFormat({ fastStart: 'in-memory' }) : new WebMOutputFormat(), target: new BufferTarget() });
     this.source = new VideoSampleSource({
@@ -123,7 +149,7 @@ export class FrameEncoder {
     } finally {
       bmp.close();
     }
-    const sample = new VideoSample(this.canvas, { timestamp: this.n / this.o.fps, duration: 1 / this.o.fps });
+    const sample = new this.mb.VideoSample(this.canvas, { timestamp: this.n / this.o.fps, duration: 1 / this.o.fps });
     try {
       await this.source.add(sample);
     } finally {
@@ -161,6 +187,8 @@ export async function hardwareProxy(blob: Blob, width: number, fps: number, onPr
   const w = Math.min(960, even(width || 960));
   const codec: VideoCodec | null = (await hardwareCodec('mp4', w, w)) ? 'avc' : (await hardwareCodec('webm', w, w));
   if (!codec) return null;
+  // (hardwareCodec found one, so the library is loaded)
+  const { Output, Mp4OutputFormat, WebMOutputFormat, BufferTarget, QUALITY_MEDIUM, Input, BlobSource, ALL_FORMATS, Conversion } = await mediabunny();
   const mp4 = codec === 'avc';
   const input = new Input({ source: new BlobSource(blob), formats: ALL_FORMATS });
   try {

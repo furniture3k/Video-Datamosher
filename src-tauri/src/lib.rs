@@ -7,9 +7,11 @@ mod opened;
 mod osc;
 
 #[cfg(desktop)]
+use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(desktop)]
 use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
 #[cfg(desktop)]
-use tauri::{Manager, Url, WebviewWindowBuilder};
+use tauri::{Emitter, Manager, Url, WebviewWindowBuilder};
 #[cfg(desktop)]
 use tauri_plugin_opener::OpenerExt;
 
@@ -23,10 +25,42 @@ fn is_app_url(url: &Url) -> bool {
     }
 }
 
+/// The main window is closing: waiting for the page to save (see `close_ready`).
+#[cfg(desktop)]
+static CLOSING: AtomicBool = AtomicBool::new(false);
+
+/// How long a closing window waits for the page to save before it closes anyway (a page that has
+/// hung or crashed can't hold the window open).
+#[cfg(desktop)]
+const SAVE_ON_CLOSE: std::time::Duration = std::time::Duration::from_millis(2500);
+
+/// The page has saved the open project: the window can close now.
+#[cfg(desktop)]
+#[tauri::command]
+fn close_ready(window: tauri::Window) {
+    let _ = window.destroy();
+}
+
 /// The desktop app: the editor in a native window, with the native FFmpeg.
 #[cfg(desktop)]
 pub fn run() {
     tauri::Builder::default()
+        // closing the window: the page saves the edit its autosave hasn't written yet (the webview
+        // gives it no reliable unload event), then says so with close_ready
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                if CLOSING.swap(true, Ordering::SeqCst) {
+                    return;
+                }
+                let _ = window.emit("save-before-close", ());
+                let w = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(SAVE_ON_CLOSE);
+                    let _ = w.destroy();
+                });
+            }
+        })
         // opening a file with moshpit while it runs hands the file to the open window
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| opened::deliver(app, opened::from_args(args.into_iter().skip(1)))))
         .plugin(tauri_plugin_dialog::init())
@@ -102,6 +136,7 @@ pub fn run() {
             engine::reveal,
             opened::opened_files,
             opened::read_opened_file,
+            close_ready,
             osc::osc_listen,
             mobile::save_download,
         ])

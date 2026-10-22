@@ -32,6 +32,14 @@ const blobToDataUrl = (url: string) =>
 
 const AUDIO_EXT = /^(mp3|wav|m4a|aac|ogg|oga|opus|flac|aif|aiff|wma)$/;
 
+/** Media types by extension, for files that arrive without one (the desktop app's "Open with"). */
+const MIME: Record<string, string> = {
+  jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', avif: 'image/avif', tif: 'image/tiff', tiff: 'image/tiff',
+  mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm', mkv: 'video/x-matroska', avi: 'video/x-msvideo',
+  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/opus', flac: 'audio/flac', aif: 'audio/aiff', aiff: 'audio/aiff',
+};
+export const mimeOf = (name: string) => MIME[(name.split('.').pop() ?? '').toLowerCase()] ?? '';
+
 /** Where dropped media should land. */
 export type Place = { track: 'v1'; index: number } | { track: string; start: number } | 'auto' | 'none';
 
@@ -42,7 +50,8 @@ export type Place = { track: 'v1'; index: number } | { track: string; start: num
  */
 export async function readMedia(file: File, knownDuration?: number): Promise<{ m: MediaItem; recipe: string | null } | null> {
   const ext = (file.name.split('.').pop() || 'mp4').toLowerCase().replace(/[^a-z0-9]/g, '') || 'mp4';
-  const isImage = file.type.startsWith('image/') && !/gif$/i.test(file.type) && !/gif$/.test(ext);
+  const type = file.type || mimeOf(file.name);
+  const isImage = type.startsWith('image/') && !/gif$/i.test(type) && !/gif$/.test(ext);
   const { info, thumb } = await probeFile(file, ext);
   if (!info.hasVideo && !info.hasAudio) return null;
   const id = uid();
@@ -52,7 +61,7 @@ export async function readMedia(file: File, knownDuration?: number): Promise<{ m
   if (!isFinite(duration) || duration <= 0) duration = knownDuration || 5;
   const m: MediaItem = {
     id,
-    source: { kind: 'file', fileId: id, name: file.name, mime: file.type, isImage, ext },
+    source: { kind: 'file', fileId: id, name: file.name, mime: type, isImage, ext },
     duration,
     width: info.width,
     height: info.height,
@@ -189,12 +198,19 @@ export { nearestCut, videoEnd };
 
 // ---------------------------------------------------------------- background preparation
 
-let chain: Promise<unknown> = Promise.resolve();
-const queue = <T>(job: () => Promise<T>): Promise<T> => {
-  const p = chain.then(job, job);
-  chain = p.catch(() => {});
-  return p;
-};
+/** One job at a time on a queue of its own. */
+function serial() {
+  let chain: Promise<unknown> = Promise.resolve();
+  return <T>(job: () => Promise<T>): Promise<T> => {
+    const p = chain.then(job, job);
+    chain = p.catch(() => {});
+    return p;
+  };
+}
+/** preview copies (slow: minutes for a long clip) */
+const queue = serial();
+/** decoded sound, for the edit preview and waveforms: not held up behind the preview copies */
+const soundQueue = serial();
 
 const pcm = new Map<string, Promise<Int16Array | null>>();
 
@@ -268,7 +284,7 @@ export async function prepareMedia(m: MediaItem) {
 export function getPcm(m: MediaItem): Promise<Int16Array | null> {
   let p = pcm.get(m.id);
   if (p) return p;
-  p = queue(async () => {
+  p = soundQueue(async () => {
     if (m.source.kind !== 'file' || !m.hasAudio) return null;
     const blob = await getFile(m.source.fileId);
     if (!blob) return null;

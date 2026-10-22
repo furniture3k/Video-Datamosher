@@ -24,7 +24,7 @@
   }
   import { onDestroy } from 'svelte';
   import { isDesktop, isAndroidApp } from '../lib/platform';
-  import { blobToDisk, saveFromDisk, revealFile } from '../lib/ffmpeg-native';
+  import { blobToDisk, saveFromDisk, revealFile, removeEngineFile } from '../lib/ffmpeg-native';
   import { defaultExport, moshWidthFor, outputSize, even, type ExportOptions } from '../engine/args';
   import type { Project } from '../engine/types';
   import { audioSources } from '../engine/timeline';
@@ -119,6 +119,8 @@
     running = true;
     error = '';
     if (result?.url) URL.revokeObjectURL(result.url);
+    // desktop: the last export, never saved, is let go (it can be a few gigabytes)
+    if (result?.file) await removeEngineFile(result.file);
     result = null;
     const my = (signal = { cancelled: false });
     const done = busy('export');
@@ -169,6 +171,8 @@
     // closed mid-export (also by the editor's Escape, which skips onclose): stop it
     if (running) cancel();
     if (result?.url) URL.revokeObjectURL(result.url);
+    // desktop: an export that was never saved can't be reached once the dialog is gone
+    if (result?.file) removeEngineFile(result.file);
   });
   const mb = (n: number) => (n / 1048576).toFixed(n > 1e7 ? 0 : 1) + ' MB';
 </script>

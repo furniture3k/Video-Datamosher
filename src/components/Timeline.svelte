@@ -219,7 +219,7 @@ import { formatSeconds } from '../engine/eta';
     if (c && (store.ui.tool === 'trim' || e.altKey) && e.pointerType !== 'touch') {
       // slip: same place and length, other footage
       store.selectClip(id);
-      drag = { k: 'slip', id, x0: e.clientX, orig: clone(c), before: clone($state.snapshot(store.project)) as Project };
+      drag = { k: 'slip', id, x0: e.clientX, orig: clone(c), before: $state.snapshot(store.project) as Project };
       return;
     }
     const ev = { clientX: e.clientX, clientY: e.clientY, shiftKey: false } as PointerEvent;
@@ -237,7 +237,7 @@ import { formatSeconds } from '../engine/eta';
   function startMove(e: PointerEvent, id: string, kind: 'v' | 'a' | 't') {
     const orig = kind === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
     const start = kind === 'v' ? (placed.find((p) => p.clip.id === id)?.start ?? 0) : (orig as { start: number }).start;
-    drag = { k: 'move', id, kind, x0: e.clientX, dx: 0, moved: false, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, grab: laneT(e) - start, targets: snapTargets(id) };
+    drag = { k: 'move', id, kind, x0: e.clientX, dx: 0, moved: false, orig: clone(orig), before: $state.snapshot(store.project) as Project, grab: laneT(e) - start, targets: snapTargets(id) };
   }
 
   /** Blade tool: cut the clip where it was clicked. */
@@ -264,13 +264,13 @@ import { formatSeconds } from '../engine/eta';
       const l = edge === 'r' ? placed[i] : placed[i - 1];
       const r = edge === 'r' ? placed[i + 1] : placed[i];
       if (l && r && r.overlap <= 0) {
-        drag = { k: 'roll', left: l.clip.id, right: r.clip.id, x0: e.clientX, origL: clone(l.clip), origR: clone(r.clip), before: clone($state.snapshot(store.project)) as Project, targets: snapTargets(null).filter((x) => Math.abs(x - r.start) > 1e-3), cut: r.start };
+        drag = { k: 'roll', left: l.clip.id, right: r.clip.id, x0: e.clientX, origL: clone(l.clip), origR: clone(r.clip), before: $state.snapshot(store.project) as Project, targets: snapTargets(null).filter((x) => Math.abs(x - r.start) > 1e-3), cut: r.start };
         return;
       }
     }
     store.selectClip(id);
     const orig = kind === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
-    drag = { k: 'trim', id, kind, edge, x0: e.clientX, orig: clone(orig), before: clone($state.snapshot(store.project)) as Project, targets: snapTargets(id) };
+    drag = { k: 'trim', id, kind, edge, x0: e.clientX, orig: clone(orig), before: $state.snapshot(store.project) as Project, targets: snapTargets(id) };
   }
 
   function fadeDown(e: PointerEvent, c: Clip, edge: 'in' | 'out') {
@@ -323,7 +323,7 @@ import { formatSeconds } from '../engine/eta';
     e.stopPropagation();
     store.selectTransition(clipId);
     const c = store.project.clips.find((x) => x.id === clipId);
-    if (c?.transition) drag = { k: 'trans', id: clipId, x0: e.clientX, d0: c.transition.duration, before: clone($state.snapshot(store.project)) as Project };
+    if (c?.transition) drag = { k: 'trans', id: clipId, x0: e.clientX, d0: c.transition.duration, before: $state.snapshot(store.project) as Project };
   }
 
   function snapFrame(f: number, ev: PointerEvent, id: string) {
@@ -647,7 +647,16 @@ import { formatSeconds } from '../engine/eta';
   const menuClip = $derived(menu && menu.kind !== 't' ? store.project.clips.find((c) => c.id === menu!.id) : undefined);
 
   // ---------------------------------------------------------------- canvases
-  const css = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  /** The theme's colours by name, read once per drawing (reading styles for every frame is slow on long timelines). */
+  function palette(): (v: string) => string {
+    const style = getComputedStyle(document.documentElement);
+    const seen = new Map<string, string>();
+    return (v) => {
+      let c = seen.get(v);
+      if (c === undefined) seen.set(v, (c = style.getPropertyValue(v).trim()));
+      return c;
+    };
+  }
   $effect(() => {
     const r = store.render;
     const w = W;
@@ -660,6 +669,7 @@ import { formatSeconds } from '../engine/eta';
     keyCanvas.width = Math.ceil(Math.min(w, 16000) * dpr);
     keyCanvas.height = 14 * dpr;
     const ctx = keyCanvas.getContext('2d')!;
+    const css = palette();
     ctx.scale((dpr * Math.min(w, 16000)) / w, dpr);
     ctx.clearRect(0, 0, w, 14);
     if (r && fresh)
@@ -692,6 +702,7 @@ import { formatSeconds } from '../engine/eta';
     resultCanvas.width = Math.ceil(cw * dpr);
     resultCanvas.height = 22 * dpr;
     const ctx = resultCanvas.getContext('2d')!;
+    const css = palette();
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, cw, 22);
     if (!r) return;

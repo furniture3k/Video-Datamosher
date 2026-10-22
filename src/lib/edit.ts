@@ -348,6 +348,12 @@ export function paste() {
         insertVideo(p, d, at++);
       } else {
         d.start = t + (c.start - t0);
+        // its track was removed since it was copied: made again
+        if (!p.tracks.some((x) => x.id === d.track)) {
+          const n = parseInt(d.track.slice(1), 10) || 1;
+          const video = isVideoTrack(d.track);
+          p.tracks.push({ id: d.track, kind: video ? 'video' : 'audio', name: `${video ? 'Video' : 'Audio'} ${n}`, muted: false, solo: false, volume: 1, mosh: video });
+        }
         p.clips.push(d);
       }
       created.push(d.id);
@@ -620,6 +626,8 @@ export function arrangeGrid(layoutId: string, gap = 0) {
 /** Add a text title at the playhead. */
 export function addText() {
   const tx = newText(store.ui.time);
+  // on a free graphics row, not over a title that's already on screen then
+  tx.row = freeRow(store.project.layers, tx.start, tx.start + tx.duration);
   store.edit((p) => p.layers.push(tx));
   store.selectClip(tx.id);
 }

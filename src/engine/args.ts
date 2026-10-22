@@ -951,8 +951,10 @@ export function loopPassArgs(o: ExportOptions, input: string, frames: number, ov
 export function parseProbe(log: string): { duration: number; width: number; height: number; fps: number; hasAudio: boolean; hasVideo: boolean; recipe: string | null; color?: MediaColour } {
   const dur = /Duration: (\d+):(\d+):([\d.]+)/.exec(log);
   const duration = dur ? +dur[1] * 3600 + +dur[2] * 60 + +dur[3] : 0;
-  const vid = /Stream #.*Video: .*?(\d{2,5})x(\d{2,5})/.exec(log);
-  const fpsM = /Stream #.*Video: .*?([\d.]+) (?:fps|tbr)/.exec(log);
+  // the picture: the first video stream that isn't cover art (a song's "attached pic")
+  const vline = log.split('\n').find((l) => /Stream #.*Video:/.test(l) && !/\(attached pic\)/.test(l)) ?? '';
+  const vid = /Video: .*?(\d{2,5})x(\d{2,5})/.exec(vline);
+  const fpsM = /Video: .*?([\d.]+) (?:fps|tbr)/.exec(vline);
   // phones store upright video as landscape + a rotation flag; ffmpeg rotates it when decoding
   const rot = /displaymatrix: rotation of (-?[\d.]+)/.exec(log) ?? /\brotate\s*:\s*(-?\d+)/.exec(log);
   const quarter = rot ? Math.round(Math.abs(+rot[1]) / 90) % 2 === 1 : false;
@@ -966,7 +968,7 @@ export function parseProbe(log: string): { duration: number; width: number; heig
     hasAudio: /Stream #.*Audio:/.test(log),
     hasVideo: !!vid,
     recipe: findRecipe(log),
-    color: vid ? parseColour(log) : undefined,
+    color: vid ? parseColour(vline) : undefined,
   };
 }
 

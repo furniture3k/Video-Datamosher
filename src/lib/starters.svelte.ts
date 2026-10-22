@@ -85,7 +85,7 @@ function preset(id: string) {
 }
 
 function title(text: string, start = 0, duration = 2.5, moshed = true) {
-  store.edit((p) => p.layers.push({ ...newText(start), text, duration, moshed, size: 0.14 }));
+  store.edit((p) => p.layers.push({ ...newText(start), text, duration, moshed, size: 0.14, row: freeRow(p.layers, start, start + duration) }));
 }
 
 /** Clips cut to the beat of the song, with melts on the bars; plain melts when there's no beat. */

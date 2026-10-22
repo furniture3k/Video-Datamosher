@@ -5,7 +5,7 @@
   import Field from './Field.svelte';
   import type { Layer } from '../engine/layers';
   import { burstTimes, type Particles } from '../engine/particles';
-  import { beatInfo } from '../lib/beatinfo.svelte';
+  import { beatInfo, ensureBeats, noBeatText } from '../lib/beatinfo.svelte';
 
   let { layer }: { layer: Layer } = $props();
   const pt = $derived(layer.particles);
@@ -24,9 +24,9 @@
   }
 
   /** burst on every beat the layer is on screen for, or back to once */
-  function onBeats(on: boolean) {
+  async function onBeats(on: boolean) {
     if (!on) return set({ at: undefined });
-    if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+    if (!(await ensureBeats())) return store.toast(noBeatText(), 'info');
     set({ at: burstTimes(beatInfo.beats, layer.start, layer.duration) });
   }
 </script>
