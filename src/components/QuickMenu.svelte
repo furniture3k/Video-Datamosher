@@ -22,17 +22,19 @@
     fn();
     onclose();
   };
-  const title = run(() => {
+  /** adding and placing are one undo step */
+  const once = (fn: () => void) => run(() => void store.group(fn));
+  const title = once(() => {
     addText();
     place(store.ui.selectedClips[0]);
   });
-  const box = run(() => place(addShape('rect').id));
-  const arrow = run(() => {
+  const box = once(() => place(addShape('rect').id));
+  const arrow = once(() => {
     // pointing down-right at the spot: its tip on the point
     const a = addShape('arrow');
     place(a.id, -a.w / 2, -a.h / 2);
   });
-  const sticker = (e: string) => run(() => place(addEmoji(e).id))();
+  const sticker = (e: string) => once(() => place(addEmoji(e).id))();
   // a callout pointing at this spot
   const callout = run(() => addCallout([u, v]));
   // follow what's there: a box round the point, tracked, then boxed, arrowed and labelled

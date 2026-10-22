@@ -1,6 +1,7 @@
 // Drawing a clip's card and mask: the paper, shadow and caption behind the picture, and the shape the
 // picture shows through. The preview draws them live; for the render the same drawing is made into
 // pictures (a "plate" for the card, grey pictures for the mask) that the filter graph puts on the clip.
+import { encodeFrames } from './encodeframes';
 import { maskGeometry, maskPoints, paperRect, captionHeight, maskAnimated, type ClipCard, type ClipMask, type Rect } from '../engine/cardmask';
 import { fitRect } from '../engine/placement';
 import { clipLen } from '../engine/timeline';
@@ -129,24 +130,25 @@ export async function buildPlates(c: Clip, m: MediaItem, W: number, H: number, f
     const tg = tmp.getContext('2d')!;
     const grey = canvasOf(W, H);
     const gg = grey.getContext('2d')!;
-    const frame = async (local: number) => {
+    const draw = (local: number) => {
       drawPictureShape(sg, c, R, local, W, H, () => tg);
       gg.globalCompositeOperation = 'source-over';
       gg.fillStyle = '#000';
       gg.fillRect(0, 0, W, H);
       gg.drawImage(shape, 0, 0);
-      return toPng(grey);
     };
     if (c.mask && maskAnimated(c.mask)) {
       const n = Math.max(1, Math.ceil(clipLen(c) * fps));
-      const pngs: Blob[] = [];
-      for (let k = 0; k < n; k++) {
+      const pngs = await encodeFrames(grey, n, (k) => {
         if (k % 8 === 0) onFrame?.(k, n);
-        pngs.push(await frame(k / fps));
-      }
+        draw(k / fps);
+      });
       out.mask = new Blob(pngs);
       out.maskFrames = n;
-    } else out.mask = await frame(0);
+    } else {
+      draw(0);
+      out.mask = await toPng(grey);
+    }
   }
   return out;
 }

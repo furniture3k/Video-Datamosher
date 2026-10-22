@@ -117,7 +117,11 @@ function sandbox(): Promise<HTMLIFrameElement> {
 
 /** Run a script on these frames, in the sandbox; resolves with its answer or an error. */
 export async function runScript(code: string, input: ScriptFrame[], ctx: Record<string, unknown>, ms = TIME_LIMIT): Promise<{ plan?: unknown; error?: string }> {
-  const f = await sandbox();
+  // a sandbox that never starts (blocked by the page's settings, say) mustn't hold the render up for good
+  let wait = 0;
+  const f = await Promise.race([sandbox(), new Promise<null>((res) => (wait = window.setTimeout(() => res(null), 10000)))]);
+  clearTimeout(wait);
+  if (!f) return { error: 'the script sandbox did not start' };
   const id = nextId++;
   return new Promise((resolve) => {
     const timer = setTimeout(() => {

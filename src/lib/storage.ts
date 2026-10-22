@@ -112,7 +112,11 @@ async function diskIds(dir: DirHandle): Promise<string[]> {
   return out;
 }
 
+/** When each file was last written in this session (a clean-up must not delete what came after its list was made). */
+const writtenAt = new Map<string, number>();
+
 export async function putFile(id: string, blob: Blob) {
+  writtenAt.set(id, Date.now());
   files.set(id, blob);
   const dir = await opfs();
   if (dir && (await writeDisk(dir, id, blob))) {
@@ -147,17 +151,22 @@ export async function getFile(id: string): Promise<Blob | undefined> {
   }
 }
 
-export async function pruneFiles(keep: string[]) {
+/**
+ * Delete stored files that aren't in `keep`. `since`: when `keep` was worked out; files written
+ * after that (media imported while the list was made or this runs) are new, not unused, and stay.
+ */
+export async function pruneFiles(keep: string[], since = Date.now()) {
   const k = new Set(keep);
+  const unused = (id: string) => !k.has(id) && (writtenAt.get(id) ?? 0) < since;
   try {
     const keys = await tx<IDBValidKey[]>('files', 'readonly', (s) => s.getAllKeys());
-    for (const key of keys) if (!k.has(String(key))) await tx('files', 'readwrite', (s) => s.delete(key));
+    for (const key of keys) if (unused(String(key))) await tx('files', 'readwrite', (s) => s.delete(key));
   } catch {
     /* ignore */
   }
   const dir = await opfs();
-  if (dir) for (const id of await diskIds(dir)) if (!k.has(id)) await dir.removeEntry(diskName(id)).catch(() => {});
-  for (const key of [...files.keys()]) if (!k.has(key)) files.delete(key);
+  if (dir) for (const id of await diskIds(dir)) if (unused(id)) await dir.removeEntry(diskName(id)).catch(() => {});
+  for (const key of [...files.keys()]) if (unused(key)) files.delete(key);
 }
 
 /** Every stored file and its size in bytes. */
@@ -318,10 +327,11 @@ export async function saveAs(blob: Blob, name: string, handle?: SaveHandle | nul
     return null;
   }
   try {
-    const ext = name.includes('.') ? name.slice(name.indexOf('.')) : '';
+    // "my.mosh.json" is a JSON file (named by its last extension)
+    const ext = name.includes('.') ? name.slice(name.lastIndexOf('.')) : '';
     handle ??= await (window as unknown as PickerWindow).showSaveFilePicker!({
       suggestedName: name,
-      types: ext ? [{ description: name.slice(name.indexOf('.') + 1).toUpperCase() + ' file', accept: { [blob.type || 'application/octet-stream']: [ext.slice(ext.lastIndexOf('.'))] } }] : undefined,
+      types: ext ? [{ description: ext.slice(1).toUpperCase() + ' file', accept: { [blob.type || 'application/octet-stream']: [ext] } }] : undefined,
     });
     const w = await handle.createWritable();
     await w.write(blob);

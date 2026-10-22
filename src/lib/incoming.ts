@@ -1,6 +1,6 @@
 // Files arriving from outside the app: dropped on the window, opened with moshpit from the
 // system ("Open with", double-click), shared to it from another app, or passed to the desktop app.
-import { addFiles } from './media';
+import { addFiles, mimeOf } from './media';
 import { loadProjectFile, openRecipeFile } from './projectio.svelte';
 import { store } from './store.svelte';
 import { isDesktop } from './platform';
@@ -62,7 +62,9 @@ export async function listenForIncoming() {
         const r = await cache.match(k);
         if (!r) continue;
         const name = decodeURIComponent(new URL(k.url).searchParams.get('name') || 'shared');
-        files.push(new File([await r.blob()], name, { type: r.headers.get('content-type') || '' }));
+        // (the service worker files a share with no type as application/octet-stream)
+        const ct = r.headers.get('content-type') || '';
+        files.push(new File([await r.blob()], name, { type: ct && ct !== 'application/octet-stream' ? ct : mimeOf(name) }));
         await cache.delete(k);
       }
       if (files.length) openFiles(files);
@@ -82,7 +84,8 @@ export async function listenForIncoming() {
       for (const p of paths) {
         try {
           const bytes = await invoke<ArrayBuffer>('read_opened_file', { path: p });
-          files.push(new File([bytes], p.split(/[\\/]/).pop() || 'file'));
+          const name = p.split(/[\\/]/).pop() || 'file';
+          files.push(new File([bytes], name, { type: mimeOf(name) }));
         } catch (e) {
           store.toast(`Could not open ${p}: ${(e as Error)?.message ?? e}`, 'error');
         }

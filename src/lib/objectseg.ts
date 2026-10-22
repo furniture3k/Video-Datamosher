@@ -57,7 +57,10 @@ export async function openFrame(img: ImageBitmap): Promise<FrameSession> {
       if (p.points.some((q) => q[2] === 0)) return (precise ??= await openSam(img)).mask(p);
       return (quick ??= await openMediaPipe(img)).mask(p);
     },
-    close() {},
+    close() {
+      quick?.close();
+      precise?.close();
+    },
   };
 }
 
@@ -84,6 +87,16 @@ interface SamParts {
   processor: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 }
 let sam: Promise<SamParts> | null = null;
+
+/** Let go of a model's tensors now (on the GPU they'd otherwise stay until the page is closed). */
+function dispose(tensors: unknown) {
+  for (const t of Object.values((tensors ?? {}) as Record<string, { dispose?: () => void } | undefined>))
+    try {
+      t?.dispose?.();
+    } catch {
+      /* already gone */
+    }
+}
 
 function loadSam(): Promise<SamParts> {
   sam ??= (async () => {
@@ -122,10 +135,16 @@ async function openSam(img: Img): Promise<FrameSession> {
         input_labels: new tf.Tensor('int64', BigInt64Array.from(all.map((p) => BigInt(p[2]))), [1, 1, all.length]),
       };
       const out = await model(args);
-      const masks = await processor.post_process_masks(out.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes);
-      // three candidate masks; the model's own score picks one (a lone tap can land on a part:
-      // several taps on the subject say which thing is meant)
-      const scores = Array.from(out.iou_scores.data as ArrayLike<number>);
+      let masks: Tensor[];
+      let scores: number[];
+      try {
+        masks = await processor.post_process_masks(out.pred_masks, inputs.original_sizes, inputs.reshaped_input_sizes);
+        // three candidate masks; the model's own score picks one (a lone tap can land on a part:
+        // several taps on the subject say which thing is meant)
+        scores = Array.from(out.iou_scores.data as ArrayLike<number>);
+      } finally {
+        dispose(out);
+      }
       const m = masks[0] as Tensor;
       const [, , H, W] = m.dims;
       const src = m.data as ArrayLike<number>;
@@ -147,7 +166,9 @@ async function openSam(img: Img): Promise<FrameSession> {
       lastTimings.mask = performance.now() - t1;
       return { w: W, h: H, data };
     },
-    close() {},
+    close() {
+      dispose(embeddings);
+    },
   };
 }
 

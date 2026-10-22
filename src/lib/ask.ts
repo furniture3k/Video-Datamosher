@@ -65,7 +65,8 @@ function show(message: string, value: string | null, okLabel: string, withCancel
     back.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Escape') done(null);
-      else if (e.key === 'Enter') {
+      // (Enter on a focused button presses that button: Cancel stays Cancel)
+      else if (e.key === 'Enter' && e.target !== cancel) {
         e.preventDefault();
         ok.click();
       }

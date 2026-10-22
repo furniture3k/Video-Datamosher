@@ -5,7 +5,7 @@
   // handles to trim, press and hold a clip to move it.
   import { untrack } from 'svelte';
   import { store } from '../lib/store.svelte';
-  import { graphicsRowAt } from '../lib/edit';
+  import { graphicsRowAt, lockedTrack } from '../lib/edit';
   import { EFFECTS } from '../engine/effects';
   import { layoutVideo, clipLen, nearestCut, remapToFootage, trimClip, moveVideo, isOverlayTrack, mediaOf } from '../engine/timeline';
   import { VIDEO_TRACK, CLIP_AUDIO, clipOn, type Clip, type Project } from '../engine/types';
@@ -134,10 +134,11 @@
     const p = { timer: 0, x: e.clientX, y: e.clientY };
     p.timer = window.setTimeout(() => {
       press = null;
-      if (placed.length < 2) return;
+      // (a locked track keeps its order)
+      if (placed.length < 2 || lockedTrack(VIDEO_TRACK)) return;
       haptics.grab();
       store.selectClip(id);
-      drag = { k: 'reorder', id, x: e.clientX, insert: placed.findIndex((q) => q.clip.id === id), before: clone($state.snapshot(store.project)) as Project };
+      drag = { k: 'reorder', id, x: e.clientX, insert: placed.findIndex((q) => q.clip.id === id), before: $state.snapshot(store.project) as Project };
     }, 380);
     press = p;
     const cancel = (ev: PointerEvent) => {
@@ -166,7 +167,9 @@
     e.stopPropagation();
     e.preventDefault();
     const orig = ck === 't' ? store.project.layers.find((t) => t.id === id)! : store.project.clips.find((c) => c.id === id)!;
-    drag = { k: 'trim', id, ck, edge, x0: e.clientX, orig: clone($state.snapshot(orig)) as Clip | Layer, before: clone($state.snapshot(store.project)) as Project };
+    // clips on a locked track can't be changed (as on the desktop timeline)
+    if ('track' in orig && lockedTrack(orig.track)) return;
+    drag = { k: 'trim', id, ck, edge, x0: e.clientX, orig: clone($state.snapshot(orig)) as Clip | Layer, before: $state.snapshot(store.project) as Project };
     haptics.grab();
     listen();
   }
@@ -174,10 +177,11 @@
   /** Audio clips and titles: tap selects; once selected, drag to move. */
   function itemDown(e: PointerEvent, id: string, ck: 'a' | 't') {
     if (e.button !== 0) return;
-    if (!sel.has(id)) return onTap(e, () => store.selectClip(id));
+    const locked = ck === 'a' && lockedTrack(store.project.clips.find((c) => c.id === id)?.track ?? '');
+    if (!sel.has(id) || locked) return onTap(e, () => store.selectClip(id));
     e.stopPropagation();
     const s0 = ck === 't' ? store.project.layers.find((t) => t.id === id)!.start : store.project.clips.find((c) => c.id === id)!.start;
-    drag = { k: 'move', id, ck, x0: e.clientX, s0, before: clone($state.snapshot(store.project)) as Project, moved: false };
+    drag = { k: 'move', id, ck, x0: e.clientX, s0, before: $state.snapshot(store.project) as Project, moved: false };
     listen();
   }
 

@@ -19,6 +19,8 @@
   let loadInput: HTMLInputElement;
   let menuOpen = $state(false);
   const hasClips = $derived(store.project.clips.length > 0 || store.project.layers.length > 0);
+  /** a command's key as this computer writes it (⌘ on a Mac), and as it's set in Keyboard shortcuts */
+  const kbd = (id: string) => keyLabel(keysOf(id)[0] ?? '', isMac);
 </script>
 
 <svelte:window onclick={() => (menuOpen = false)} />
@@ -44,8 +46,8 @@
     </div>
   {/if}
   <div class="sep"></div>
-  <button class="icon ghost" title="Undo  Ctrl+Z" aria-label={t('Undo')} disabled={!store.historySize.undo} onclick={() => store.undo()}><Icon name="undo" /></button>
-  <button class="icon ghost" title="Redo  Ctrl+Shift+Z" aria-label={t('Redo')} disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" /></button>
+  <button class="icon ghost" title="Undo  {kbd('undo')}" aria-label={t('Undo')} disabled={!store.historySize.undo} onclick={() => store.undo()}><Icon name="undo" /></button>
+  <button class="icon ghost" title="Redo  {kbd('redo')}" aria-label={t('Redo')} disabled={!store.historySize.redo} onclick={() => store.redo()}><Icon name="redo" /></button>
   <div class="sep"></div>
 
   <button class="looks" data-tour="looks" onclick={() => (store.ui.dialog = 'looks')} title="Templates: make it look like an edit you've seen (words behind the subject, lyrics on the beat, pop-up collage, red notes…) from the clips you have  Shift+L"><Icon name="sparkle" /><span class="lbl">{t('Templates')}</span></button>
@@ -94,10 +96,10 @@
     <button class="icon ghost" onclick={(e) => (e.stopPropagation(), (menuOpen = !menuOpen))} aria-label={t('More')} title={t('More')}><Icon name="more" /></button>
     {#if menuOpen}
       <div class="menu" role="menu">
-        <button class="ghost" onclick={() => (store.ui.dialog = 'palette')}><Icon name="list" />{t('Find a command…')}<span class="kbd">{keyLabel(keysOf('palette')[0] ?? '', isMac)}</span></button>
+        <button class="ghost" onclick={() => (store.ui.dialog = 'palette')}><Icon name="list" />{t('Find a command…')}<span class="kbd">{kbd('palette')}</span></button>
         <button class="ghost" onclick={() => (store.ui.dialog = 'history')}><Icon name="history" />{t('History…')}</button>
         <hr />
-        <button class="ghost" onclick={() => saveProjectFile()}><Icon name="save" />{t('Save project')}<span class="kbd">Ctrl S</span></button>
+        <button class="ghost" onclick={() => saveProjectFile()}><Icon name="save" />{t('Save project')}<span class="kbd">{kbd('save')}</span></button>
         {#if hasSavePicker()}<button class="ghost" onclick={() => saveProjectFile(true)}><Icon name="save" />{t('Save project as…')}</button>{/if}
         <button class="ghost" onclick={() => loadInput.click()}><Icon name="folder" />{t('Open project…')}</button>
         <button class="ghost" onclick={() => (store.ui.dialog = 'share')}><Icon name="link" />{t('Share code…')}</button>

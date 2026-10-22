@@ -1,7 +1,7 @@
 // Operations on several layers at once: reveal them one per beat.
 import { store } from './store.svelte';
 import { localGet, localSet } from './storage';
-import { beatInfo } from './beatinfo.svelte';
+import { beatInfo, ensureBeats, noBeatText } from './beatinfo.svelte';
 import { beatPoints } from '../engine/wordbeats';
 import { revealOrder, revealPlan, revealPoints } from '../engine/reveal';
 import { popKeys, type Keys, type PopOptions } from '../engine/keys';
@@ -19,13 +19,14 @@ import { timelineDuration } from '../engine/timeline';
  * apart: ¼, ½, 1…), starting at the first beat at or after the earliest of them, each staying up
  * until the last one's end. With no beats, in even steps of half a second.
  */
-export function revealOnBeats(every = 1) {
+export async function revealOnBeats(every = 1) {
   const ids = store.ui.selectedClips.filter((id) => store.project.layers.some((l) => l.id === id));
   if (ids.length < 2) return store.toast('Select two or more titles or shapes first: they come in one per beat.', 'info');
+  const beats = await ensureBeats();
   const layers = store.project.layers;
   const order = revealOrder(layers, ids);
   const from = Math.min(...layers.filter((l) => ids.includes(l.id)).map((l) => l.start));
-  const points = beatInfo.status === 'ready' ? beatPoints(beatInfo.beats, every) : [];
+  const points = beats ? beatPoints(beatInfo.beats, every) : [];
   const plan = revealPlan(layers, order, revealPoints(order.length, points, from, 0.5 * every));
   store.edit((p) => {
     for (const r of plan) {
@@ -36,14 +37,15 @@ export function revealOnBeats(every = 1) {
       }
     }
   });
-  store.toast(beatInfo.status === 'ready' ? `Revealed ${plan.length} layers, one per ${every === 1 ? 'beat' : every + ' beats'}.` : `Revealed ${plan.length} layers half a second apart (no beat found: put music on an audio track to land them on it).`, 'ok', 5000);
+  store.toast(beats ? `Revealed ${plan.length} layers, one per ${every === 1 ? 'beat' : every + ' beats'}.` : `Revealed ${plan.length} layers half a second apart (no beat found: put music on an audio track to land them on it).`, 'ok', 5000);
 }
 
 /** Move an upper-track clip so it starts on the nearest beat. */
-export function startOnBeat(clipId: string) {
+export async function startOnBeat(clipId: string) {
+  if (!store.project.clips.some((x) => x.id === clipId && x.track !== 'v1')) return;
+  if (!(await ensureBeats())) return store.toast(noBeatText(), 'info');
   const c = store.project.clips.find((x) => x.id === clipId);
-  if (!c || c.track === 'v1') return;
-  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+  if (!c) return;
   const at = beatInfo.beats.reduce((b, p) => (Math.abs(p - c.start) < Math.abs(b - c.start) ? p : b), beatInfo.beats[0]);
   store.edit((p) => {
     const x = p.clips.find((y) => y.id === clipId);
@@ -74,7 +76,7 @@ export function setPop(clipId: string, pop: PopOptions | null) {
  * It works for layouts whose cells are all the same size (side by side, stacked, 2 × 2, 3 × 3), where only
  * the position and size need to move.
  */
-export function swapCellsOnBeat(every = 1) {
+export async function swapCellsOnBeat(every = 1) {
   const p = store.project;
   const t = store.ui.time;
   const picture = (c: Clip) => !!mediaOf(p, c.mediaId)?.hasVideo && mediaOf(p, c.mediaId)!.source.kind !== 'adjust';
@@ -85,6 +87,7 @@ export function swapCellsOnBeat(every = 1) {
   if (clips.length < 2) return store.toast('Put two or more clips in a split screen first (Canvas panel › Split screen), then select them.', 'error', 5000);
   const crop = (c: Clip) => JSON.stringify([c.transform?.cropL ?? 0, c.transform?.cropR ?? 0, c.transform?.cropT ?? 0, c.transform?.cropB ?? 0].map((v) => Math.round(v * 1e4)));
   if (new Set(clips.map(crop)).size > 1) return store.toast('Swapping needs cells that are all the same size: side by side, stacked, 2 × 2 or 3 × 3.', 'error', 6000);
+  const beats = await ensureBeats();
   const places = clips.map((c) => {
     const T = transformOf(c);
     return { zoom: T.zoom, x: T.x, y: T.y };
@@ -92,7 +95,7 @@ export function swapCellsOnBeat(every = 1) {
   // the moments to swap, on the timeline: from the first at or after the playhead through the end of the shortest clip
   const end = Math.min(...clips.map((c) => start(c) + clipLen(c)));
   const from = Math.max(t, Math.max(...clips.map(start)));
-  const pts = beatInfo.status === 'ready' ? beatPoints(beatInfo.beats, every) : [];
+  const pts = beats ? beatPoints(beatInfo.beats, every) : [];
   let times = pts.filter((x) => x > from + 1e-3 && x < end - 1e-3);
   if (!times.length) {
     times = [];
@@ -107,12 +110,12 @@ export function swapCellsOnBeat(every = 1) {
       x.keys = { ...(x.keys ?? {}), ...swapKeys(places, i, local, frame) };
     });
   });
-  store.toast(`${clips.length} clips swap places ${beatInfo.status === 'ready' ? 'on the beat' : 'every ' + 0.5 * every + ' s (no beat found)'}.`, 'ok', 5000);
+  store.toast(`${clips.length} clips swap places ${beats ? 'on the beat' : 'every ' + 0.5 * every + ' s (no beat found)'}.`, 'ok', 5000);
 }
 
 /** Flash a flat colour for a couple of frames on every beat from the playhead on (a few seconds of it, or `seconds`). */
-export function flashOnBeats(colour = '#ffffff', frames = 2, seconds = 8) {
-  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+export async function flashOnBeats(colour = '#ffffff', frames = 2, seconds = 8) {
+  if (!(await ensureBeats())) return store.toast(noBeatText(), 'info');
   const from = store.ui.time;
   const to = Math.min(from + seconds, Math.max(from + 0.5, timelineDuration(store.project) || from + seconds));
   const row = nextRow(store.project.layers);
@@ -123,8 +126,8 @@ export function flashOnBeats(colour = '#ffffff', frames = 2, seconds = 8) {
 }
 
 /** Make titles and shapes appear on the nearest beat (their length stays what it is). */
-export function layersOnBeat(ids: string[]) {
-  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+export async function layersOnBeat(ids: string[]) {
+  if (!(await ensureBeats())) return store.toast(noBeatText(), 'info');
   const near = (t: number) => beatInfo.beats.reduce((b, p) => (Math.abs(p - t) < Math.abs(b - t) ? p : b), beatInfo.beats[0]);
   store.edit((p) => {
     for (const l of p.layers) if (ids.includes(l.id)) l.start = Math.round(near(l.start) * 1000) / 1000;
@@ -143,8 +146,8 @@ export function setHitStrength(v: number) {
   localSet('beatHitStrength', hitPrefs.strength);
 }
 
-export function hitsOnBeats(kind: 'punch' | 'shake' | 'both', on: 'beat' | 'bar' = 'beat', strength = hitPrefs.strength) {
-  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) return store.toast('No beat found yet: put music on an audio track first.', 'info');
+export async function hitsOnBeats(kind: 'punch' | 'shake' | 'both', on: 'beat' | 'bar' = 'beat', strength = hitPrefs.strength) {
+  if (!(await ensureBeats())) return store.toast(noBeatText(), 'info');
   const p = store.project;
   const placed = layoutVideo(p).filter((pl) => mediaOf(p, pl.clip.mediaId)?.hasVideo);
   const sel = placed.filter((pl) => store.ui.selectedClips.includes(pl.clip.id));
@@ -184,9 +187,9 @@ export function hitsOnBeats(kind: 'punch' | 'shake' | 'both', on: 'beat' | 'bar'
  * them, keeping its length on the timeline (it plays more of its footage to do it, or as much as
  * there is). On a clip of the main track or a track above.
  */
-export function rampOnBeats(clipId: string, slow = 0.35, fast = 2.5): boolean {
-  if (beatInfo.status !== 'ready' || !beatInfo.beats.length) {
-    store.toast('No beat found yet: put music on an audio track first.', 'info');
+export async function rampOnBeats(clipId: string, slow = 0.35, fast = 2.5): Promise<boolean> {
+  if (!(await ensureBeats())) {
+    store.toast(noBeatText(), 'info');
     return false;
   }
   const p = store.project;
@@ -215,13 +218,13 @@ export function rampOnBeats(clipId: string, slow = 0.35, fast = 2.5): boolean {
 }
 
 /** The velocity edit on every selected clip with a picture (or the one under the playhead on the main track). */
-export function rampSelectedOnBeats() {
+export async function rampSelectedOnBeats() {
   const p = store.project;
   const t = store.ui.time;
   const sel = store.ui.selectedClips.filter((id) => p.clips.some((c) => c.id === id && mediaOf(p, c.mediaId)?.hasVideo));
   const ids = sel.length ? sel : layoutVideo(p).filter((pl) => t >= pl.start && t < pl.end).map((pl) => pl.clip.id);
   if (!ids.length) return store.toast('Select a clip first.', 'info');
   let n = 0;
-  for (const id of ids) if (rampOnBeats(id)) n++;
+  for (const id of ids) if (await rampOnBeats(id)) n++;
   if (n) store.toast(`${n} clip${n > 1 ? 's' : ''} slow on the beats and rush between them. Change Slow and Fast in the Clip tab.`, 'ok', 5000);
 }

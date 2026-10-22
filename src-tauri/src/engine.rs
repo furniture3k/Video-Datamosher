@@ -1,7 +1,7 @@
 // Native FFmpeg engine. The frontend (src/lib/ffmpeg-native.ts) writes job inputs into a work
 // folder, runs FFmpeg there with streamed log lines, and reads the outputs back.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
@@ -20,6 +20,8 @@ pub struct Engine {
     _lock: fs::File,
     ffmpeg: PathBuf,
     jobs: Arc<Mutex<HashMap<String, Child>>>,
+    /// Jobs cancelled before their process was started: killed as soon as it is.
+    killed: Mutex<HashSet<String>>,
 }
 
 #[derive(Serialize)]
@@ -36,7 +38,7 @@ impl Engine {
         fs::create_dir_all(&root)?;
         let lock = fs::File::create(root.join(".lock"))?;
         lock.try_lock().map_err(|e| std::io::Error::other(e.to_string()))?;
-        Ok(Self { root, _lock: lock, ffmpeg: find_ffmpeg(), jobs: Default::default() })
+        Ok(Self { root, _lock: lock, ffmpeg: find_ffmpeg(), jobs: Default::default(), killed: Default::default() })
     }
 
     /// Resolve a path inside the work folder, refusing anything that could escape it.
@@ -57,8 +59,10 @@ impl Engine {
 
     pub fn cleanup(&self) {
         if let Ok(mut jobs) = self.jobs.lock() {
-            for (_, child) in jobs.iter_mut() {
+            for child in jobs.values_mut() {
                 let _ = child.kill();
+                // a process still holding its files open keeps them from being deleted (Windows)
+                let _ = child.wait();
             }
         }
         let _ = fs::remove_dir_all(&self.root);
@@ -197,7 +201,15 @@ pub async fn engine_run(
         .spawn()
         .map_err(|e| format!("could not start {}: {e}", state.ffmpeg.display()))?;
     let mut stderr = child.stderr.take().ok_or("no stderr")?;
-    state.jobs.lock().unwrap().insert(job.clone(), child);
+    {
+        // (the jobs lock is held while looking, as engine_kill does, so a kill can't slip in between)
+        let mut jobs = state.jobs.lock().unwrap();
+        // cancelled while it was starting: engine_kill found nothing to kill yet
+        if state.killed.lock().unwrap().remove(&job) {
+            let _ = child.kill();
+        }
+        jobs.insert(job.clone(), child);
+    }
     let jobs = state.jobs.clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut buf = [0u8; 16384];
@@ -235,8 +247,20 @@ pub async fn engine_run(
 
 #[tauri::command]
 pub async fn engine_kill(state: State<'_, Engine>, job: String) -> Result<(), String> {
-    if let Some(child) = state.jobs.lock().unwrap().get_mut(&job) {
-        let _ = child.kill();
+    let mut jobs = state.jobs.lock().unwrap();
+    match jobs.get_mut(&job) {
+        Some(child) => {
+            let _ = child.kill();
+        }
+        // not started yet (or already finished): engine_run kills it if it starts
+        None => {
+            let mut killed = state.killed.lock().unwrap();
+            // job names are never reused (see ffmpeg-native.ts), so this only grows with kills that came too late
+            if killed.len() > 64 {
+                killed.clear();
+            }
+            killed.insert(job);
+        }
     }
     Ok(())
 }
@@ -442,7 +466,11 @@ pub async fn engine_assemble(state: State<'_, Engine>, request: Request<'_>) -> 
 
 #[tauri::command]
 pub async fn engine_move(state: State<'_, Engine>, from: String, to: String) -> Result<(), String> {
-    fs::rename(state.path(&from)?, state.path(&to)?).map_err(|e| e.to_string())
+    let to = state.path(&to)?;
+    if let Some(dir) = to.parent() {
+        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    fs::rename(state.path(&from)?, to).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -468,7 +496,11 @@ pub async fn save_path(app: AppHandle, state: State<'_, Engine>, path: String, n
     tauri::async_runtime::spawn_blocking(move || {
         // rename is instant on the same disk; across disks it fails, so copy instead
         if fs::rename(&src, &dest).is_err() {
-            fs::copy(&src, &dest)?;
+            if let Err(e) = fs::copy(&src, &dest) {
+                // (disk full, say): no half-written file left behind; the export stays, so saving can be retried
+                let _ = fs::remove_file(&dest);
+                return Err(e);
+            }
             let _ = fs::remove_file(&src);
         }
         Ok::<_, std::io::Error>(())

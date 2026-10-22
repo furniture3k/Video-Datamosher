@@ -315,7 +315,7 @@ await step('editor: a melting title that moves is burned in where it is on each 
     const effects = JSON.parse(JSON.stringify(st.project.effects));
     st.edit((p) => {
       p.effects = [];
-      p.layers.push({ id: 'mv', kind: 'text', row: 'g1', text: 'MM', start: 0, duration: 2, size: 0.3, color: '#000000', font: 'sans', bold: true, x: 0.2, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: true, follow: [[0, 0.2, 0.5], [2, 0.8, 0.5]] });
+      p.layers.push({ id: 'mv', kind: 'text', row: 'g1', text: 'MM', start: 0, duration: 2, size: 0.3, color: '#ffffff', font: 'sans', bold: true, x: 0.2, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: true, follow: [[0, 0.2, 0.5], [2, 0.8, 0.5]] });
     });
     return effects;
   });
@@ -324,7 +324,7 @@ await step('editor: a melting title that moves is burned in where it is on each 
     const st = window.__moshpit.store;
     const r = st.render;
     const fps = st.project.encoder.fps;
-    // how dark the left and right thirds are on frame i (the example's colour bars have no black)
+    // how bright the left and right thirds are on frame i (the example's footage is a night scene: a white title stands out)
     const at = async (i) => {
       const b = await createImageBitmap(new Blob([r.jpegs[i]], { type: 'image/jpeg' }), { resizeWidth: 48, resizeHeight: 27 });
       const c = new OffscreenCanvas(48, 27).getContext('2d');
@@ -333,7 +333,7 @@ await step('editor: a melting title that moves is burned in where it is on each 
       const third = (x0) => {
         let s = 0;
         let n = 0;
-        for (let y = 0; y < 27; y++) for (let x = x0; x < x0 + 16; x++) (s += 255 - Math.max(d[(y * 48 + x) * 4], d[(y * 48 + x) * 4 + 1], d[(y * 48 + x) * 4 + 2])), n++;
+        for (let y = 0; y < 27; y++) for (let x = x0; x < x0 + 16; x++) (s += Math.min(d[(y * 48 + x) * 4], d[(y * 48 + x) * 4 + 1], d[(y * 48 + x) * 4 + 2])), n++;
         return s / n;
       };
       return { left: third(0), right: third(32) };
@@ -342,7 +342,7 @@ await step('editor: a melting title that moves is burned in where it is on each 
   });
   await S((effects) => window.__moshpit.store.edit((p) => ((p.effects = effects), (p.layers = p.layers.filter((l) => l.id !== 'mv')))), keep);
   await settle();
-  // the title darkens the left early and the right late; the footage's own left-right difference cancels out
+  // the title brightens the left early and the right late; the footage's own left-right difference cancels out
   const swing = m.early.left - m.early.right - (m.late.left - m.late.right);
   if (!(swing > 30 && m.early.left > m.late.left)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
 });
@@ -3754,6 +3754,89 @@ await step('recipe files: save one, clear the mosh, open it again; batch two vid
   await page.waitForFunction(() => document.querySelectorAll('.queue .job.done').length === 2, null, { timeout: 400000 });
   const names = await page.locator('.queue .job.done a[download]').evaluateAll((as) => as.map((a) => a.getAttribute('download')));
   if (!(names.some((n) => n.startsWith('one')) && names.some((n) => n.startsWith('two')) && names.every((n) => n.endsWith('.webm')))) throw new Error('batch exports: ' + names.join(', '));
+});
+
+await step('a song with cover art is sound; titles take a free row; paste brings its track back; a clean-up keeps what was just stored', async () => {
+  await page.goto(url);
+  await page.waitForFunction(() => window.__moshpit?.store && !window.__moshpit.store.ui.home, null, { timeout: 60000 });
+  await S(() => window.__moshpit.projects.startProject());
+  // an MP3 with its album art (an "attached pic" video stream): music, not a still on the video track
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mosh-song-'));
+  const cover = path.join(dir, 'cover.jpg');
+  const song = path.join(dir, 'song.mp3');
+  execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=300x300', '-frames:v', '1', cover]);
+  execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'sine=f=440:d=2', '-i', cover, '-map', '0:a', '-map', '1:v', '-c:a', 'libmp3lame', '-c:v', 'copy', '-disposition:v', 'attached_pic', '-id3v2_version', '3', song]);
+  await page.locator('aside input[type=file][multiple]').first().setInputFiles(song);
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.length === 1, null, { timeout: 60000 });
+  const m = await S(() => {
+    const p = window.__moshpit.store.project;
+    return { hasVideo: p.media[0].hasVideo, hasAudio: p.media[0].hasAudio, track: p.clips[0].track };
+  });
+  if (m.hasVideo || !m.hasAudio || m.track.startsWith('v')) throw new Error('the song came in as ' + JSON.stringify(m));
+  // two titles at the same moment: each on a row of its own
+  const rows = await S(() => {
+    const { store, edit } = window.__moshpit;
+    store.seek(0.5);
+    edit.addText();
+    edit.addText();
+    return store.project.layers.map((l) => l.row);
+  });
+  if (rows.length !== 2 || rows[0] === rows[1]) throw new Error('titles on rows ' + rows.join());
+  // a clip copied from a track that's removed since: pasting makes the track again
+  const pasted = await S(() => {
+    const { store, edit } = window.__moshpit;
+    const c = store.project.clips[0];
+    store.selectClip(c.id);
+    edit.copySelected();
+    store.editTimeline((p) => {
+      p.clips = p.clips.filter((x) => x.track !== c.track);
+      p.tracks = p.tracks.filter((t) => t.id !== c.track);
+    });
+    edit.paste();
+    const now = store.project.clips[0];
+    return { clips: store.project.clips.length, track: now?.track, shown: store.project.tracks.some((t) => t.id === now?.track && t.kind === 'audio') };
+  });
+  if (pasted.clips !== 1 || !pasted.shown) throw new Error('paste: ' + JSON.stringify(pasted));
+  await settle();
+  // a clean-up whose list was made before a file was stored keeps that file; a later one lets it go
+  const kept = await S(async () => {
+    const { store, storage } = window.__moshpit;
+    await store.flush();
+    const since = Date.now();
+    const keep = await store.keepFiles();
+    await storage.putFile('test:fresh', new Blob(['fresh']));
+    await storage.pruneFiles(keep, since);
+    const after = !!(await storage.getFile('test:fresh'));
+    await storage.pruneFiles(await store.keepFiles());
+    return { after, later: !!(await storage.getFile('test:fresh')) };
+  });
+  if (!kept.after || kept.later) throw new Error('clean-up: ' + JSON.stringify(kept));
+  // a beat command before anything has listened to the music: it listens first, then hits the beats
+  await S(async () => {
+    const { ffmpeg, media, store, beatinfo } = window.__moshpit;
+    beatinfo.setBeatGrid(false);
+    Object.assign(beatinfo.beatInfo, { status: 'idle', beats: [], downbeats: [], bpm: 0 });
+    store.edit((p) => ((p.clips = []), (p.layers = [])));
+    const r = await ffmpeg.run(['-f', 'lavfi', '-i', 'color=c=gray:s=320x180:r=24:d=4', '-pix_fmt', 'yuv420p', 'hitbase.mp4'], { outputs: ['hitbase.mp4'] });
+    await media.addFiles([new File([r.out['hitbase.mp4']], 'hitbase.mp4', { type: 'video/mp4' })], { track: 'v1', index: 0 });
+    // 120 BPM clicks
+    const sr = 44100;
+    const n = sr * 4;
+    const pcm = new Int16Array(n * 2);
+    for (let b = 0; b * 0.5 < 4; b++) {
+      const s0 = Math.round((0.25 + b * 0.5) * sr);
+      for (let i = 0; i < 1500 && s0 + i < n; i++) pcm[(s0 + i) * 2] = pcm[(s0 + i) * 2 + 1] = Math.round(Math.sin(i * 0.9) * Math.exp(-i / 300) * 20000);
+    }
+    const head = new DataView(new ArrayBuffer(44));
+    const str = (o, t) => [...t].forEach((c, i) => head.setUint8(o + i, c.charCodeAt(0)));
+    str(0, 'RIFF'); head.setUint32(4, 36 + pcm.byteLength, true); str(8, 'WAVEfmt '); head.setUint32(16, 16, true); head.setUint16(20, 1, true); head.setUint16(22, 2, true);
+    head.setUint32(24, sr, true); head.setUint32(28, sr * 4, true); head.setUint16(32, 4, true); head.setUint16(34, 16, true); str(36, 'data'); head.setUint32(40, pcm.byteLength, true);
+    await media.addFiles([new File([head.buffer, pcm.buffer], 'hits.wav', { type: 'audio/wav' })], { track: 'a1', start: 0 });
+    store.ui.selectedClips = [];
+  });
+  if ((await S(() => window.__moshpit.beatinfo.beatInfo.status)) !== 'idle') throw new Error('the beats were analysed before the command');
+  await S(() => window.__moshpit.commands.runCommand('punch-beats'));
+  await page.waitForFunction(() => window.__moshpit.store.project.clips.find((c) => c.track === 'v1')?.keys?.zoom?.length > 3, null, { timeout: 60000 });
 });
 
 await step('layout: fold and resize the panels, switch layouts, and it is kept', async () => {

@@ -31,6 +31,7 @@ import { ensureMattes, matteSourceFor } from './mattes.svelte';
 import { buildPlates } from './clipplates';
 import { ensureFonts } from './fonts.svelte';
 import { FrameEncoder, encodedSize, hardwareCodec, hardwareProxy } from './webcodecs';
+import { encodeFrames } from './encodeframes';
 
 export interface RenderResult {
   id: number;
@@ -195,9 +196,8 @@ async function clipMattePlates(project: Project, w: number, h: number, mounts: R
       white.width = w;
       white.height = h;
       const wg = white.getContext('2d')!;
-      const pngs: Blob[] = [];
       let any = false;
-      for (let k = 0; k < count; k++) {
+      const pngs = await encodeFrames(cv, count, (k) => {
         if (k % 8 === 0) {
           check(signal);
           progress?.('Cutting out', k / count);
@@ -216,8 +216,7 @@ async function clipMattePlates(project: Project, w: number, h: number, mounts: R
           wg.drawImage(m, 0, 0, w, h);
           g.drawImage(white, 0, 0);
         }
-        pngs.push(await canvasPng(cv));
-      }
+      });
       // no subject at all while this clip is on: nothing to go behind
       if (!any) continue;
       seq = new Blob(pngs);
@@ -305,8 +304,7 @@ async function layerFrames(l: Layer, w: number, h: number, first: number, count:
   c.width = w;
   c.height = h;
   const ctx = c.getContext('2d')!;
-  const pngs: Blob[] = [];
-  for (let k = 0; k < count; k++) {
+  const pngs = await encodeFrames(c, count, (k) => {
     if (k % 8 === 0) {
       check(signal);
       progress?.('Drawing titles', k / count);
@@ -314,8 +312,7 @@ async function layerFrames(l: Layer, w: number, h: number, first: number, count:
     const t = (first + k) / fps;
     ctx.clearRect(0, 0, w, h);
     drawLayer(ctx, l, w, h, layerAlpha(l, t), t, matte);
-    pngs.push(await canvasPng(c));
-  }
+  });
   return new Blob(pngs);
 }
 
@@ -764,19 +761,20 @@ async function renderScene(scene: Scene, seconds: number, w: number, h: number, 
   c.width = w;
   c.height = h;
   const g = c.getContext('2d')!;
-  const parts: Uint8Array[] = [];
   const n = Math.max(1, Math.round(seconds * fps));
-  for (let i = 0; i < n; i++) {
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.globalAlpha = 1;
-    g.globalCompositeOperation = 'source-over';
-    scene.draw(g, w, h, i / fps);
-    const jpeg = await new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('drawing the scene failed'))), 'image/jpeg', 0.93));
-    parts.push(new Uint8Array(await jpeg.arrayBuffer()));
-  }
-  const cat = new Uint8Array(parts.reduce((s, p) => s + p.length, 0));
-  let off = 0;
-  for (const p of parts) (cat.set(p, off), (off += p.length));
+  const jpegs = await encodeFrames(
+    c,
+    n,
+    (i) => {
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalAlpha = 1;
+      g.globalCompositeOperation = 'source-over';
+      scene.draw(g, w, h, i / fps);
+    },
+    'image/jpeg',
+    0.93,
+  );
+  const cat = new Uint8Array(await new Blob(jpegs).arrayBuffer());
   const r = await ffmpeg.run(['-framerate', String(fps), '-f', 'image2pipe', '-c:v', 'mjpeg', '-i', 'frames.mjpeg', '-vf', `scale=${FROM_BROWSER_JPEG},format=yuv420p`, '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '16', '-g', String(fps), ...TAG_709, '-movflags', '+faststart', 'gen.mp4'], {
     inputs: { 'frames.mjpeg': async () => cat },
     outputs: ['gen.mp4'],
@@ -939,16 +937,20 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     let lo = lead;
     let hi = frames.length;
     const range = o.range && o.format !== 'avi' && !looping ? o.range : null;
+    const pos = (f: Frame) => f.at ?? f.src;
     if (range) {
-      const pos = (f: Frame) => f.at ?? f.src;
       const a = Math.round(range[0] * fps);
       const b = Math.round(range[1] * fps);
-      lo = Math.max(0, frames.findIndex((f) => pos(f) >= a));
+      const first = frames.findIndex((f) => pos(f) >= a);
+      // (a range that starts past the last frame: the last frame, not the whole video)
+      lo = first < 0 ? Math.max(0, frames.length - 1) : first;
       const end = frames.findIndex((f) => pos(f) >= b);
       hi = Math.max(lo + 1, end < 0 ? frames.length : end);
     }
     progress('Mixing audio', 0);
-    const pcm = o.audio && o.format !== 'gif' && o.format !== 'png' ? await moshedAudio(project, frames.slice(lo, hi), range ? lo : 0) : null;
+    // the clean and original sound start where the range starts on the timeline (effects before it
+    // that add or drop frames move it away from output frame `lo`)
+    const pcm = o.audio && o.format !== 'gif' && o.format !== 'png' ? await moshedAudio(project, frames.slice(lo, hi), range ? pos(frames[lo]) : 0) : null;
     const audio = !!pcm;
     // a size limit (Discord…): aim the bitrate under it
     if (o.maxMB && (o.format === 'mp4' || o.format === 'webm')) o = { ...o, videoKbps: bitrateFor(o.maxMB, (hi - lo) / fps, audio) };
@@ -1008,7 +1010,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
     }
 
     // Pixel effects (or PNGs, or the hardware encoder): decode, process and encode in chunks to keep memory bounded.
-    const hw = hwCodec ? new FrameEncoder({ format: o.format as 'mp4' | 'webm', codec: hwCodec, fps, srcW: w, srcH: h, width: o.width, scaler: o.scaler, crf: o.crf, kbps: o.videoKbps, reframe: o.reframe }) : null;
+    const hw = hwCodec ? await FrameEncoder.create({ format: o.format as 'mp4' | 'webm', codec: hwCodec, fps, srcW: w, srcH: h, width: o.width, scaler: o.scaler, crf: o.crf, kbps: o.videoKbps, reframe: o.reframe }) : null;
     const per = o.format === 'gif' ? n : Math.min(exportTuning.maxChunk, chunkFrames(w, h));
     // in one go only when the output is the whole file (a melt loop skips its lead-in frames)
     const whole = !range && lo === 0 && per >= n;
@@ -1023,7 +1025,7 @@ async function exportWith(project: Project, o: ExportOptions, progress: Progress
         const b = Math.min(hi, a + per);
         const span = (x: number) => (a - lo + x * (b - a)) / n;
         const src = avi ?? 'mosh.avi';
-        const chunk = whole ? await decode(project, src, 2, n, 'Decoding', (s, p) => progress(s, p), {}, eng) : await decode(project, src, 2, b, 'Decoding', (s, p) => progress(`${s} ${a - lo + 1}–${b - lo} of ${n}`, span(p)), { from: a, to: b }, eng);
+        const chunk = whole ? await decode(project, src, 2, n, 'Decoding', (s, p) => progress(s, p), {}, eng) : await decode(project, src, 2, b - a, 'Decoding', (s, p) => progress(`${s} ${a - lo + 1}–${b - lo} of ${n}`, span(p)), { from: a, to: b }, eng);
         check(signal);
         const done = await runner.run(chunk, frames, a, (p) => progress(`Pixel effects ${a - lo + 1}–${b - lo} of ${n}`, span(p)), signal);
         check(signal);

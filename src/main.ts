@@ -27,6 +27,23 @@ if (isDesktop) window.addEventListener('keydown', (e) => {
   }
 });
 
+// Closing the desktop app's window: save what the autosave hasn't yet, then let it close (the
+// native side waits a moment for this, and closes anyway if the page doesn't answer).
+if (isDesktop)
+  Promise.all([import('@tauri-apps/api/event'), import('@tauri-apps/api/core')])
+    .then(([{ listen }, { invoke }]) =>
+      listen('save-before-close', async () => {
+        try {
+          await store.flush();
+        } catch (e) {
+          console.warn('save on closing failed', e);
+        } finally {
+          await invoke('close_ready').catch(() => {});
+        }
+      }),
+    )
+    .catch((e) => console.warn('save on closing unavailable', e));
+
 const target = document.getElementById('app')!;
 target.innerHTML = ''; // remove the boot screen
 const app = mount(App, { target });

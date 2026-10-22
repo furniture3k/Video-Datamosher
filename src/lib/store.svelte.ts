@@ -259,7 +259,8 @@ class Store {
 
   /** Edit the timeline; effects, markers and Motion Transfer sources stay on their footage. */
   editTimeline(fn: (p: Project) => void, key: string | null = null) {
-    const before = clone($state.snapshot(this.project)) as Project;
+    // (a snapshot is already a plain deep copy)
+    const before = $state.snapshot(this.project) as Project;
     fn(this.project);
     remapToFootage(before, this.project);
     this.commit(key);
@@ -489,7 +490,11 @@ class Store {
   async doRender(force = false) {
     this.status.pending = false;
     if (!this.project.clips.length && !this.project.layers.length) {
+      // a render of what was there before mustn't land after the timeline was emptied
+      if (this.renderSignal) this.renderSignal.cancelled = true;
+      this.renderQueued = false;
       this.render = null;
+      this.renderKey = '';
       return;
     }
     // a different preview resolution renders again, though the result counts as the same mosh
@@ -621,8 +626,10 @@ class Store {
     // within a session can always bring a deleted clip back.
     // (media used by snapshots is kept so they can still be restored)
     // (if what to keep can't be worked out, nothing is deleted)
+    const since = Date.now();
     const keep = await this.keepFiles().catch((e) => (console.warn('not cleaning up stored files', e), null));
-    if (keep) pruneFiles(keep);
+    // (not waited for: the editor is usable meanwhile, and anything imported now is kept)
+    if (keep) pruneFiles(keep, since);
     const { prepareAll } = await import('./media');
     prepareAll(this.project.media);
     // compounds edited when the app last closed are rendered again

@@ -28,7 +28,12 @@
       class:off={!fx.enabled}
       style="--c:{def?.color}"
       draggable="true"
-      ondragstart={() => (dragFrom = i)}
+      ondragstart={(e) => {
+        dragFrom = i;
+        // (Firefox starts a drag only once it carries some data)
+        e.dataTransfer?.setData('application/x-moshpit-effect', fx.id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      }}
       ondragend={() => (dragFrom = -1)}
       ondragover={(e) => e.preventDefault()}
       ondrop={(e) => {

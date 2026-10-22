@@ -7,7 +7,7 @@ import { busy } from './recovery';
 import { store } from './store.svelte';
 import { saveAs, download } from './storage';
 import { isDesktop } from './platform';
-import { saveFromDisk, revealFile, removeEngineFile } from './ffmpeg-native';
+import { saveFromDisk, revealFile, removeEngineFile, moveEngineFile } from './ffmpeg-native';
 import { Eta, formatSeconds } from '../engine/eta';
 import type { ExportOptions } from '../engine/args';
 import type { Project } from '../engine/types';
@@ -58,7 +58,7 @@ async function pump() {
   const j = job(next.id)!;
   j.status = 'running';
   try {
-    const r = await exportVideo(
+    let r = await exportVideo(
       w.project,
       w.o,
       (s, p) => {
@@ -70,6 +70,12 @@ async function pump() {
       w.signal,
       ffmpegBg,
     );
+    // desktop: the next export on this engine is written to the same file, so this one gets a name of its own
+    if (r.file) {
+      const own = r.file.replace(/[^/]+$/, `q${next.id}_$&`);
+      await moveEngineFile(r.file, own);
+      r = { ...r, file: own };
+    }
     j.result = r;
     j.status = 'done';
     j.stage = 'Done';

@@ -50,6 +50,8 @@ function diskPath(blob: Blob, name: string): Promise<string> {
 }
 
 let jobSeq = 0;
+/** Job names are never reused, also after the page reloads (the native side outlives it). */
+const session = Math.random().toString(36).slice(2, 8);
 
 /** Copy a Blob into the engine's work folder (used to save big files without one huge IPC message). */
 export async function blobToDisk(blob: Blob, name: string): Promise<string> {
@@ -168,7 +170,9 @@ export class NativeService implements Engine {
         written.push(name);
       }
       const full = ['-hide_banner', '-nostdin', '-y', ...level, ...graphs.args.map((a) => paths.get(a) ?? a)];
-      this.job = `${this.dir}-${++jobSeq}`;
+      // cancelled while the graphs were written: don't start it at all
+      if (gen !== this.cancelGen) throw new Cancelled();
+      this.job = `${this.dir}-${session}-${++jobSeq}`;
       let code: number;
       try {
         code = await invoke<number>('engine_run', { job: this.job, dir: this.dir, args: full, onLog: channel });
@@ -254,7 +258,11 @@ export async function framesFromDisk(path: string, codec: MoshCodec): Promise<Pr
 export async function loadFrames(frames: Frame[]): Promise<Map<Frame, Frame>> {
   const map = new Map<Frame, Frame>();
   const byFile = new Map<string, Frame[]>();
-  for (const f of frames) byFile.set(f.file!, [...(byFile.get(f.file!) ?? []), f]);
+  for (const f of frames) {
+    const list = byFile.get(f.file!);
+    if (list) list.push(f);
+    else byFile.set(f.file!, [f]);
+  }
   for (const [file, list] of byFile) {
     const data = await readRanges(file, list.map((f) => [f.off!, f.size!]));
     list.forEach((f, i) => map.set(f, { ...f, data: data[i].slice(), size: undefined, off: undefined, file: undefined }));
