@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.16.2
+
+- **Closing the desktop app saves your last edit**: an edit made just before closing the window was
+  lost; the app now saves before it closes.
+- **Desktop exports**: queued and batch exports no longer overwrite each other, cancelling a job just
+  before it starts stops it, and quitting stops FFmpeg instead of leaving it running.
+- **Exporting part of the timeline** keeps the sound in sync with the picture.
+- **Songs with album art** (MP3, M4A) are treated as sound, not as a video.
+- **Newly imported media** is no longer deleted by the clean-up that runs when the app starts.
+- **Files opened from your computer or shared to the app** are recognised even when they arrive
+  without a file type.
+- **Beat tools** used before the beat was found now find it first instead of doing nothing.
+- **Titles** go on a free row, **paste** brings back a deleted track, and the **phone timeline**
+  respects locked tracks.
+- **Smaller fixes**: Enter on a focused Cancel no longer confirms, effects can be dragged into a new
+  order in Firefox, adding from the right-click menu is one undo step, and shortcut hints match your
+  computer.
+- **Faster start**: about a third less JavaScript to load when the editor opens.
+
 ## 1.16.1
 
 - **Drawn sample footage on older iPhones and Macs**: the city lights, sunset, night drive and dancer
