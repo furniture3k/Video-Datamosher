@@ -313,14 +313,11 @@ await step('editor: a melting title that moves is burned in where it is on each 
   const keep = await S(() => {
     const st = window.__moshpit.store;
     const effects = JSON.parse(JSON.stringify(st.project.effects));
-    st.edit((p) => {
-      p.effects = [];
-      p.layers.push({ id: 'mv', kind: 'text', row: 'g1', text: 'MM', start: 0, duration: 2, size: 0.3, color: '#ffffff', font: 'sans', bold: true, x: 0.2, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: true, follow: [[0, 0.2, 0.5], [2, 0.8, 0.5]] });
-    });
+    st.edit((p) => (p.effects = []));
     return effects;
   });
   await settle();
-  const m = await S(async () => {
+  const measure = () => S(async () => {
     const st = window.__moshpit.store;
     const r = st.render;
     const fps = st.project.encoder.fps;
@@ -340,11 +337,20 @@ await step('editor: a melting title that moves is burned in where it is on each 
     };
     return { early: await at(Math.round(0.2 * fps)), late: await at(Math.round(1.8 * fps)) };
   });
+  const clean = await measure();
+  await S(() =>
+    window.__moshpit.store.edit((p) =>
+      p.layers.push({ id: 'mv', kind: 'text', row: 'g1', text: 'MM', start: 0, duration: 2, size: 0.3, color: '#ffffff', font: 'sans', bold: true, x: 0.2, y: 0.5, align: 'center', shadow: false, box: false, fade: 0, moshed: true, follow: [[0, 0.2, 0.5], [2, 0.8, 0.5]] }),
+    ),
+  );
+  await settle();
+  const titled = await measure();
   await S((effects) => window.__moshpit.store.edit((p) => ((p.effects = effects), (p.layers = p.layers.filter((l) => l.id !== 'mv')))), keep);
   await settle();
-  // the title brightens the left early and the right late; the footage's own left-right difference cancels out
-  const swing = m.early.left - m.early.right - (m.late.left - m.late.right);
-  if (!(swing > 30 && m.early.left > m.late.left)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
+  // what the title adds to each third, over the same frames without it: the left early, the right late
+  const add = (t, s) => titled[t][s] - clean[t][s];
+  const m = { early: { left: add('early', 'left'), right: add('early', 'right') }, late: { left: add('late', 'left'), right: add('late', 'right') } };
+  if (!(m.early.left > m.early.right + 10 && m.late.right > m.late.left + 10)) throw new Error('the melting title did not move with its path: ' + JSON.stringify(m));
 });
 
 await step('graphics rows: drag a title above for a new row and back, on desktop and on a phone', async () => {
