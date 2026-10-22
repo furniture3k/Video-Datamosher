@@ -1,6 +1,6 @@
 [package]
 name = "moshpit"
-version = "1.16.1"
+version = "1.16.2"
 description = "Video editor with a datamosher built in"
 authors = ["moshpit contributors"]
 license = "GPL-3.0-or-later"
