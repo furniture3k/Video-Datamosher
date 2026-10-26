@@ -7,6 +7,8 @@
   Ubuntu 22.04. The app now hands the proxy to the webview itself, which avoids it.
 - **Template previews on Linux** play again on Ubuntu 22.04, Debian 12 and other systems with an
   older WebKitGTK (they showed still pictures, or nothing in the template and look dialogs).
+- **The .rpm on openSUSE** crashed like the AppImage did: it now asks for the GStreamer plugins it
+  needs (Fedora's and openSUSE's names alike).
 - **The AppImage** leaves out a GStreamer plugin that could stop the page when loaded next to
   WebKit's own network library.
 - **Starts without the internet**: the interface font is part of the app instead of being

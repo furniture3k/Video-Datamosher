@@ -67,5 +67,6 @@ command -v dbus-run-session > /dev/null && bus=(dbus-run-session --)
 # the report is the JSON the app printed; its log is kept in case it never reported
 sed -n '/^{/,/^}/p' smoke.out
 grep -E 'moshpit smoke test|ERROR|CRITICAL|Segmentation|not found' smoke.err | head -40 || true
+grep -q '^{' smoke.out || { echo '-- no report; the end of its output:'; tail -25 smoke.err; }
 echo "== $PRETTY_NAME: $(basename "$pkg"): exit $code"
 exit $code

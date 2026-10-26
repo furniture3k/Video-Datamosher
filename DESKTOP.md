@@ -45,7 +45,7 @@ src/lib/ffmpeg-native.ts    native Engine: same run(args, { inputs, mounts, outp
 - **Linux.** The AppImage bundles GStreamer and its plugins (`bundleMediaFramework`), which WebKitGTK
   needs for sound and video: the host's plugins are built for another GStreamer and crash the page.
   It leaves out GStreamer's libsoup 2 HTTP source, which can't share a process with WebKit's
-  libsoup 3. The `.deb` depends on the GStreamer plugins instead. With NVIDIA's proprietary driver
+  libsoup 3. The `.deb` and `.rpm` depend on the GStreamer plugins instead. With NVIDIA's proprietary driver
   the app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (unless it is already set), which that driver needs.
   - *Proxies*: libsoup 3.0 (Ubuntu 22.04's, and so the AppImage's) tunnels twice through an HTTPS
     proxy when WebKit leaves the proxy to the system, and its network process crashes. Where the

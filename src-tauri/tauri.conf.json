@@ -64,6 +64,12 @@
           "gstreamer1.0-plugins-base",
           "gstreamer1.0-plugins-good"
         ]
+      },
+      "rpm": {
+        "depends": [
+          "(gstreamer1-plugins-base or gstreamer-plugins-base)",
+          "(gstreamer1-plugins-good or gstreamer-plugins-good)"
+        ]
       }
     },
     "licenseFile": "../LICENSE",
