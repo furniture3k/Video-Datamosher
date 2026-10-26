@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import type { Starter } from '../lib/starters.svelte';
   import Logo from '../components/Logo.svelte';
+  import { appVideo } from '../lib/appvideo';
 
   let { s, badge = '', busy = false, onclick }: { s: Starter; badge?: string; busy?: boolean; onclick: () => void } = $props();
   let video = $state<HTMLVideoElement>();
@@ -16,6 +17,8 @@
     // the entry's own element: `video` is unset once a missing preview is swapped for the placeholder
     const io = new IntersectionObserver(([e]) => {
       const v = e.target as HTMLVideoElement;
+      // (data-play: a preview whose file is still being read starts once it has it, see appVideo)
+      v.dataset.play = e.isIntersecting ? 'on' : '';
       if (e.isIntersecting) v.play().catch(() => {});
       else v.pause();
     }, { threshold: 0.4 });
@@ -27,7 +30,7 @@
 <button class="starter" {onclick} disabled={busy} aria-label="{s.name}: {s.description}">
   <div class="thumb">
     {#if !missing}
-      <video bind:this={video} src="examples/{s.thumb}.webm" poster="examples/{s.thumb}.jpg" muted loop playsinline preload="none" onerror={() => (missing = true)}></video>
+      <video bind:this={video} use:appVideo={`examples/${s.thumb}.webm`} poster="examples/{s.thumb}.jpg" muted loop playsinline preload="none" onerror={() => (missing = true)}></video>
     {:else if !noPoster}
       <!-- a browser that can't play the preview (older iPhones and WebM) still shows its picture -->
       <img src="examples/{s.thumb}.jpg" alt="" onerror={() => (noPoster = true)} />

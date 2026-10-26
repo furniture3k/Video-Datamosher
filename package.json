@@ -1,7 +1,7 @@
 {
   "name": "moshpit",
   "private": true,
-  "version": "1.16.3",
+  "version": "1.16.4",
   "description": "Video editor with a datamosher built in, for the browser and desktop",
   "license": "GPL-3.0-or-later",
   "homepage": "https://furniture3k.github.io/Video-Datamosher/",
@@ -34,6 +34,7 @@
     "@ffmpeg/core-mt": "0.12.10",
     "@ffmpeg/ffmpeg": "0.12.15",
     "@ffmpeg/util": "0.12.2",
+    "@fontsource/ibm-plex-mono": "5.2.7",
     "@tauri-apps/api": "^2.12.3",
     "mediabunny": "1.61.5"
   },

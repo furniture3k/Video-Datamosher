@@ -1,4 +1,8 @@
 import { mount } from 'svelte';
+// the interface's monospace font, bundled: the app starts without the internet (and asks no one for it)
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/ibm-plex-mono/600.css';
 import './app.css';
 import App from './App.svelte';
 import { isDesktop } from './lib/platform';

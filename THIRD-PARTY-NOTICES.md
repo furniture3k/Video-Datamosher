@@ -28,7 +28,7 @@ https://ffmpeg.org/legal.html.
 | mediabunny (MP4 / WebM files for the browser's own encoders and decoders) | MPL-2.0 | https://github.com/Vanilagy/mediabunny |
 | Tauri, `@tauri-apps/api`, Tauri plugins (desktop app) | MIT or Apache-2.0 | https://github.com/tauri-apps/tauri |
 | Rust crates used by the desktop app (see `src-tauri/Cargo.lock`) | mostly MIT and/or Apache-2.0; a few BSD-3-Clause, ISC, Zlib, MPL-2.0, Unicode-3.0 | https://crates.io |
-| IBM Plex Mono font (loaded from Google Fonts when online) | SIL Open Font License 1.1 | https://github.com/IBM/plex |
+| IBM Plex Mono font (bundled, via `@fontsource/ibm-plex-mono`) | SIL Open Font License 1.1 | https://github.com/IBM/plex |
 
 Development-only tools (Vite, TypeScript, Vitest, Playwright, svelte-check) are not shipped in the app.
 

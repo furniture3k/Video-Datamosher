@@ -2,6 +2,7 @@
   // Templates (in the editor): the whole style of an edit people post (words behind a cut-out subject, word-per-beat
   // lyrics, pop-up collages, tour posters, red notes…) put on the clips already in the project in one go.
   import Modal from '../components/Modal.svelte';
+  import { appVideo } from '../lib/appvideo';
   import Icon from '../components/Icon.svelte';
   import StarterCard from '../home/StarterCard.svelte';
   import { store } from '../lib/store.svelte';
@@ -49,7 +50,7 @@
     </div>
   {:else}
     <div class="col">
-      <video class="pv" src="examples/{picked.thumb}.webm" poster="examples/{picked.thumb}.jpg" muted loop playsinline autoplay></video>
+      <video class="pv" use:appVideo={`examples/${picked.thumb}.webm`} poster="examples/{picked.thumb}.jpg" muted loop playsinline autoplay></video>
       <p>{picked.description}</p>
       <p class="small muted">{picked.hint}</p>
       {#if picked.music && !hasMusic}<p class="small faint"><Icon name="music" size={13} /> Put a song on the music track first and it lands on the beat.</p>{/if}

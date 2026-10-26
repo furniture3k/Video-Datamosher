@@ -44,8 +44,16 @@ src/lib/ffmpeg-native.ts    native Engine: same run(args, { inputs, mounts, outp
   (`download()` in `src/lib/storage.ts`) are copied to disk in chunks and go through the same dialog.
 - **Linux.** The AppImage bundles GStreamer and its plugins (`bundleMediaFramework`), which WebKitGTK
   needs for sound and video: the host's plugins are built for another GStreamer and crash the page.
-  The `.deb` depends on the GStreamer plugins instead. With NVIDIA's proprietary driver the app sets
-  `WEBKIT_DISABLE_DMABUF_RENDERER=1` (unless it is already set), which that driver needs.
+  It leaves out GStreamer's libsoup 2 HTTP source, which can't share a process with WebKit's
+  libsoup 3. The `.deb` depends on the GStreamer plugins instead. With NVIDIA's proprietary driver
+  the app sets `WEBKIT_DISABLE_DMABUF_RENDERER=1` (unless it is already set), which that driver needs.
+  - *Proxies*: libsoup 3.0 (Ubuntu 22.04's, and so the AppImage's) tunnels twice through an HTTPS
+    proxy when WebKit leaves the proxy to the system, and its network process crashes. Where the
+    webview runs on libsoup older than 3.2, the app looks up the system's proxy and hands it to
+    WebKit itself (`src-tauri/src/proxy.rs`), so libsoup tunnels once.
+  - *The app's own videos*: WebKitGTK before 2.52 plays media from `http(s)` and `blob:` URLs only,
+    not `tauri://`, so the template previews are read into blobs on Linux (`src/lib/appvideo.ts`).
+  - The app's interface font is bundled: it starts without the internet.
 - **FFmpeg** is bundled next to the app as `moshpit-ffmpeg`. `MOSHPIT_FFMPEG=/path/to/ffmpeg`
   overrides it; if it's missing, the `ffmpeg` on PATH is used.
 
@@ -75,6 +83,17 @@ which tags `v<version>` from `package.json`) runs `.github/workflows/desktop.yml
 `.deb`, `.rpm`), attaches them to a draft GitHub Release and publishes it once every build
 succeeded. Running the workflow by hand without **release** only builds them as workflow artifacts. Bump `version` in `package.json` first; the app
 takes its version from there.
+
+Smoke test: every installer the release workflow builds is installed (or opened) and checked
+before the release is published (the `smoke` job in `desktop.yml`): Windows Server 2022 and 2025 (the
+`.msi` and the `-setup.exe`), macOS 14 and 15 on Apple Silicon and Intel (and the Intel build under
+Rosetta), and Linux in fresh containers of Ubuntu 22.04 and 24.04, Debian 12 and 13, Fedora, Arch and
+openSUSE (the AppImage, and the `.deb` or `.rpm`). `MOSHPIT_SMOKE_TEST=1` makes the app check, once the
+page has loaded, that the editor comes up, sound decodes and plays, the template previews and an
+imported clip play, and the bundled FFmpeg runs; `MOSHPIT_SMOKE_TEST=network` also downloads a file
+through the webview. It prints a report and exits 0 when all passed (`src-tauri/src/smoke.rs` and
+`smoke.js`; `scripts/smoke-linux.sh`, `smoke-windows.ps1`, `smoke-macos.sh` set up each system).
+For example: `MOSHPIT_SMOKE_TEST=1 ./moshpit_1.16.4_amd64.AppImage`.
 
 Tests: `ci.yml` builds the app on Linux and drives it through WebDriver
 (`scripts/e2e-desktop.mjs`: load the example, render, export MP4 and WebM, cancel, import).
