@@ -13,6 +13,9 @@
   WebKit's own network library.
 - **Starts without the internet**: the interface font is part of the app instead of being
   downloaded from Google Fonts at every start.
+- **openSUSE**: use the `.rpm`. The AppImage works there but can't download (fonts, cut-out and
+  caption models): its TLS library looks for the system's certificates where Debian, Ubuntu,
+  Fedora and Arch keep them.
 - **Every installer is tested before a release**: the release workflow installs each one on Windows,
   macOS (Apple Silicon and Intel) and seven Linux systems and checks the editor, sound, video,
   FFmpeg and downloads work, and only publishes the release when all of them pass.

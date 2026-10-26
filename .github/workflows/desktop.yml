@@ -87,7 +87,7 @@ jobs:
 
             - **Windows**: run the `.msi` or `-setup.exe`. If SmartScreen warns about an unknown publisher, choose *More info → Run anyway*.
             - **macOS**: open the `.dmg` (`aarch64` for Apple Silicon, `x64` for Intel) and drag moshpit to Applications. The app isn't notarised yet: the first time, right-click it and choose *Open*.
-            - **Linux**: the `.AppImage` runs anywhere (`chmod +x` it first); `.deb` and `.rpm` are also attached.
+            - **Linux**: the `.AppImage` runs on most distributions (`chmod +x` it first); the `.deb` (Ubuntu, Debian) and `.rpm` (Fedora, openSUSE) install with your package manager. On openSUSE use the `.rpm`: the AppImage can't download there (fonts, cut-out and caption models).
 
             Includes a GPL build of FFmpeg, built by this project's own workflow from FFmpeg's signed source release and pinned sources of x264, libvpx, libvorbis and zlib (`scripts/build-ffmpeg.sh`; the exact sources are listed in `FFMPEG-NOTICE.txt` in each install).
           releaseDraft: true
@@ -129,9 +129,12 @@ jobs:
           - { os: ubuntu-24.04, artifact: linux-x64, image: fedora:latest, package: AppImage }
           - { os: ubuntu-24.04, artifact: linux-x64, image: fedora:latest, package: rpm }
           - { os: ubuntu-24.04, artifact: linux-x64, image: archlinux:latest, package: AppImage }
-          - { os: ubuntu-24.04, artifact: linux-x64, image: opensuse/tumbleweed:latest, package: AppImage }
+          # the AppImage's TLS library (Ubuntu's GnuTLS) looks for certificates where Debian, Ubuntu,
+          # Fedora and Arch keep them, not where openSUSE does: there it works offline only, and the
+          # .rpm is the one to use
+          - { os: ubuntu-24.04, artifact: linux-x64, image: opensuse/tumbleweed:latest, package: AppImage, offline: true }
           - { os: ubuntu-24.04, artifact: linux-x64, image: opensuse/tumbleweed:latest, package: rpm }
-    name: smoke (${{ matrix.artifact }}, ${{ matrix.image || matrix.os }}${{ matrix.package && format(', {0}', matrix.package) || '' }}${{ matrix.rosetta && ', Rosetta' || '' }})
+    name: smoke (${{ matrix.artifact }}, ${{ matrix.image || matrix.os }}${{ matrix.package && format(', {0}', matrix.package) || '' }}${{ matrix.rosetta && ', Rosetta' || '' }}${{ matrix.offline && ', offline' || '' }})
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -152,7 +155,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           pkg=$(find installers -name '*.${{ matrix.package }}' | head -1)
-          docker run --rm -v "$PWD:/w" -w /w "${{ matrix.image }}" scripts/smoke-linux.sh "$pkg"
+          docker run --rm -e SMOKE=${{ matrix.offline && '1' || 'network' }} -v "$PWD:/w" -w /w "${{ matrix.image }}" scripts/smoke-linux.sh "$pkg"
 
   android:
     # the Android APK (experimental), attached to the release too

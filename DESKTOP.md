@@ -54,6 +54,9 @@ src/lib/ffmpeg-native.ts    native Engine: same run(args, { inputs, mounts, outp
   - *The app's own videos*: WebKitGTK before 2.52 plays media from `http(s)` and `blob:` URLs only,
     not `tauri://`, so the template previews are read into blobs on Linux (`src/lib/appvideo.ts`).
   - The app's interface font is bundled: it starts without the internet.
+  - *openSUSE*: the AppImage's GnuTLS (Ubuntu's) reads the system's certificates from
+    `/etc/ssl/certs/ca-certificates.crt`, which openSUSE doesn't have, so the AppImage can't download
+    there (everything else works). The `.rpm` uses the system's own TLS and is the one to use.
 - **FFmpeg** is bundled next to the app as `moshpit-ffmpeg`. `MOSHPIT_FFMPEG=/path/to/ffmpeg`
   overrides it; if it's missing, the `ffmpeg` on PATH is used.
 
