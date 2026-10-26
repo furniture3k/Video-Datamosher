@@ -44,6 +44,12 @@ fn close_ready(window: tauri::Window) {
 /// The desktop app: the editor in a native window, with the native FFmpeg.
 #[cfg(desktop)]
 pub fn run() {
+    // NVIDIA's proprietary driver can't allocate WebKitGTK's DMA-BUF buffers, so the page
+    // crashes or stays blank: render without them there (set before any thread starts)
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() && std::path::Path::new("/proc/driver/nvidia").exists() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
     tauri::Builder::default()
         // closing the window: the page saves the edit its autosave hasn't written yet (the webview
         // gives it no reliable unload event), then says so with close_ready

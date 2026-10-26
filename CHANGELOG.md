@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.16.3
+
+- **Linux AppImage no longer crashes**: it shipped GStreamer without its plugins, so on most
+  distributions (anything but Ubuntu 22.04) it picked up the system's plugins, built for another
+  GStreamer, and the editor crashed as soon as it set up sound. The AppImage now carries its own
+  plugins. The `.deb` also asks for the GStreamer plugins it needs.
+- **NVIDIA on Linux**: with NVIDIA's own driver the window no longer comes up blank or crashes
+  (the app turns off WebKitGTK's DMA-BUF renderer there).
+
 ## 1.16.2
 
 - **Closing the desktop app saves your last edit**: an edit made just before closing the window was
