@@ -62,7 +62,7 @@ jobs:
           path: src-tauri/binaries
       - run: chmod +x src-tauri/binaries/moshpit-ffmpeg-*
         shell: bash
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@v1
         id: tauri
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
