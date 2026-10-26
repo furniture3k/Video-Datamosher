@@ -70,6 +70,8 @@
     v.muted = true;
     v.playsInline = true;
     v.src = src;
+    // in view, as an imported clip is in the preview (WebKit doesn't advance muted video no one can see)
+    v.style.cssText = 'position:fixed;left:0;top:0;width:256px;height:144px;z-index:2147483647';
     document.body.appendChild(v);
     try {
       await within(20000, new Promise((ok, no) => {
