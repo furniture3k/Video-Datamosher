@@ -32,7 +32,7 @@ case "$family" in
     case "$pkg" in *.rpm) dnf install -y -q "$pkg" > /dev/null ;; esac
     ;;
   *" suse "* | *" opensuse "*)
-    zypper -n -q install -y xvfb-run xorg-x11-server-Xvfb dbus-1 /usr/bin/dbus-run-session Mesa-libEGL1 Mesa-libGL1 Mesa-libGLESv2-2 Mesa-dri libgbm1 libdrm2 \
+    zypper -n -q install -y xvfb-run xorg-x11-server-Xvfb dbus-1 Mesa-libEGL1 Mesa-libGL1 Mesa-libGLESv2-2 Mesa-dri libgbm1 libdrm2 \
       libX11-6 libX11-xcb1 libxcb1 libwayland-client0 fontconfig dejavu-fonts libharfbuzz0 libfreetype6 libfribidi0 libexpat1 alsa ca-certificates file > /dev/null
     case "$pkg" in *.rpm) zypper -n -q --no-gpg-checks install -y "$pkg" > /dev/null ;; esac
     ;;
@@ -60,7 +60,10 @@ export DISPLAY=:99
 sleep 2
 export MOSHPIT_SMOKE_TEST=${SMOKE:-network}
 code=0
-dbus-run-session -- "${app[@]}" > smoke.out 2> smoke.err || code=$?
+# a session bus, as a desktop has (openSUSE packages no dbus-run-session: there it runs without one)
+bus=()
+command -v dbus-run-session > /dev/null && bus=(dbus-run-session --)
+"${bus[@]}" "${app[@]}" > smoke.out 2> smoke.err || code=$?
 # the report is the JSON the app printed; its log is kept in case it never reported
 sed -n '/^{/,/^}/p' smoke.out
 grep -E 'moshpit smoke test|ERROR|CRITICAL|Segmentation|not found' smoke.err | head -40 || true
