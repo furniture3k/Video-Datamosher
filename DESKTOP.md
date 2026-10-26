@@ -42,6 +42,10 @@ src/lib/ffmpeg-native.ts    native Engine: same run(args, { inputs, mounts, outp
   the work folder (`leave` in `RunOptions`) and moved to the place picked in the native Save
   dialog (`save_path`), so a multi-gigabyte export never passes through the webview. Other saves
   (`download()` in `src/lib/storage.ts`) are copied to disk in chunks and go through the same dialog.
+- **Linux.** The AppImage bundles GStreamer and its plugins (`bundleMediaFramework`), which WebKitGTK
+  needs for sound and video: the host's plugins are built for another GStreamer and crash the page.
+  The `.deb` depends on the GStreamer plugins instead. With NVIDIA's proprietary driver the app sets
+  `WEBKIT_DISABLE_DMABUF_RENDERER=1` (unless it is already set), which that driver needs.
 - **FFmpeg** is bundled next to the app as `moshpit-ffmpeg`. `MOSHPIT_FFMPEG=/path/to/ffmpeg`
   overrides it; if it's missing, the `ffmpeg` on PATH is used.
 
@@ -49,7 +53,8 @@ src/lib/ffmpeg-native.ts    native Engine: same run(args, { inputs, mounts, outp
 
 Prerequisites: Node 22, [Rust](https://rustup.rs), and on Linux the
 [WebKitGTK packages](https://tauri.app/start/prerequisites/#linux)
-(`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`).
+(`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`), plus the GStreamer plugins the AppImage bundles
+(`gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav`).
 
 ```bash
 npm install
