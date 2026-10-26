@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.16.4
+
+- **Linux behind a proxy**: with an HTTPS proxy set (common at work and school), downloads in the
+  app (fonts, the cut-out and caption models) crashed its network process in the AppImage and on
+  Ubuntu 22.04. The app now hands the proxy to the webview itself, which avoids it.
+- **Template previews on Linux** play again on Ubuntu 22.04, Debian 12 and other systems with an
+  older WebKitGTK (they showed still pictures, or nothing in the template and look dialogs).
+- **The .rpm on openSUSE** crashed like the AppImage did: it now asks for the GStreamer plugins it
+  needs (Fedora's and openSUSE's names alike).
+- **The AppImage** leaves out a GStreamer plugin that could stop the page when loaded next to
+  WebKit's own network library.
+- **Starts without the internet**: the interface font is part of the app instead of being
+  downloaded from Google Fonts at every start.
+- **openSUSE**: use the `.rpm`. The AppImage works there but can't download (fonts, cut-out and
+  caption models): its TLS library looks for the system's certificates where Debian, Ubuntu,
+  Fedora and Arch keep them.
+- **Every installer is tested before a release**: the release workflow installs each one on Windows,
+  macOS (Apple Silicon and Intel) and seven Linux systems and checks the editor, sound, video,
+  FFmpeg and downloads work, and only publishes the release when all of them pass.
+
 ## 1.16.3
 
 - **Linux AppImage no longer crashes**: it shipped GStreamer without its plugins, so on most

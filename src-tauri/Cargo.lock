@@ -2044,7 +2044,7 @@ dependencies = [
 
 [[package]]
 name = "moshpit"
-version = "1.16.3"
+version = "1.16.4"
 dependencies = [
  "percent-encoding",
  "serde",

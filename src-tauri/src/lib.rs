@@ -5,11 +5,15 @@ mod mobile;
 #[cfg(desktop)]
 mod opened;
 mod osc;
+#[cfg(target_os = "linux")]
+mod proxy;
+#[cfg(desktop)]
+mod smoke;
 
 #[cfg(desktop)]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(desktop)]
-use tauri::webview::{NewWindowResponse, PermissionKind, PermissionResponse};
+use tauri::webview::{NewWindowResponse, PageLoadEvent, PermissionKind, PermissionResponse};
 #[cfg(desktop)]
 use tauri::{Emitter, Manager, Url, WebviewWindowBuilder};
 #[cfg(desktop)]
@@ -96,13 +100,25 @@ pub fn run() {
                     PermissionKind::Camera | PermissionKind::Microphone | PermissionKind::DisplayCapture => PermissionResponse::Allow,
                     _ => PermissionResponse::Default,
                 })
+                .on_page_load(|window, payload| {
+                    if smoke::enabled() && payload.event() == PageLoadEvent::Finished {
+                        let _ = window.eval(smoke::script());
+                    }
+                })
                 .build()?;
+            if smoke::enabled() {
+                smoke::start();
+            }
             #[cfg(target_os = "linux")]
             window.with_webview(|w| {
                 use webkit2gtk::{SettingsExt, WebViewExt};
                 if let Some(s) = w.inner().settings() {
                     s.set_enable_media_stream(true);
                     s.set_enable_mediasource(true);
+                }
+                proxy::apply(&w.inner());
+                if smoke::enabled() {
+                    w.inner().connect_web_process_terminated(|_, reason| smoke::page_died(&format!("{reason:?}")));
                 }
             })?;
             // on a screen smaller than the window (1440×900 on a 1366×768 laptop) it would be cut
@@ -143,6 +159,7 @@ pub fn run() {
             opened::opened_files,
             opened::read_opened_file,
             close_ready,
+            smoke::smoke_report,
             osc::osc_listen,
             mobile::save_download,
         ])

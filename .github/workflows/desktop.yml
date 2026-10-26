@@ -3,7 +3,8 @@ name: Desktop app
 # Builds the installers (Windows .msi/.exe, macOS .dmg for Apple Silicon and Intel, Linux
 # .AppImage/.deb/.rpm). Pushing a tag like v1.2.0, or running it by hand with "release" ticked
 # (which tags v<version from package.json>), attaches them to a GitHub Release that is published
-# once every build succeeded. Run by hand without "release", it only uploads them as artifacts.
+# once every build succeeded and every installer passed its smoke test (the smoke job). Run by hand
+# without "release", it only builds and checks them, and uploads them as artifacts.
 on:
   push:
     tags: ['v*']
@@ -54,6 +55,9 @@ jobs:
           # the GStreamer plugins the AppImage bundles (bundleMediaFramework): without them it uses the
           # host's, built for another GStreamer, and the page crashes as soon as it plays sound
           sudo apt-get install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-pulseaudio gstreamer1.0-alsa gstreamer1.0-gl
+          # ...but not the HTTP source built on libsoup 2: WebKit uses libsoup 3 and stops the page if
+          # both are loaded (WebKit reads media through its own source anyway)
+          sudo rm -f /usr/lib/x86_64-linux-gnu/gstreamer-1.0/libgstsoup.so
       - run: npm ci
       - name: FFmpeg for ${{ matrix.target }}
         uses: actions/download-artifact@v4
@@ -83,7 +87,7 @@ jobs:
 
             - **Windows**: run the `.msi` or `-setup.exe`. If SmartScreen warns about an unknown publisher, choose *More info → Run anyway*.
             - **macOS**: open the `.dmg` (`aarch64` for Apple Silicon, `x64` for Intel) and drag moshpit to Applications. The app isn't notarised yet: the first time, right-click it and choose *Open*.
-            - **Linux**: the `.AppImage` runs anywhere (`chmod +x` it first); `.deb` and `.rpm` are also attached.
+            - **Linux**: the `.AppImage` runs on most distributions (`chmod +x` it first); the `.deb` (Ubuntu, Debian) and `.rpm` (Fedora, openSUSE) install with your package manager. On openSUSE use the `.rpm`: the AppImage can't download there (fonts, cut-out and caption models).
 
             Includes a GPL build of FFmpeg, built by this project's own workflow from FFmpeg's signed source release and pinned sources of x264, libvpx, libvorbis and zlib (`scripts/build-ffmpeg.sh`; the exact sources are listed in `FFMPEG-NOTICE.txt` in each install).
           releaseDraft: true
@@ -99,6 +103,60 @@ jobs:
             src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
           if-no-files-found: error
 
+  smoke:
+    # every installer is installed (or opened) and the app checked: the editor comes up, sound, video,
+    # the bundled FFmpeg and downloads work (scripts/smoke-*). On older and newer Windows and macOS,
+    # Intel Macs and Apple Silicon running the Intel build, and the Linux packages on the main
+    # distributions. A release is only published when they all pass.
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-2022, artifact: windows-x64 }
+          - { os: windows-2025, artifact: windows-x64 }
+          - { os: macos-14, artifact: macos-apple-silicon }
+          - { os: macos-15, artifact: macos-apple-silicon }
+          - { os: macos-15-intel, artifact: macos-intel }
+          - { os: macos-15, artifact: macos-intel, rosetta: true }
+          - { os: ubuntu-22.04, artifact: linux-x64, image: ubuntu:22.04, package: AppImage }
+          - { os: ubuntu-22.04, artifact: linux-x64, image: ubuntu:22.04, package: deb }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: ubuntu:24.04, package: AppImage }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: ubuntu:24.04, package: deb }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: debian:12, package: AppImage }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: debian:12, package: deb }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: debian:13, package: deb }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: fedora:latest, package: AppImage }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: fedora:latest, package: rpm }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: archlinux:latest, package: AppImage }
+          # the AppImage's TLS library (Ubuntu's GnuTLS) looks for certificates where Debian, Ubuntu,
+          # Fedora and Arch keep them, not where openSUSE does: there it works offline only, and the
+          # .rpm is the one to use
+          - { os: ubuntu-24.04, artifact: linux-x64, image: opensuse/tumbleweed:latest, package: AppImage, offline: true }
+          - { os: ubuntu-24.04, artifact: linux-x64, image: opensuse/tumbleweed:latest, package: rpm }
+    name: smoke (${{ matrix.artifact }}, ${{ matrix.image || matrix.os }}${{ matrix.package && format(', {0}', matrix.package) || '' }}${{ matrix.rosetta && ', Rosetta' || '' }}${{ matrix.offline && ', offline' || '' }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: moshpit-${{ matrix.artifact }}
+          path: installers
+      - name: Windows
+        if: runner.os == 'Windows'
+        run: scripts/smoke-windows.ps1 installers
+        shell: pwsh
+      - name: macOS
+        if: runner.os == 'macOS'
+        run: |
+          ${{ matrix.rosetta && 'softwareupdate --install-rosetta --agree-to-license' || 'true' }}
+          scripts/smoke-macos.sh "$(find installers -name '*.dmg' | head -1)"
+      - name: Linux (${{ matrix.image }})
+        if: runner.os == 'Linux'
+        run: |
+          pkg=$(find installers -name '*.${{ matrix.package }}' | head -1)
+          docker run --rm -e SMOKE=${{ matrix.offline && '1' || 'network' }} -v "$PWD:/w" -w /w "${{ matrix.image }}" scripts/smoke-linux.sh "$pkg"
+
   android:
     # the Android APK (experimental), attached to the release too
     uses: ./.github/workflows/android.yml
@@ -106,7 +164,7 @@ jobs:
 
   publish:
     # once every installer built, publish the draft release (a failed build leaves it as a draft)
-    needs: [build, android]
+    needs: [build, smoke, android]
     if: startsWith(github.ref, 'refs/tags/') || inputs.release
     runs-on: ubuntu-latest
     steps:

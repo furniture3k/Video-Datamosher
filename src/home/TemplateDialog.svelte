@@ -1,6 +1,7 @@
 <script lang="ts">
   // Using a template: pick your clips (and a song for the beat ones), or try it with sample footage.
   import Modal from '../components/Modal.svelte';
+  import { appVideo } from '../lib/appvideo';
   import Icon from '../components/Icon.svelte';
   import { store } from '../lib/store.svelte';
   import { templateAccept, useTemplate, type Template } from '../lib/starters.svelte';
@@ -42,7 +43,7 @@
 
 <Modal title={t.name} onclose={() => !working && onclose()}>
   <div class="col">
-    <video class="pv" src="examples/{t.thumb}.webm" poster="examples/{t.thumb}.jpg" muted loop playsinline autoplay></video>
+    <video class="pv" use:appVideo={`examples/${t.thumb}.webm`} poster="examples/{t.thumb}.jpg" muted loop playsinline autoplay></video>
     <p>{t.description}</p>
     <p class="small muted"><b>{count} clip{t.clips[1] === 1 ? '' : 's'}{t.music ? ', and a song if you have one' : ''}.</b> {t.hint}</p>
     {#if t.words !== undefined}
