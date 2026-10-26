@@ -3,7 +3,7 @@
 // back. A webview that crashes on any of them (a missing GStreamer plugin, a broken proxy) never
 // reports, and the native side fails the test when it times out.
 (async () => {
-  const report = { userAgent: navigator.userAgent, checks: {} };
+  const report = { userAgent: navigator.userAgent, page: document.visibilityState, checks: {} };
   const failed = [];
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const within = (ms, p) => Promise.race([p, sleep(ms).then(() => Promise.reject(new Error(`no answer in ${ms / 1000}s`)))]);
@@ -77,21 +77,30 @@
         v.onerror = () => no(new Error('could not load: ' + (v.error ? v.error.message || 'error ' + v.error.code : '?')));
       }));
       await within(10000, v.play());
-      await sleep(1500);
-      if (!(v.currentTime > 0)) throw new Error('did not play');
+      for (let i = 0; i < 40 && !(v.currentTime > 0.5); i++) await sleep(250);
+      if (!(v.currentTime > 0)) throw new Error(`did not play (ready state ${v.readyState}, network state ${v.networkState})`);
       return `${v.videoWidth}×${v.videoHeight}, played to ${v.currentTime.toFixed(2)}s`;
     } finally {
       v.remove();
     }
   };
   await check('video (template previews)', linux || webm !== '', async () => {
-    // the home screen plays the previews it shows (src/home/StarterCard.svelte)
+    // the home screen plays the previews it can see (src/home/StarterCard.svelte). It finds them with
+    // an IntersectionObserver, which only reports while the window is drawn: on a test machine whose
+    // window isn't, the first preview is started the way the observer would
     for (let i = 0; i < 40; i++) {
       const v = [...document.querySelectorAll('.starter video')].find((v) => v.currentTime > 0);
-      if (v) return `${v.videoWidth}×${v.videoHeight}, playing at ${v.currentTime.toFixed(2)}s`;
+      if (v) return `${v.videoWidth}×${v.videoHeight}, playing at ${v.currentTime.toFixed(2)}s (${i > 6 ? 'started by the test' : 'started by the page'})`;
+      const first = document.querySelector('.starter video');
+      if (i === 6 && first) {
+        first.dataset.play = 'on';
+        first.play().catch(() => {});
+      }
       await sleep(500);
     }
-    throw new Error(document.querySelector('.starter video') ? 'did not play' : 'could not load (shown as pictures)');
+    const first = document.querySelector('.starter video');
+    if (!first) throw new Error('could not load (shown as pictures)');
+    throw new Error(`did not play (ready state ${first.readyState}, network state ${first.networkState}, page ${document.visibilityState})`);
   });
   await check('video (imported clip)', linux || webm !== '', async () => {
     const url = URL.createObjectURL(await (await fetch('examples/beat.webm')).blob());

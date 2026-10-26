@@ -8,7 +8,13 @@ set -euo pipefail
 dmg=$(realpath "$1")
 echo "== macOS $(sw_vers -productVersion) ($(uname -m)): $(basename "$dmg")"
 mnt=$(mktemp -d)
-hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mnt" > /dev/null
+# the disk image shows the licence (GPL) before it opens: agree to it, or else open a plain copy
+# of it (a converted image has no licence to agree to)
+if ! PAGER=true hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$mnt" < <(yes) > /dev/null; then
+  plain=$(mktemp -d)/plain
+  hdiutil convert "$dmg" -quiet -format UDTO -o "$plain"
+  hdiutil attach "$plain.cdr" -nobrowse -readonly -mountpoint "$mnt" > /dev/null
+fi
 trap 'hdiutil detach "$mnt" -force > /dev/null || true' EXIT
 app="$mnt/moshpit.app/Contents/MacOS/moshpit"
 file "$app" "$mnt/moshpit.app/Contents/MacOS/moshpit-ffmpeg"
